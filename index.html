@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testings Podo</title>
+<meta name="description" content="Bibliothèque de tests cliniques en posturologie et biomécanique, du pied au rachis.">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --text: #1c2430;
+    --muted: #5f6b7a;
+    --border: #e1e5eb;
+    --accent: #1f7a6d;
+    --accent-soft: #e3f2ef;
+    --posturo: #6a4fb3;
+    --posturo-soft: #efeafb;
+    --shadow: 0 1px 3px rgba(20, 30, 45, .08), 0 4px 14px rgba(20, 30, 45, .05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161c;
+      --surface: #1b2129;
+      --text: #e6eaf0;
+      --muted: #9aa5b4;
+      --border: #2c3440;
+      --accent: #4cc2ae;
+      --accent-soft: #1d3632;
+      --posturo: #a891ee;
+      --posturo-soft: #2a2440;
+      --shadow: none;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 20px 16px;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0; font-size: 1.6rem; }
+  .subtitle { margin: 4px 0 0; color: var(--muted); }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 24px;
+    padding: 24px 16px 48px;
+  }
+  .layout > * { min-width: 0; }
+  @media (max-width: 760px) {
+    .layout { grid-template-columns: 1fr; gap: 16px; }
+  }
+
+  /* Colonne des segments, du haut du corps vers le bas */
+  nav h2, .filters h2 {
+    font-size: .8rem; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--muted); margin: 0 0 8px;
+  }
+  .segments { display: flex; flex-direction: column; gap: 6px; }
+  @media (max-width: 760px) {
+    .segments { flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+  }
+  .seg-btn {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    font: inherit; cursor: pointer; text-align: left; white-space: nowrap;
+  }
+  .seg-btn:hover { border-color: var(--accent); }
+  .seg-btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .seg-btn .count { font-size: .8rem; opacity: .75; }
+
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+  .toolbar input {
+    flex: 1 1 240px; padding: 10px 12px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text); font: inherit;
+  }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    padding: 8px 12px; border-radius: 999px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); font: inherit; font-size: .9rem; cursor: pointer;
+  }
+  .chip[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  .result-info { color: var(--muted); font-size: .9rem; margin: 0 0 12px; }
+
+  .grid {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px; box-shadow: var(--shadow); cursor: pointer; text-align: left;
+    font: inherit; color: inherit; display: flex; flex-direction: column; gap: 8px;
+  }
+  .card:hover, .card:focus-visible { border-color: var(--accent); outline: none; }
+  .card h3 { margin: 0; font-size: 1.02rem; }
+  .card p { margin: 0; color: var(--muted); font-size: .9rem; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
+  .tag { font-size: .75rem; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+  .tag.posturo { background: var(--posturo-soft); color: var(--posturo); }
+  .tag.video { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+
+  /* Fiche détaillée d'un test */
+  dialog {
+    width: min(760px, calc(100vw - 24px)); max-height: calc(100vh - 24px);
+    border: none; border-radius: 14px; padding: 0;
+    background: var(--surface); color: var(--text);
+  }
+  dialog::backdrop { background: rgba(10, 15, 25, .55); }
+  .sheet-head {
+    position: sticky; top: 0; background: var(--surface);
+    display: flex; justify-content: space-between; align-items: start; gap: 12px;
+    padding: 16px 18px; border-bottom: 1px solid var(--border);
+  }
+  .sheet-head h2 { margin: 0; font-size: 1.3rem; }
+  .close {
+    border: 1px solid var(--border); background: transparent; color: var(--text);
+    border-radius: 8px; width: 36px; height: 36px; font-size: 1.2rem; cursor: pointer; flex: none;
+  }
+  .sheet-body { padding: 16px 18px 22px; }
+  .video {
+    aspect-ratio: 16 / 9; width: 100%; border-radius: 10px; overflow: hidden;
+    background: #000; margin-bottom: 16px;
+  }
+  .video iframe, .video video { width: 100%; height: 100%; border: 0; display: block; }
+  .video.empty {
+    background: var(--bg); border: 2px dashed var(--border);
+    display: grid; place-items: center; color: var(--muted); text-align: center; padding: 16px;
+  }
+  .sheet-body h3 { font-size: .95rem; margin: 18px 0 6px; color: var(--accent); }
+  .sheet-body p, .sheet-body li { margin: 0 0 6px; }
+  .sheet-body ol, .sheet-body ul { padding-left: 20px; margin: 0; }
+
+  footer { color: var(--muted); font-size: .85rem; padding: 0 16px 32px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <h1>Testings Podo</h1>
+    <p class="subtitle">Tests de posturologie et de biomécanique, du pied au rachis.</p>
+  </div>
+</header>
+
+<main class="wrap layout">
+  <nav aria-label="Segments">
+    <h2>Segment</h2>
+    <div class="segments" id="segments"></div>
+  </nav>
+
+  <section>
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Rechercher un test (ex. Thomas, hallux, Romberg…)" aria-label="Rechercher">
+      <div class="chips" id="types"></div>
+    </div>
+    <p class="result-info" id="result-info"></p>
+    <div class="grid" id="grid"></div>
+  </section>
+</main>
+
+<footer class="wrap">
+  Outil d'aide-mémoire : les contenus sont à vérifier et adapter par le praticien.
+</footer>
+
+<dialog id="sheet" aria-labelledby="sheet-title">
+  <div class="sheet-head">
+    <div>
+      <h2 id="sheet-title"></h2>
+      <div class="tags" id="sheet-tags"></div>
+    </div>
+    <button class="close" id="close" aria-label="Fermer">×</button>
+  </div>
+  <div class="sheet-body" id="sheet-body"></div>
+</dialog>
+
+<script>
+/* =====================================================================
+   LISTE DES TESTS
+   Pour ajouter un test, copier un bloc { ... } et modifier les textes.
+   - segment : rachis, bassin, hanche, genou, cheville, pied, global
+   - type    : "biomeca" ou "posturo"
+   - video   : lien YouTube, lien Vimeo, ou fichier (ex. "videos/thomas.mp4").
+               Laisser "" tant que la vidéo n'est pas prête.
+   ===================================================================== */
+const TESTS = [
+  // ---------- RACHIS ----------
+  {
+    id: "schober", name: "Test de Schober", segment: "rachis", type: "biomeca", video: "",
+    goal: "Évaluer la mobilité en flexion du rachis lombaire.",
+    position: "Patient debout, pieds écartés à la largeur du bassin.",
+    steps: [
+      "Repérer la jonction lombo-sacrée (ligne des fossettes de Vénus) et faire une marque.",
+      "Faire une seconde marque 10 cm au-dessus.",
+      "Demander une flexion maximale du tronc, genoux tendus.",
+      "Mesurer la nouvelle distance entre les deux marques."
+    ],
+    result: "Normalement la distance passe de 10 à 15 cm environ. Une augmentation inférieure à 5 cm traduit une raideur lombaire."
+  },
+  {
+    id: "adams", name: "Test d'Adams (antéflexion)", segment: "rachis", type: "biomeca", video: "",
+    goal: "Dépister une scoliose structurale (gibbosité).",
+    position: "Patient debout, dos nu, pieds joints, genoux tendus.",
+    steps: [
+      "Se placer derrière le patient.",
+      "Lui demander de se pencher en avant, bras pendants, paumes jointes.",
+      "Observer le dos à hauteur des yeux, de la région thoracique à la région lombaire.",
+      "Mesurer si besoin l'angle de rotation au scoliomètre."
+    ],
+    result: "Une gibbosité (asymétrie de hauteur entre les deux côtés) oriente vers une scoliose structurale. Un angle au scoliomètre ≥ 7° justifie un avis médical et une radiographie."
+  },
+  {
+    id: "distance-doigts-sol", name: "Distance doigts-sol", segment: "rachis", type: "biomeca", video: "",
+    goal: "Apprécier globalement la souplesse de la chaîne postérieure (rachis, ischio-jambiers).",
+    position: "Patient debout sur une marche ou un sol plat, pieds joints.",
+    steps: [
+      "Demander une flexion maximale du tronc, genoux tendus.",
+      "Mesurer la distance entre l'extrémité du majeur et le sol."
+    ],
+    result: "Test global et peu spécifique : utile surtout pour comparer dans le temps chez un même patient."
+  },
+  {
+    id: "lasegue", name: "Test de Lasègue", segment: "rachis", type: "biomeca", video: "",
+    goal: "Rechercher une irritation radiculaire (sciatique L5 / S1).",
+    position: "Patient en décubitus dorsal, détendu.",
+    steps: [
+      "Saisir le talon et élever passivement le membre inférieur, genou tendu.",
+      "Noter l'angle auquel apparaît la douleur et son trajet."
+    ],
+    result: "Positif si une douleur radiculaire (irradiant sous le genou) apparaît entre 30° et 70° environ. Une simple tension postérieure de cuisse n'est pas un signe positif."
+  },
+  {
+    id: "fleches-sagittales", name: "Flèches sagittales (fil à plomb)", segment: "rachis", type: "posturo", video: "",
+    goal: "Évaluer les courbures cervicale et lombaire dans le plan sagittal.",
+    position: "Patient debout, de profil, posture habituelle.",
+    steps: [
+      "Placer un fil à plomb tangent au point le plus postérieur du dos (souvent la cyphose thoracique).",
+      "Mesurer la distance horizontale entre le fil et le creux cervical (flèche cervicale).",
+      "Mesurer la distance entre le fil et le creux lombaire (flèche lombaire)."
+    ],
+    result: "Permet de décrire une hyperlordose, une hypercyphose ou un dos plat, et de suivre leur évolution."
+  },
+
+  // ---------- BASSIN ----------
+  {
+    id: "flexion-debout", name: "Test de flexion debout", segment: "bassin", type: "biomeca", video: "",
+    goal: "Rechercher une restriction de mobilité sacro-iliaque.",
+    position: "Patient debout, de dos, pieds écartés à la largeur du bassin.",
+    steps: [
+      "Placer les pouces sous les deux épines iliaques postéro-supérieures (EIPS).",
+      "Demander une flexion lente du tronc.",
+      "Observer si une EIPS monte plus haut ou plus tôt que l'autre."
+    ],
+    result: "L'EIPS qui « suit » davantage la flexion indique le côté restreint. Fiabilité modérée : à associer à d'autres tests."
+  },
+  {
+    id: "longueur-mi", name: "Mesure de longueur des membres inférieurs", segment: "bassin", type: "biomeca", video: "",
+    goal: "Dépister une inégalité de longueur des membres inférieurs (ILMI).",
+    position: "Patient en décubitus dorsal, bassin aligné, puis debout.",
+    steps: [
+      "Allongé : mesurer la distance entre l'épine iliaque antéro-supérieure (EIAS) et la malléole interne, de chaque côté.",
+      "Debout : comparer la hauteur des crêtes iliaques.",
+      "Si besoin, glisser des cales sous le pied court jusqu'à ce que les crêtes iliaques soient de niveau."
+    ],
+    result: "Une différence mesurée doit être confirmée par plusieurs méthodes. La radiographie (pangonogramme) reste la référence."
+  },
+
+  // ---------- HANCHE ----------
+  {
+    id: "thomas", name: "Test de Thomas", segment: "hanche", type: "biomeca", video: "",
+    goal: "Évaluer la souplesse des fléchisseurs de hanche (psoas, droit fémoral).",
+    position: "Patient assis au bord de la table, puis basculé en décubitus dorsal.",
+    steps: [
+      "Le patient ramène les deux genoux contre la poitrine puis se couche.",
+      "Il garde un genou contre la poitrine (lombaires plaquées) et laisse pendre l'autre jambe.",
+      "Observer la cuisse et le genou qui pendent."
+    ],
+    result: "Cuisse qui ne descend pas jusqu'à la table : raideur du psoas. Genou qui ne fléchit pas jusqu'à 90° environ : raideur du droit fémoral."
+  },
+  {
+    id: "trendelenburg", name: "Signe de Trendelenburg", segment: "hanche", type: "biomeca", video: "",
+    goal: "Évaluer la force des abducteurs de hanche (moyen fessier).",
+    position: "Patient debout, de dos.",
+    steps: [
+      "Demander au patient de se tenir sur une jambe environ 30 secondes.",
+      "Observer le niveau du bassin du côté de la jambe levée."
+    ],
+    result: "Positif si le bassin s'abaisse du côté de la jambe levée : faiblesse du moyen fessier du côté de la jambe d'appui."
+  },
+  {
+    id: "ober", name: "Test d'Ober", segment: "hanche", type: "biomeca", video: "",
+    goal: "Évaluer la souplesse du tenseur du fascia lata et de la bandelette ilio-tibiale.",
+    position: "Patient en décubitus latéral, côté testé en haut, jambe du dessous fléchie.",
+    steps: [
+      "Stabiliser le bassin d'une main.",
+      "Amener la jambe du dessus en abduction et légère extension de hanche, genou fléchi ou tendu.",
+      "Relâcher la jambe et observer si elle descend vers la table."
+    ],
+    result: "Positif si la jambe reste en abduction et ne descend pas sous l'horizontale : raideur du TFL / de la bandelette."
+  },
+  {
+    id: "craig", name: "Test de Craig", segment: "hanche", type: "biomeca", video: "",
+    goal: "Estimer l'antéversion du col fémoral.",
+    position: "Patient en décubitus ventral, genou fléchi à 90°.",
+    steps: [
+      "Palper le grand trochanter.",
+      "Faire tourner la hanche (en bougeant la jambe) jusqu'à ce que le grand trochanter soit au point le plus latéral.",
+      "Mesurer l'angle entre la jambe et la verticale."
+    ],
+    result: "Valeur habituelle chez l'adulte : environ 8 à 15°. Au-delà, antéversion fémorale augmentée (souvent associée à une marche « pieds en dedans »)."
+  },
+  {
+    id: "faber", name: "Test de FABER (Patrick)", segment: "hanche", type: "biomeca", video: "",
+    goal: "Orienter vers une atteinte de la hanche ou de la sacro-iliaque.",
+    position: "Patient en décubitus dorsal.",
+    steps: [
+      "Placer la cheville du côté testé sur le genou opposé (position en « 4 »).",
+      "Stabiliser le bassin du côté opposé.",
+      "Appuyer doucement sur le genou testé vers la table."
+    ],
+    result: "Douleur à l'aine : orientation vers la hanche. Douleur fessière postérieure : orientation sacro-iliaque."
+  },
+
+  // ---------- GENOU ----------
+  {
+    id: "squat-unipodal", name: "Squat unipodal", segment: "genou", type: "biomeca", video: "",
+    goal: "Observer le contrôle dynamique du membre inférieur (valgus dynamique).",
+    position: "Patient debout sur une jambe, bras croisés ou sur les hanches.",
+    steps: [
+      "Demander une flexion de genou lente jusqu'à 45-60°, puis le retour.",
+      "Répéter 5 fois de chaque côté.",
+      "Observer de face : genou, bassin, tronc et pied."
+    ],
+    result: "Genou qui part vers l'intérieur, bassin qui bascule ou tronc qui penche : défaut de contrôle (souvent lié aux abducteurs de hanche et à la pronation du pied)."
+  },
+  {
+    id: "angle-q", name: "Angle Q", segment: "genou", type: "biomeca", video: "",
+    goal: "Évaluer l'alignement de l'appareil extenseur du genou.",
+    position: "Patient en décubitus dorsal ou debout, quadriceps relâché.",
+    steps: [
+      "Tracer une ligne de l'EIAS au centre de la rotule.",
+      "Tracer une ligne du centre de la rotule à la tubérosité tibiale.",
+      "Mesurer l'angle formé avec un goniomètre."
+    ],
+    result: "Valeurs habituelles : environ 10-14° chez l'homme et 15-17° chez la femme. Un angle élevé augmente les contraintes latérales sur la rotule."
+  },
+  {
+    id: "renne", name: "Test de Renne", segment: "genou", type: "biomeca", video: "",
+    goal: "Rechercher un syndrome de la bandelette ilio-tibiale (« syndrome de l'essuie-glace »).",
+    position: "Patient debout sur la jambe testée.",
+    steps: [
+      "Demander une flexion du genou en appui unipodal, autour de 30-40°.",
+      "Interroger sur la douleur."
+    ],
+    result: "Positif si la douleur apparaît sur la face latérale du genou (épicondyle fémoral latéral)."
+  },
+  {
+    id: "lachman", name: "Test de Lachman", segment: "genou", type: "biomeca", video: "",
+    goal: "Rechercher une rupture du ligament croisé antérieur (LCA).",
+    position: "Patient en décubitus dorsal, genou fléchi à 20-30°.",
+    steps: [
+      "Tenir le fémur d'une main, juste au-dessus du genou.",
+      "Tenir le tibia de l'autre main, juste sous le genou.",
+      "Tirer le tibia vers l'avant et comparer avec l'autre genou."
+    ],
+    result: "Positif si le tibia avance davantage que de l'autre côté avec un arrêt « mou ». Orienter vers un médecin."
+  },
+
+  // ---------- CHEVILLE ----------
+  {
+    id: "lunge", name: "Lunge test (fente en charge)", segment: "cheville", type: "biomeca", video: "",
+    goal: "Mesurer la flexion dorsale de cheville en charge.",
+    position: "Patient debout face à un mur, pied testé devant.",
+    steps: [
+      "Le patient avance le genou vers le mur, talon bien au sol.",
+      "Reculer le pied progressivement jusqu'à la distance maximale où le genou touche encore le mur sans que le talon décolle.",
+      "Mesurer la distance gros orteil-mur (ou l'angle du tibia avec un inclinomètre)."
+    ],
+    result: "Moins de 10 cm (ou moins de 35-38° environ) : flexion dorsale limitée. Comparer les deux côtés."
+  },
+  {
+    id: "silfverskiold", name: "Test de Silfverskiöld", segment: "cheville", type: "biomeca", video: "",
+    goal: "Distinguer une rétraction des gastrocnémiens d'une rétraction du soléaire.",
+    position: "Patient en décubitus dorsal ou assis, pied en position neutre (arrière-pied verrouillé).",
+    steps: [
+      "Mesurer la flexion dorsale de cheville genou tendu.",
+      "Mesurer la flexion dorsale de cheville genou fléchi."
+    ],
+    result: "Flexion dorsale qui s'améliore genou fléchi : rétraction des gastrocnémiens. Limitée dans les deux positions : rétraction du soléaire ou limitation articulaire."
+  },
+  {
+    id: "tiroir-cheville", name: "Tiroir antérieur de cheville", segment: "cheville", type: "biomeca", video: "",
+    goal: "Évaluer la laxité du ligament talo-fibulaire antérieur.",
+    position: "Patient assis ou en décubitus, cheville en légère flexion plantaire (10-20°).",
+    steps: [
+      "Stabiliser le bas de la jambe d'une main.",
+      "Saisir le talon de l'autre main et le tirer vers l'avant.",
+      "Comparer avec l'autre cheville."
+    ],
+    result: "Positif si le talus avance davantage que du côté sain : instabilité latérale de cheville."
+  },
+  {
+    id: "thompson", name: "Test de Thompson", segment: "cheville", type: "biomeca", video: "",
+    goal: "Rechercher une rupture du tendon d'Achille.",
+    position: "Patient en décubitus ventral, pieds dépassant de la table.",
+    steps: [
+      "Presser fermement le mollet.",
+      "Observer le pied."
+    ],
+    result: "Normalement le pied part en flexion plantaire. Absence de mouvement : suspicion de rupture, orienter en urgence vers un médecin."
+  },
+
+  // ---------- PIED ----------
+  {
+    id: "fpi", name: "Foot Posture Index (FPI-6)", segment: "pied", type: "biomeca", video: "",
+    goal: "Classer la posture du pied (pronation / supination) de façon standardisée.",
+    position: "Patient debout, en appui bipodal relâché, bras le long du corps.",
+    steps: [
+      "Palpation de la tête du talus : coter de -2 à +2.",
+      "Courbures sus- et sous-malléolaires latérales : coter de -2 à +2.",
+      "Position frontale du calcanéus : coter de -2 à +2.",
+      "Proéminence de la région talo-naviculaire : coter de -2 à +2.",
+      "Hauteur et congruence de l'arche médiale : coter de -2 à +2.",
+      "Abduction / adduction de l'avant-pied sur l'arrière-pied : coter de -2 à +2.",
+      "Additionner les 6 scores."
+    ],
+    result: "Score de -12 à +12. De 0 à +5 : pied neutre. De +6 à +9 : pronateur. +10 et plus : très pronateur. De -1 à -4 : supinateur. -5 et moins : très supinateur."
+  },
+  {
+    id: "navicular-drop", name: "Navicular drop test", segment: "pied", type: "biomeca", video: "",
+    goal: "Quantifier l'affaissement de l'arche médiale en charge.",
+    position: "Patient assis puis debout.",
+    steps: [
+      "Patient assis, pied à plat, articulation sous-talienne en position neutre : mesurer la hauteur de la tubérosité naviculaire par rapport au sol.",
+      "Patient debout, en appui relâché : mesurer à nouveau cette hauteur.",
+      "Calculer la différence."
+    ],
+    result: "Une chute d'environ 5 à 9 mm est habituelle. Au-delà de 10 mm : pronation excessive."
+  },
+  {
+    id: "jack", name: "Test de Jack", segment: "pied", type: "biomeca", video: "",
+    goal: "Évaluer le mécanisme de treuil (windlass) et la mobilité de la 1re articulation métatarso-phalangienne.",
+    position: "Patient debout, en appui bipodal relâché.",
+    steps: [
+      "Mettre passivement le gros orteil en flexion dorsale.",
+      "Observer la remontée de l'arche médiale et la rotation externe du tibia.",
+      "Apprécier la résistance ressentie."
+    ],
+    result: "Normalement l'arche remonte facilement. Une forte résistance ou une arche qui ne remonte pas : mécanisme de treuil retardé, souvent observé chez les pieds pronateurs ou en cas d'hallux limitus fonctionnel."
+  },
+  {
+    id: "windlass", name: "Windlass test", segment: "pied", type: "biomeca", video: "",
+    goal: "Reproduire une douleur d'aponévrosite plantaire.",
+    position: "Patient debout (en charge) ou assis (hors charge).",
+    steps: [
+      "Mettre passivement le gros orteil en flexion dorsale maximale.",
+      "Maintenir quelques secondes.",
+      "Interroger sur la douleur."
+    ],
+    result: "Positif si la douleur plantaire habituelle (souvent au talon, sur l'insertion de l'aponévrose) est reproduite."
+  },
+  {
+    id: "supination-resistance", name: "Supination resistance test", segment: "pied", type: "biomeca", video: "",
+    goal: "Estimer la force nécessaire pour supiner le pied (selon Kirby).",
+    position: "Patient debout, en appui bipodal relâché.",
+    steps: [
+      "Placer deux doigts sous la tubérosité naviculaire, côté médial.",
+      "Tirer vers le haut pour amener le pied en supination.",
+      "Apprécier la force nécessaire : faible, moyenne ou élevée."
+    ],
+    result: "Une résistance élevée indique un moment pronateur important : utile pour adapter la correction des orthèses plantaires."
+  },
+  {
+    id: "single-heel-raise", name: "Montée sur pointe unipodale", segment: "pied", type: "biomeca", video: "",
+    goal: "Évaluer la fonction du tibial postérieur et du triceps sural.",
+    position: "Patient debout sur une jambe, doigts en appui léger sur un mur.",
+    steps: [
+      "Demander de monter sur la pointe du pied le plus haut possible.",
+      "Observer l'arrière-pied de dos.",
+      "Répéter jusqu'à fatigue (compter les répétitions)."
+    ],
+    result: "Normalement le talon part en varus (vers l'intérieur) pendant la montée. Absence de varus, montée impossible ou très douloureuse : dysfonction du tibial postérieur."
+  },
+  {
+    id: "mulder", name: "Test de Mulder", segment: "pied", type: "biomeca", video: "",
+    goal: "Rechercher un névrome de Morton.",
+    position: "Patient en décubitus dorsal ou assis.",
+    steps: [
+      "Comprimer latéralement l'avant-pied d'une main.",
+      "Appuyer de l'autre main dans l'espace entre les têtes métatarsiennes suspect (souvent le 3e espace).",
+    ],
+    result: "Positif si un ressaut (« clic ») est perçu et que la douleur habituelle est reproduite."
+  },
+
+  // ---------- POSTUROLOGIE GLOBALE ----------
+  {
+    id: "romberg", name: "Test de Romberg", segment: "global", type: "posturo", video: "",
+    goal: "Évaluer la stabilité posturale et la place de la vision dans l'équilibre.",
+    position: "Patient debout, pieds joints, bras le long du corps.",
+    steps: [
+      "Observer le patient 30 secondes les yeux ouverts.",
+      "Recommencer 30 secondes les yeux fermés.",
+      "Rester à proximité pour éviter une chute."
+    ],
+    result: "Une instabilité nettement plus marquée les yeux fermés indique une dépendance visuelle ou une atteinte proprioceptive / vestibulaire."
+  },
+  {
+    id: "fukuda", name: "Test de piétinement de Fukuda", segment: "global", type: "posturo", video: "",
+    goal: "Mettre en évidence une asymétrie du tonus postural (notamment d'origine vestibulaire).",
+    position: "Patient debout, bras tendus devant lui, yeux fermés (ou bandés).",
+    steps: [
+      "Faire marcher sur place 50 pas, en levant bien les genoux.",
+      "Mesurer l'angle de rotation et la distance parcourue à la fin."
+    ],
+    result: "Une rotation supérieure à environ 30-45° (selon les auteurs) indique une asymétrie, du côté de la rotation."
+  },
+  {
+    id: "unipodal-chrono", name: "Appui unipodal chronométré", segment: "global", type: "posturo", video: "",
+    goal: "Évaluer l'équilibre en appui sur une jambe.",
+    position: "Patient debout, bras croisés sur la poitrine.",
+    steps: [
+      "Le patient lève une jambe (genou à 90° ou pied décollé).",
+      "Chronométrer jusqu'à la perte d'équilibre, avec un maximum de 30 secondes.",
+      "Refaire yeux fermés, puis de l'autre côté."
+    ],
+    result: "Comparer les deux côtés et suivre l'évolution. Un temps court est un facteur de risque de chute chez la personne âgée."
+  },
+  {
+    id: "convergence", name: "Test de convergence oculaire", segment: "global", type: "posturo", video: "",
+    goal: "Rechercher une insuffisance de convergence pouvant perturber la posture.",
+    position: "Patient assis ou debout, tête droite.",
+    steps: [
+      "Approcher lentement une cible (stylo) vers le nez, sur la ligne médiane.",
+      "Observer les deux yeux.",
+      "Noter la distance à laquelle un œil décroche (part vers l'extérieur)."
+    ],
+    result: "Un œil qui décroche à plus de 6 à 10 cm du nez évoque une insuffisance de convergence : avis orthoptique conseillé."
+  },
+  {
+    id: "maddox", name: "Test de Maddox", segment: "global", type: "posturo", video: "",
+    goal: "Rechercher une hétérophorie (déséquilibre des muscles oculomoteurs).",
+    position: "Patient assis, regardant une source lumineuse ponctuelle à distance.",
+    steps: [
+      "Placer la baguette de Maddox (verre strié rouge) devant un œil.",
+      "Le patient voit un point lumineux avec un œil et une ligne rouge avec l'autre.",
+      "Demander où se situe la ligne par rapport au point, en position horizontale puis verticale de la baguette."
+    ],
+    result: "Si la ligne passe par le point : pas d'hétérophorie. Un décalage indique une hétérophorie dont le sens oriente le diagnostic."
+  },
+  {
+    id: "verticale-barre", name: "Verticale de Barré", segment: "global", type: "posturo", video: "",
+    goal: "Observer l'alignement postural dans le plan frontal.",
+    position: "Patient debout, de dos, pieds légèrement écartés, posture habituelle.",
+    steps: [
+      "Placer un fil à plomb passant entre les deux malléoles internes.",
+      "Observer s'il passe par le pli fessier, les épineuses vertébrales et le vertex."
+    ],
+    result: "Un décalage du fil indique une bascule ou une translation latérale du corps, à mettre en lien avec les autres examens."
+  }
+];
+
+const SEGMENTS = [
+  { id: "tous",     label: "Tous les tests" },
+  { id: "global",   label: "Posturologie globale" },
+  { id: "rachis",   label: "Rachis" },
+  { id: "bassin",   label: "Bassin" },
+  { id: "hanche",   label: "Hanche" },
+  { id: "genou",    label: "Genou" },
+  { id: "cheville", label: "Cheville" },
+  { id: "pied",     label: "Pied" }
+];
+
+const TYPES = [
+  { id: "tous",    label: "Tout" },
+  { id: "biomeca", label: "Biomécanique" },
+  { id: "posturo", label: "Posturologie" }
+];
+
+/* ===================== Fonctionnement de la page ===================== */
+
+const state = { segment: "tous", type: "tous", query: "" };
+const $ = (sel) => document.querySelector(sel);
+
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => (
+  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+));
+const normalize = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const segmentLabel = (id) => SEGMENTS.find((s) => s.id === id)?.label ?? id;
+const typeLabel = (id) => TYPES.find((t) => t.id === id)?.label ?? id;
+
+function matches(test) {
+  if (state.segment !== "tous" && test.segment !== state.segment) return false;
+  if (state.type !== "tous" && test.type !== state.type) return false;
+  if (!state.query) return true;
+  const text = normalize([test.name, test.goal, segmentLabel(test.segment)].join(" "));
+  return normalize(state.query).split(/\s+/).every((word) => text.includes(word));
+}
+
+function tagsHtml(test) {
+  return `
+    <span class="tag">${escapeHtml(segmentLabel(test.segment))}</span>
+    <span class="tag ${test.type === "posturo" ? "posturo" : ""}">${escapeHtml(typeLabel(test.type))}</span>
+    ${test.video ? '<span class="tag video">▶ Vidéo</span>' : ""}`;
+}
+
+function renderSegments() {
+  $("#segments").innerHTML = SEGMENTS.map((seg) => {
+    const count = seg.id === "tous" ? TESTS.length : TESTS.filter((t) => t.segment === seg.id).length;
+    return `<button class="seg-btn" data-seg="${seg.id}" aria-pressed="${state.segment === seg.id}">
+      <span>${escapeHtml(seg.label)}</span><span class="count">${count}</span></button>`;
+  }).join("");
+}
+
+function renderTypes() {
+  $("#types").innerHTML = TYPES.map((t) =>
+    `<button class="chip" data-type="${t.id}" aria-pressed="${state.type === t.id}">${escapeHtml(t.label)}</button>`
+  ).join("");
+}
+
+function renderGrid() {
+  const list = TESTS.filter(matches);
+  $("#result-info").textContent = `${list.length} test${list.length > 1 ? "s" : ""}`;
+  $("#grid").innerHTML = list.length
+    ? list.map((t) => `
+        <button class="card" data-id="${t.id}">
+          <h3>${escapeHtml(t.name)}</h3>
+          <p>${escapeHtml(t.goal)}</p>
+          <div class="tags">${tagsHtml(t)}</div>
+        </button>`).join("")
+    : "<p>Aucun test ne correspond à la recherche.</p>";
+}
+
+function videoHtml(url) {
+  if (!url) {
+    return '<div class="video empty">Vidéo de démonstration à venir</div>';
+  }
+  const yt = url.match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/);
+  if (yt) {
+    return `<div class="video"><iframe src="https://www.youtube-nocookie.com/embed/${yt[1]}" title="Vidéo" allowfullscreen></iframe></div>`;
+  }
+  const vimeo = url.match(/vimeo\.com\/(\d+)/);
+  if (vimeo) {
+    return `<div class="video"><iframe src="https://player.vimeo.com/video/${vimeo[1]}" title="Vidéo" allowfullscreen></iframe></div>`;
+  }
+  return `<div class="video"><video src="${escapeHtml(url)}" controls playsinline></video></div>`;
+}
+
+function openTest(id) {
+  const test = TESTS.find((t) => t.id === id);
+  if (!test) return;
+  $("#sheet-title").textContent = test.name;
+  $("#sheet-tags").innerHTML = tagsHtml(test);
+  $("#sheet-body").innerHTML = `
+    ${videoHtml(test.video)}
+    <h3>Objectif</h3><p>${escapeHtml(test.goal)}</p>
+    <h3>Position</h3><p>${escapeHtml(test.position)}</p>
+    <h3>Déroulement</h3><ol>${test.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ol>
+    <h3>Interprétation</h3><p>${escapeHtml(test.result)}</p>`;
+  if (!$("#sheet").open) $("#sheet").showModal();
+  if (location.hash !== "#" + id) history.replaceState(null, "", "#" + id);
+}
+
+function closeTest() {
+  $("#sheet").close();
+}
+
+$("#sheet").addEventListener("close", () => {
+  $("#sheet-body").innerHTML = ""; // arrête la vidéo en cours
+  history.replaceState(null, "", location.pathname + location.search);
+});
+$("#close").addEventListener("click", closeTest);
+$("#sheet").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeTest(); });
+
+$("#segments").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-seg]");
+  if (!btn) return;
+  state.segment = btn.dataset.seg;
+  renderSegments();
+  renderGrid();
+});
+$("#types").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-type]");
+  if (!btn) return;
+  state.type = btn.dataset.type;
+  renderTypes();
+  renderGrid();
+});
+$("#search").addEventListener("input", (e) => {
+  state.query = e.target.value.trim();
+  renderGrid();
+});
+$("#grid").addEventListener("click", (e) => {
+  const card = e.target.closest("[data-id]");
+  if (card) openTest(card.dataset.id);
+});
+
+renderSegments();
+renderTypes();
+renderGrid();
+// Un lien du type .../#thomas ouvre directement la fiche du test
+if (location.hash) openTest(location.hash.slice(1));
+</script>
+</body>
+</html>
