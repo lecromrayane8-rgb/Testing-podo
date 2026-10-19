@@ -4,11 +4,12 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import ccxt
 
-from tradingbot.backtest import format_report, run_backtest
+from tradingbot.backtest import format_comparison, format_report, run_backtest
 from tradingbot.broker import CcxtBroker, PaperBroker
 from tradingbot.config import ConfigError, Settings, load_dotenv
 from tradingbot.data import load_csv, load_or_fetch
@@ -30,7 +31,7 @@ def make_broker(s: Settings):
     if s.mode == "paper":
         data = CcxtBroker(s.exchange, s.symbol)
         wallet = s.data_dir / f"paper_wallet_{s.exchange}_{s.symbol.replace('/', '-')}.json"
-        return PaperBroker(data, wallet, s.paper_start_balance, s.fee_rate, s.slippage)
+        return PaperBroker(data, wallet, s.paper_start_balance, s.execution)
     venue = {"testnet": "testnet", "demo": "demo", "live": "real"}[s.mode]
     return CcxtBroker(s.exchange, s.symbol, s.api_key, s.api_secret, s.api_password, venue=venue)
 
@@ -45,9 +46,18 @@ def cmd_backtest(s: Settings, args: argparse.Namespace) -> None:
         df = load_csv(Path(args.csv))
     else:
         df = load_or_fetch(s.exchange, s.symbol, s.timeframe, args.days, s.data_dir / "cache")
-    result = run_backtest(df, s.strategy, s.risk, args.capital, s.fee_rate, s.slippage)
+    results = {
+        order_type: run_backtest(df, s.strategy, s.risk, args.capital, replace(s.execution, order_type=order_type))
+        for order_type in ("market", "limit")
+    }
+    result = results[s.execution.order_type]
     print(f"\n=== Backtest {s.symbol} {s.timeframe} sur {s.exchange} ===")
     print(format_report(result.metrics))
+    print(
+        f"\nComparaison (frais taker {100 * s.execution.fee_rate:.3f} %, "
+        f"maker {100 * s.execution.maker_fee_rate:.3f} %) :"
+    )
+    print(format_comparison(results))
     out = s.data_dir / "backtest_trades.csv"
     result.trades_frame().to_csv(out, index=False)
     result.equity.to_csv(s.data_dir / "backtest_equity.csv")
@@ -65,6 +75,18 @@ def cmd_check(s: Settings, args: argparse.Namespace) -> None:
     print(f"Prix {s.symbol} : {price:.2f}")
     print(f"Soldes disponibles : {balances.base:.8f} {base} | {balances.quote:.2f} {quote}")
     print(f"Dernière bougie {s.timeframe} : {candles.index[-1]}")
+    fees = broker.trading_fees()
+    if fees is None:
+        print("Frais du compte : non fournis par la plateforme (vérifie-les sur son site)")
+        return
+    maker, taker = fees
+    print(f"Frais {'simulés' if s.mode == 'paper' else 'du compte'} : maker {100 * maker:.3f} % | taker {100 * taker:.3f} %")
+    if maker >= taker:
+        print("  -> Ici un ordre limite ne coûte pas moins cher en frais : il évite seulement l'écart et le glissement.")
+    else:
+        print(f"  -> Un ordre limite économise {100 * (taker - maker):.3f} % par ordre exécuté.")
+    if s.mode != "paper" and (abs(maker - s.execution.maker_fee_rate) > 1e-9 or abs(taker - s.execution.fee_rate) > 1e-9):
+        print(f"  -> Mets MAKER_FEE_RATE={maker} et FEE_RATE={taker} dans .env pour des backtests réalistes.")
 
 
 def cmd_run(s: Settings, args: argparse.Namespace) -> None:
@@ -100,7 +122,11 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("reset-guard", help="réarmer le bot après un arrêt pour drawdown (bot arrêté)")
     args = parser.parse_args(argv)
 
-    settings = Settings.from_env()
+    try:
+        settings = Settings.from_env()
+    except ValueError as exc:
+        print(f"Configuration invalide : {exc}", file=sys.stderr)
+        return 2
     setup_logging(settings.data_dir)
     commands = {"backtest": cmd_backtest, "check": cmd_check, "run": cmd_run, "reset-guard": cmd_reset_guard}
     try:

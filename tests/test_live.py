@@ -7,19 +7,21 @@ import pytest
 from tests.conftest import FakeBroker, frame_from_closes
 from tradingbot.backtest import run_backtest
 from tradingbot.config import ConfigError, Settings
+from tradingbot.execution import ExecutionParams
 from tradingbot.live import Bot, StateStore
 from tradingbot.risk import RiskParams
 from tradingbot.strategy import StrategyParams
 
 STRAT = StrategyParams(trend_period=50, rsi_period=2, rsi_entry=10, exit_period=5, atr_period=5, stop_atr_mult=3)
 RISK = RiskParams(risk_per_trade=0.02, max_position_pct=1.0, daily_loss_limit=0.99, max_drawdown=0.99)
+FREE = ExecutionParams(fee_rate=0.0, maker_fee_rate=0.0, slippage=0.0)
 
 
 def settings(tmp_path: Path, **overrides) -> Settings:
     base = Settings(
         mode="paper", exchange="binance", symbol="BTC/USDT", timeframe="1h", api_key="", api_secret="",
-        api_password="", poll_seconds=1, max_capital=0.0, paper_start_balance=10_000.0, fee_rate=0.0,
-        slippage=0.0, data_dir=tmp_path, live_confirmed=False, strategy=STRAT, risk=RISK,
+        api_password="", poll_seconds=1, max_capital=0.0, paper_start_balance=10_000.0, data_dir=tmp_path,
+        live_confirmed=False, strategy=STRAT, risk=RISK, execution=FREE,
     )
     return replace(base, **overrides)
 
@@ -38,7 +40,7 @@ def test_live_matches_backtest(tmp_path, random_walk):
     """Rejouée bougie par bougie, la boucle live prend exactement les trades du backtest."""
     strat = replace(STRAT, stop_atr_mult=100)  # stops intrabar exclus : le live ne voit que les ouvertures ici
     df = random_walk.iloc[:1500]
-    expected = run_backtest(df, strat, RISK, fee_rate=0.0, slippage=0.0).trades
+    expected = run_backtest(df, strat, RISK, execution=FREE).trades
     expected = [t for t in expected if t.reason != "fin du test"]
 
     bot, broker = make_bot(tmp_path, df, strategy=strat)
@@ -118,3 +120,75 @@ def test_live_mode_requires_explicit_confirmation(tmp_path):
     with pytest.raises(ConfigError, match="API_KEY"):
         settings(tmp_path, mode="testnet").validate_for_trading()
     settings(tmp_path, mode="live", live_confirmed=True, max_capital=100.0, **keys).validate_for_trading()
+
+
+LIMIT = replace(FREE, order_type="limit")
+
+
+@pytest.mark.parametrize("fallback", ["skip", "market"])
+def test_live_limit_orders_match_backtest(tmp_path, random_walk, fallback):
+    strat = replace(STRAT, stop_atr_mult=100)
+    execution = replace(LIMIT, limit_entry_fallback=fallback, limit_timeout_bars=2)
+    df = random_walk.iloc[:1500]
+    expected = [t for t in run_backtest(df, strat, RISK, execution=execution).trades if t.reason != "fin du test"]
+
+    bot, broker = make_bot(tmp_path, df, strategy=strat, execution=execution)
+    for i in range(1, len(df)):
+        bot.step(broker.at_open(i))
+
+    buys = [o for o in broker.orders if o[0] == "buy"]
+    sells = [o for o in broker.orders if o[0] == "sell"]
+    assert len(expected) > 10
+    assert len(sells) == len(expected)
+    for trade, buy, sell in zip(expected, buys, sells):
+        assert buy[2] == pytest.approx(trade.entry_price)
+        assert sell[2] == pytest.approx(trade.exit_price)
+        assert buy[1] == pytest.approx(trade.qty)
+
+
+def test_stop_cancels_pending_limit_sell(tmp_path):
+    df = dip_scenario([156.0, 159.0, 161.0, 162.0])
+    bot, broker = make_bot(tmp_path, df, execution=LIMIT)
+    for i in range(95, 105):
+        bot.step(broker.at_open(i))
+    order = bot.state["order"]
+    assert order and order["side"] == "sell"  # sortie « rebond » en attente d'exécution
+    broker.price = bot.state["position"]["stop"] - 0.01
+    bot.step(int(df["ts"].iloc[104]) + 60_000)
+    assert broker.limits[order["id"]]["status"] == "canceled"
+    assert broker.orders[-1] == ("sell", pytest.approx(order["qty"]), broker.price)
+    assert bot.state["position"] is None and bot.state["order"] is None
+    assert "stop" in (tmp_path / "trades.csv").read_text()
+
+
+def test_post_only_rejection_is_retried_at_new_price(tmp_path):
+    df = dip_scenario([156.0])
+    bot, broker = make_bot(tmp_path, df, execution=LIMIT)
+    broker.reject_post_only = 2
+    for i in range(95, 103):
+        bot.step(broker.at_open(i))
+    assert bot.state["order"]["side"] == "buy"
+
+
+@pytest.mark.parametrize("fallback, expected_orders", [("skip", []), ("market", ["buy"])])
+def test_post_only_rejected_three_times_uses_fallback(tmp_path, fallback, expected_orders):
+    df = dip_scenario([156.0])
+    bot, broker = make_bot(tmp_path, df, execution=replace(LIMIT, limit_entry_fallback=fallback))
+    broker.reject_post_only = 3
+    for i in range(95, 103):
+        bot.step(broker.at_open(i))
+    assert bot.state["order"] is None
+    assert [o[0] for o in broker.orders] == expected_orders
+
+
+def test_pending_limit_order_survives_restart(tmp_path):
+    df = dip_scenario([156.0, 159.0])
+    bot, broker = make_bot(tmp_path, df, execution=LIMIT)
+    for i in range(95, 103):
+        bot.step(broker.at_open(i))
+    assert bot.state["order"]
+
+    restarted = Bot(broker, bot.s, StateStore(tmp_path / "state.json"))
+    restarted.step(broker.at_open(103))
+    assert restarted.state["order"] is None
+    assert restarted.state["position"]["entry_price"] == df["open"].iloc[102]

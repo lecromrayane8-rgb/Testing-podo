@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass, fields
 from pathlib import Path
 
+from .execution import ExecutionParams
 from .risk import RiskParams
 from .strategy import StrategyParams
 
@@ -35,7 +36,8 @@ def _params_from_env(cls):
     for f in fields(cls):
         raw = os.environ.get(f.name.upper(), "").strip()
         if raw:
-            overrides[f.name] = type(getattr(defaults, f.name))(raw)
+            default = getattr(defaults, f.name)
+            overrides[f.name] = raw.lower() if isinstance(default, str) else type(default)(raw)
     return cls(**overrides)
 
 
@@ -55,12 +57,11 @@ class Settings:
     poll_seconds: int
     max_capital: float
     paper_start_balance: float
-    fee_rate: float
-    slippage: float
     data_dir: Path
     live_confirmed: bool
     strategy: StrategyParams
     risk: RiskParams
+    execution: ExecutionParams
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -75,12 +76,11 @@ class Settings:
             poll_seconds=int(_env("POLL_SECONDS", "30")),
             max_capital=float(_env("MAX_CAPITAL", "0")),
             paper_start_balance=float(_env("PAPER_START_BALANCE", "10000")),
-            fee_rate=float(_env("FEE_RATE", "0.001")),
-            slippage=float(_env("SLIPPAGE", "0.0005")),
             data_dir=Path(_env("DATA_DIR", "data")),
             live_confirmed=_env("CONFIRM_LIVE_TRADING") == LIVE_CONFIRMATION,
             strategy=_params_from_env(StrategyParams),
             risk=_params_from_env(RiskParams),
+            execution=_params_from_env(ExecutionParams),
         )
 
     def validate_for_trading(self) -> None:

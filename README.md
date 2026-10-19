@@ -26,9 +26,43 @@ Ce type de stratégie a souvent un taux de réussite élevé, car la plupart des
 En contrepartie, les pertes (stops) sont plus grosses que les gains. Selon le marché et la période,
 l'espérance peut être positive ou négative : **le backtest tranche**.
 
-Les signaux sont calculés sur des bougies **clôturées** et exécutés juste après, au marché. Le backtest
-applique exactement les mêmes règles (exécution à l'ouverture suivante, frais et slippage inclus). Un test
-vérifie que le bot en direct prend les mêmes trades que le backtest sur les mêmes données.
+Les signaux sont calculés sur des bougies **clôturées** et exécutés juste après (au marché ou par ordre
+limite, voir plus bas). Le backtest applique exactement les mêmes règles (exécution à l'ouverture suivante,
+frais et slippage inclus). Des tests vérifient que le bot en direct prend les mêmes trades que le backtest
+sur les mêmes données, dans les deux modes d'ordres.
+
+## Ordres à cours limité (réduire les frais)
+
+Avec `ORDER_TYPE=limit`, le bot n'achète plus au marché : il place un ordre d'achat **au meilleur prix
+acheteur** du carnet (et un ordre de vente au meilleur prix vendeur pour sortir). Ces ordres sont
+**post-only** : la plateforme les refuse s'ils devaient s'exécuter immédiatement au prix du marché. Ils paient
+donc toujours le tarif « maker », et jamais d'écart acheteur/vendeur ni de glissement.
+
+| Variable | Défaut | Rôle |
+|---|---|---|
+| `ORDER_TYPE` | `market` | `market` ou `limit` |
+| `FEE_RATE` | `0.001` | frais d'un ordre au marché (taker) |
+| `MAKER_FEE_RATE` | `0.001` | frais d'un ordre limite exécuté (maker) |
+| `LIMIT_TIMEOUT_BARS` | `1` | durée de vie de l'ordre limite, en bougies |
+| `LIMIT_ENTRY_FALLBACK` | `skip` | achat non exécuté à temps : `skip` (trade abandonné) ou `market` (achat au marché) |
+
+Ce qui se passe quand l'ordre n'est pas exécuté avant la fin de sa durée de vie :
+- **à l'achat** : le trade est abandonné (`skip`) ou acheté au marché (`market`) ;
+- **à la vente** : toujours vendu au marché, le bot ne reste jamais coincé dans une position ;
+- **stop-loss** : toujours au marché, immédiatement. Si le stop est touché pendant qu'un ordre de vente limite
+  attend, cet ordre est annulé et la position vendue au marché.
+
+**Est-ce que ça réduit vraiment tes frais ?** Ça dépend de ta plateforme et de ton niveau de compte.
+Chez Binance au tarif de base, maker et taker coûtent tous les deux 0,1 % : l'ordre limite ne fait alors
+économiser que l'écart et le glissement, soit peu sur une paire très liquide comme BTC/USDT. D'autres
+plateformes (ou des niveaux de compte plus élevés) facturent moins cher les ordres maker. Pour le savoir :
+1. `python main.py check` (en mode testnet, demo ou live) affiche les frais **réels de ton compte** ;
+2. reporte-les dans `FEE_RATE` et `MAKER_FEE_RATE` ;
+3. `python main.py backtest` compare automatiquement les deux modes sur l'historique.
+
+Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit tout de suite, tu rates le trade
+(`skip`) ou tu achètes plus cher (`market`). Le backtest compte une exécution seulement si le prix passe
+**strictement** au-delà de ta limite : être au même prix ne garantit pas d'être servi.
 
 ## Gestion du risque
 
@@ -135,7 +169,9 @@ Fichiers produits dans `data/` : `bot.log` (journal), `state_*.json` (position e
 
 ## Limites connues
 
-- Une seule paire, achat seulement, ordres au marché.
+- Une seule paire, achat seulement.
+- En mode limite, le backtest ne voit que les bougies : il ne sait pas si l'ordre aurait été servi dans la file
+  d'attente à ton prix. Le testnet donne une idée plus réaliste du taux d'exécution.
 - Le stop n'existe que tant que le bot tourne : il n'y a pas d'ordre stop posé sur la plateforme.
 - Les prix du testnet Binance peuvent s'écarter fortement du marché réel ; le mode `demo` est plus réaliste.
 - Les frais payés en BNB ne sont pas déduits du PnL calculé par le bot.
