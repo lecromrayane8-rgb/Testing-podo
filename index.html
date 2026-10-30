@@ -107,7 +107,7 @@
   .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: auto; }
   .tag { font-size: .75rem; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
   .tag.posturo { background: var(--posturo-soft); color: var(--posturo); }
-  .tag.video { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .tag.media { background: transparent; border: 1px solid var(--border); color: var(--muted); }
 
   /* Fiche détaillée d'un test */
   dialog {
@@ -136,6 +136,12 @@
     background: var(--bg); border: 2px dashed var(--border);
     display: grid; place-items: center; color: var(--muted); text-align: center; padding: 16px;
   }
+  .demo3d {
+    height: min(78vh, 640px); min-height: 520px; border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden; margin-bottom: 6px;
+  }
+  .demo3d iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .demo3d-link { display: inline-block; margin-bottom: 16px; font-size: .9rem; color: var(--accent); }
   .sheet-body h3 { font-size: .95rem; margin: 18px 0 6px; color: var(--accent); }
   .sheet-body p, .sheet-body li { margin: 0 0 6px; }
   .sheet-body ol, .sheet-body ul { padding-left: 20px; margin: 0; }
@@ -191,6 +197,7 @@
    - type    : "biomeca" ou "posturo"
    - video   : lien YouTube, lien Vimeo, ou fichier (ex. "videos/thomas.mp4").
                Laisser "" tant que la vidéo n'est pas prête.
+   - demo3d  : (facultatif) page de démonstration 3D, ex. "demos/thomas.html".
    ===================================================================== */
 const TESTS = [
   // ---------- RACHIS ----------
@@ -277,6 +284,7 @@ const TESTS = [
   // ---------- HANCHE ----------
   {
     id: "thomas", name: "Test de Thomas", segment: "hanche", type: "biomeca", video: "",
+    demo3d: "demos/thomas.html",
     goal: "Évaluer la souplesse des fléchisseurs de hanche (psoas, droit fémoral).",
     position: "Patient assis au bord de la table, puis basculé en décubitus dorsal.",
     steps: [
@@ -609,7 +617,8 @@ function tagsHtml(test) {
   return `
     <span class="tag">${escapeHtml(segmentLabel(test.segment))}</span>
     <span class="tag ${test.type === "posturo" ? "posturo" : ""}">${escapeHtml(typeLabel(test.type))}</span>
-    ${test.video ? '<span class="tag video">▶ Vidéo</span>' : ""}`;
+    ${test.demo3d ? '<span class="tag media">◆ Démo 3D</span>' : ""}
+    ${test.video ? '<span class="tag media">▶ Vidéo</span>' : ""}`;
 }
 
 function renderSegments() {
@@ -654,13 +663,21 @@ function videoHtml(url) {
   return `<div class="video"><video src="${escapeHtml(url)}" controls playsinline></video></div>`;
 }
 
+function mediaHtml(test) {
+  if (!test.demo3d) return videoHtml(test.video);
+  const src = escapeHtml(test.demo3d);
+  return `<div class="demo3d"><iframe src="${src}" title="Démonstration 3D : ${escapeHtml(test.name)}"></iframe></div>
+    <a class="demo3d-link" href="${src}" target="_blank" rel="noopener">Ouvrir la démo 3D en plein écran ↗</a>
+    ${test.video ? videoHtml(test.video) : ""}`;
+}
+
 function openTest(id) {
   const test = TESTS.find((t) => t.id === id);
   if (!test) return;
   $("#sheet-title").textContent = test.name;
   $("#sheet-tags").innerHTML = tagsHtml(test);
   $("#sheet-body").innerHTML = `
-    ${videoHtml(test.video)}
+    ${mediaHtml(test)}
     <h3>Objectif</h3><p>${escapeHtml(test.goal)}</p>
     <h3>Position</h3><p>${escapeHtml(test.position)}</p>
     <h3>Déroulement</h3><ol>${test.steps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}</ol>
