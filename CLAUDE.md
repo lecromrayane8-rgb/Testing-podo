@@ -22,10 +22,12 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - `main.py` : ligne de commande (`backtest`, `robustesse`, `check`, `run`, `tableau`, `reset-guard`).
 - `BOTS=PAIRE@UNITE,...` : plusieurs bots dans une boucle (`live.run_bots`). En paper, un compte fictif par bot ;
   sur un vrai compte, `MAX_CAPITAL` est le montant de chaque bot (validé dans `config.py`).
-- `tradingbot/strategy.py` : trois familles (`STRATEGY_TYPE`) : retour_moyenne (RSI(2), défaut), cassure (Donchian),
-  croisement (moyennes). `compute_signals` produit `entry`/`exit` pour le backtest ET le live (tests de parité).
-- `tradingbot/lab.py` : commande `labo`, 7 variantes × marchés × unités de temps, étude 60 % / validation 40 %,
-  Bonferroni sur le nombre d'essais, comparaison au buy & hold. Études sans garde-fous live (`research_risk`).
+- `tradingbot/strategy.py` : huit familles (`STRATEGY_TYPE`) : retour_moyenne (RSI, défaut), bollinger, cassure
+  (Donchian), bollinger_cassure, croisement, macd, momentum, supertrend. `compute_signals` produit `entry`/`exit`
+  pour le backtest ET le live (tests de parité par famille). Le backtest respecte le même temps de chauffe que le live.
+- `tradingbot/lab.py` : commande `labo`, 24 variantes × 7 marchés × 4 unités = 96 combinaisons, étude 60 % /
+  validation 40 %, Bonferroni (approximation normale) sur le nombre d'essais, comparaison au buy & hold.
+  Études sans garde-fous live (`research_risk`). Pas de levier dans le labo (choix de l'utilisateur, à revoir).
 - `tradingbot/backtest.py` : simulation bougie par bougie, mêmes règles que le live ; ordres au marché ou limites.
 - `tradingbot/live.py` : boucle live, état JSON dans `data/` repris au redémarrage, ordres limites suivis d'un tour à l'autre.
 - `tradingbot/broker.py` : plateforme via ccxt (testnet, demo, réel) et `PaperBroker` simulé.

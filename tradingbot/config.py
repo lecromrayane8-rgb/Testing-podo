@@ -38,7 +38,8 @@ def _params_from_env(cls):
         raw = os.environ.get(f.name.upper(), "").strip()
         if raw:
             default = getattr(defaults, f.name)
-            overrides[f.name] = raw.lower() if isinstance(default, str) else type(default)(raw)
+            # « 2,5 » à la française est accepté comme 2.5
+            overrides[f.name] = raw.lower() if isinstance(default, str) else type(default)(raw.replace(",", "."))
     return cls(**overrides)
 
 

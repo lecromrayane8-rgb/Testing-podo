@@ -15,6 +15,7 @@ import json
 import math
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from statistics import NormalDist
 
 import numpy as np
 
@@ -33,6 +34,19 @@ def research_risk(risk: RiskParams) -> RiskParams:
     stratégie perd, et ne laisserait juger qu'un bout de l'historique.
     """
     return replace(risk, daily_loss_limit=1.0, max_drawdown=1.0)
+
+
+def adjusted_lower_bound(values: np.ndarray, n_tests: int, alpha: float = 0.05) -> float:
+    """Borne basse de l'espérance avec un seuil durci pour `n_tests` essais (Bonferroni).
+
+    Approximation normale de la moyenne : le bootstrap ne sait pas estimer des queues aussi fines
+    que 0,05 / (2 × 100) avec un nombre raisonnable de tirages, alors que la moyenne de dizaines
+    de trades suit déjà une loi presque normale.
+    """
+    if len(values) < 2:
+        return math.nan
+    z = NormalDist().inv_cdf(1 - alpha / (2 * max(n_tests, 1)))
+    return float(np.mean(values) - z * np.std(values, ddof=1) / math.sqrt(len(values)))
 
 
 def bootstrap_means(values: np.ndarray, n_resamples: int = 20_000, seed: int = 0, chunk: int = 1_000) -> np.ndarray:
@@ -92,10 +106,10 @@ def evaluate(market: str, result: BacktestResult, n_tests: int, n_periods: int =
     returns = 100 * np.array([t.return_pct for t in result.trades])
     alpha = 0.05
     if len(returns) >= 2:
-        means = bootstrap_means(returns, seed=seed)
-        ci_low, ci_high, ci_low_adj = np.quantile(means, [alpha / 2, 1 - alpha / 2, alpha / max(n_tests, 1) / 2])
+        ci_low, ci_high = np.quantile(bootstrap_means(returns, seed=seed), [alpha / 2, 1 - alpha / 2])
     else:
-        ci_low = ci_high = ci_low_adj = math.nan
+        ci_low = ci_high = math.nan
+    ci_low_adj = adjusted_lower_bound(returns, n_tests, alpha)
     periods = period_means(result, n_periods)
     m = result.metrics
     return RobustnessRow(

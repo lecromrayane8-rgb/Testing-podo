@@ -293,7 +293,15 @@ def test_trade_journal_from_an_older_version_keeps_its_columns(tmp_path):
                    atr_period=5, stop_atr_mult=100, max_bars_in_trade=0),
     StrategyParams(strategy_type="croisement", fast_period=10, slow_period=40, trend_period=50,
                    atr_period=5, stop_atr_mult=100, max_bars_in_trade=0),
-], ids=["cassure", "croisement"])
+    StrategyParams(strategy_type="bollinger", trend_period=0, atr_period=5, stop_atr_mult=100),
+    StrategyParams(strategy_type="bollinger_cassure", trend_period=0, atr_period=5, stop_atr_mult=100,
+                   max_bars_in_trade=0),
+    StrategyParams(strategy_type="macd", trend_period=0, atr_period=5, stop_atr_mult=100, max_bars_in_trade=0),
+    StrategyParams(strategy_type="momentum", momentum_period=30, trend_period=0, atr_period=5,
+                   stop_atr_mult=100, max_bars_in_trade=0),
+    StrategyParams(strategy_type="supertrend", st_period=10, st_mult=3.0, trend_period=0, atr_period=5,
+                   stop_atr_mult=100, max_bars_in_trade=0),
+], ids=["cassure", "croisement", "bollinger", "bollinger_cassure", "macd", "momentum", "supertrend"])
 def test_trend_strategies_trade_live_exactly_like_the_backtest(tmp_path, random_walk, strat):
     df = random_walk.iloc[:1500]
     expected = [t for t in run_backtest(df, strat, RISK, execution=FREE).trades if t.reason != "fin du test"]

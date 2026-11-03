@@ -12,16 +12,23 @@ Bot de trading automatique en Python, connecté aux plateformes d'échange via [
 
 ## Les stratégies
 
-Le bot connaît trois familles de règles, choisies avec `STRATEGY_TYPE` dans `.env` :
+Le bot connaît huit familles de règles, choisies avec `STRATEGY_TYPE` dans `.env`. Deux achètent un repli,
+six suivent une tendance :
 
-| Famille | `STRATEGY_TYPE` | Achète quand… | Revend quand… | Profil |
-|---|---|---|---|---|
-| Retour à la moyenne (défaut) | `retour_moyenne` | le prix vient de chuter (RSI court survendu) dans une tendance haussière | le rebond a eu lieu | beaucoup de petits gains, pertes plus grosses |
-| Cassure (suivi de tendance) | `cassure` | la clôture dépasse le plus haut des N dernières bougies | elle passe sous le plus bas des M dernières | peu de gagnants, mais de gros gains dans les tendances |
-| Croisement de moyennes | `croisement` | la moyenne rapide croise la lente par le haut | elle la recroise par le bas | suit les grandes tendances, en retard au départ |
+| Famille | `STRATEGY_TYPE` | Achète quand… | Revend quand… |
+|---|---|---|---|
+| Repli RSI (défaut) | `retour_moyenne` | le RSI court est survendu dans une tendance haussière | le rebond a eu lieu (clôture > moyenne courte) |
+| Repli Bollinger | `bollinger` | la clôture passe sous la bande basse | elle revient sur la bande du milieu |
+| Cassure (Donchian) | `cassure` | la clôture dépasse le plus haut des N bougies précédentes | elle passe sous le plus bas des M précédentes |
+| Cassure Bollinger | `bollinger_cassure` | la clôture dépasse la bande haute | elle repasse sous la bande du milieu |
+| Croisement de moyennes | `croisement` | la moyenne rapide croise la lente par le haut | elle la recroise par le bas |
+| MACD | `macd` | la ligne MACD croise sa ligne de signal par le haut | elle la recroise par le bas |
+| Momentum | `momentum` | le prix repasse au-dessus de son niveau d'il y a N bougies | il retombe dessous |
+| Supertrend | `supertrend` | la tendance Supertrend devient haussière | elle redevient baissière |
 
-Toutes ont un stop-loss à k × ATR sous le prix d'achat. Les signaux sont identiques en backtest et en direct
-(`compute_signals`), et des tests le vérifient pour chaque famille. Le détail de la famille par défaut :
+Toutes ont un stop-loss à k × ATR sous le prix d'achat et un filtre de tendance optionnel (`TREND_PERIOD`,
+0 = aucun). Les signaux sont identiques en backtest et en direct (`compute_signals`), et des tests le vérifient
+pour chaque famille. Le détail de la famille par défaut :
 
 « Acheter les replis dans une tendance haussière », un classique de retour à la moyenne (famille RSI(2) de Larry Connors) :
 
@@ -146,15 +153,17 @@ python main.py labo                       # ou « 6 - Laboratoire de strategies.
 python main.py labo --csv-dir actions     # + des actions : CSV quotidiens Date,Open,High,Low,Close
 ```
 
-Le laboratoire essaie 7 variantes des trois familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
-l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour). Pour ne pas se
-laisser tromper par la chance :
+Le laboratoire essaie 24 variantes des huit familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
+l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour), soit 96
+combinaisons. Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la chance :
 
 1. **Étude puis validation** : chaque historique est coupé dans le temps. Les 60 % les plus anciens servent
    d'étude, les 40 % les plus récents de validation, et seule la validation décide.
 2. **Tous les marchés à la fois** : une structure qui marche doit marcher un peu partout, pas sur un seul
    marché choisi après coup.
-3. **Seuil durci par le nombre d'essais** : 28 combinaisons testées, donc un seuil 28 fois plus exigeant.
+3. **Seuil durci par le nombre d'essais** : 96 combinaisons testées, donc un seuil 96 fois plus exigeant
+   (correction de Bonferroni). Plus on ajoute de variantes, plus il est dur d'être retenu : c'est voulu.
+   Sur des prix purement aléatoires, aucune des 96 ne sort « prometteur ».
 4. **Comparaison au buy & hold** : la stratégie doit faire mieux, ou risquer bien moins, que garder l'actif.
 
 Verdicts : **prometteur** (tout est réuni), **à surveiller** (positif, mais le hasard peut l'expliquer),

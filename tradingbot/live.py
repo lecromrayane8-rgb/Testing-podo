@@ -82,7 +82,10 @@ class Bot:
         self.name = f"{settings.symbol} {settings.timeframe}"
         self.log = BotLog(log, {"bot": self.name})
         self.tf_ms = timeframe_to_ms(settings.timeframe)
-        self.lookback = min(settings.strategy.warmup_bars + 150, 1000)
+        # Assez d'historique pour que les moyennes exponentielles (RSI, ATR, MACD) et le Supertrend
+        # aient oublié leur point de départ : mêmes valeurs qu'en backtest sur tout l'historique.
+        warmup = settings.strategy.warmup_bars
+        self.lookback = min(max(3 * warmup, warmup + 300), 1000)
         self.state = store.load()
         self.state.setdefault("position", None)
         self.state.setdefault("order", None)

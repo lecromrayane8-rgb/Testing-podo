@@ -89,8 +89,8 @@ def test_overall_verdict_and_env_lines():
     promising = [r for r in rows]
     promising[0] = lab.LabRow(**{**promising[0].__dict__, "verdict": PROMISING})
     assert "La meilleure : Cassure" in overall_lab_verdict(promising)
-    assert "STRATEGY_TYPE=cassure" in env_lines(VARIANTS["Cassure 55 / 20"])
-    assert "BREAKOUT_PERIOD=55" in env_lines(VARIANTS["Cassure 55 / 20"])
+    assert "STRATEGY_TYPE=cassure" in env_lines(VARIANTS["Cassure 55/20"])
+    assert "BREAKOUT_PERIOD=55" in env_lines(VARIANTS["Cassure 55/20"])
 
 
 def test_lab_results_roundtrip(tmp_path):
@@ -128,4 +128,4 @@ def test_lab_command_tests_cryptos_and_stock_csvs(tmp_path, monkeypatch):
     assert saved["marches"] == ["AAPL", "BTC/USDT", "PAXG/USDT"]
     assert len(saved["rows"]) == len(VARIANTS) * 2
     page = (tmp_path / "data" / "tableau-de-bord.html").read_text(encoding="utf-8")
-    assert "Laboratoire de stratégies" in page and "Cassure 55 / 20" in page
+    assert "Laboratoire de stratégies" in page and "Cassure 55/20" in page

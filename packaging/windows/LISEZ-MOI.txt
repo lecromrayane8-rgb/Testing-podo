@@ -13,9 +13,10 @@ LES FICHIERS À DOUBLE-CLIQUER
 4 - Lancer le bot : les bots en argent fictif (par défaut BTC/USDT en 15 min, 1 h et 1 jour).
     Fermer la fenêtre les arrête ; les positions sont reprises au redémarrage.
 5 - Tableau de bord : la page de suivi dans ton navigateur (bots, trades, résultats des tests).
-6 - Laboratoire de strategies : 7 variantes de 3 techniques, sur cryptos, or et euro (et tes
-    actions, voir le dossier « actions »), en 15 min, 1 h, 4 h et 1 jour. Dit quelle structure
-    tient vraiment sur des données qu'elle n'a pas vues. Compter 5 à 15 minutes.
+6 - Laboratoire de strategies : 24 variantes de 8 techniques (RSI, Bollinger, cassures, moyennes
+    mobiles, MACD, momentum, Supertrend), sur cryptos, or et euro (et tes actions, voir le
+    dossier « actions »), en 15 min, 1 h, 4 h et 1 jour. Dit quelle structure tient vraiment sur
+    des données qu'elle n'a pas vues. Compter 10 à 20 minutes.
 Modifier les reglages : ouvre le fichier .env dans le Bloc-notes (stratégie, bots, mode, clés...).
 
 DANS L'ORDRE

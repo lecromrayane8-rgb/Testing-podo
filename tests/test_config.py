@@ -40,3 +40,12 @@ def test_several_bots_on_a_real_account_need_a_capital_each(tmp_path):
     with pytest.raises(ConfigError, match="MAX_CAPITAL"):
         settings(tmp_path, mode="testnet", api_key="k", api_secret="s", bots=two).validate_for_trading()
     settings(tmp_path, mode="testnet", api_key="k", api_secret="s", bots=two, max_capital=100.0).validate_for_trading()
+
+
+def test_french_decimal_comma_is_accepted(monkeypatch):
+    from tradingbot.config import _params_from_env
+    from tradingbot.strategy import StrategyParams
+    monkeypatch.setenv("STRATEGY_TYPE", "Bollinger")
+    monkeypatch.setenv("BB_STD", "2,5")
+    p = _params_from_env(StrategyParams)
+    assert p.strategy_type == "bollinger" and p.bb_std == 2.5

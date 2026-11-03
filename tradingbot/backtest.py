@@ -96,6 +96,7 @@ def run_backtest(
     index = data.index
     o, h, l, c, atr_ = (data[k].to_numpy(float) for k in ("open", "high", "low", "close", "atr"))
     entry_sig, exit_sig = data["entry"].to_numpy(bool), data["exit"].to_numpy(bool)
+    days = list(index.strftime("%Y-%m-%d"))  # calculé une fois : strftime par bougie coûtait cher
     n = len(data)
 
     cash = initial_capital
@@ -177,9 +178,12 @@ def run_backtest(
             check_stop(i)
 
         equity[i] = cash + (pos.qty * c[i] if pos else 0.0)
-        guard.update(equity[i], index[i].strftime("%Y-%m-%d"))
+        guard.update(equity[i], days[i])
 
-        # 3. À la clôture : signaux (aucun nouveau signal tant qu'un ordre limite est en attente).
+        # 3. À la clôture : signaux (aucun nouveau signal tant qu'un ordre limite est en attente),
+        #    seulement une fois l'historique de chauffe atteint, exactement comme le bot en direct.
+        if i + 1 < strategy.warmup_bars:
+            continue
         if pos:
             bars_in_market += 1
             reason = exit_reason(exit_sig[i], i - pos.entry_index + 1, strategy) if order is None else None

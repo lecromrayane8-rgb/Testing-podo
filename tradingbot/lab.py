@@ -22,7 +22,7 @@ import pandas as pd
 from .backtest import run_backtest
 from .execution import ExecutionParams
 from .risk import RiskParams
-from .robustness import MIN_TRADES, bootstrap_means, research_risk
+from .robustness import MIN_TRADES, adjusted_lower_bound, bootstrap_means, research_risk
 from .strategy import StrategyParams
 
 LAB_FILE = "laboratoire.json"
@@ -30,24 +30,39 @@ STUDY_SHARE = 0.6
 MIN_MARKET_TRADES = 5
 PROMISING = "prometteur"
 
+TREND = {"stop_atr_mult": 3.0, "max_bars_in_trade": 0}  # suivre une tendance : stop large, pas de stop temporel
+TURTLE = {"strategy_type": "cassure", "stop_atr_mult": 2.0, "max_bars_in_trade": 0}
+
 VARIANTS: dict[str, StrategyParams] = {
-    "Retour à la moyenne RSI(2) < 10": StrategyParams(),
-    "Retour à la moyenne RSI(2) < 5": StrategyParams(rsi_entry=5.0),
-    "Cassure 20 / 10": StrategyParams(
-        strategy_type="cassure", breakout_period=20, breakout_exit_period=10, trend_period=0,
-        stop_atr_mult=2.0, max_bars_in_trade=0),
-    "Cassure 55 / 20": StrategyParams(
-        strategy_type="cassure", breakout_period=55, breakout_exit_period=20, trend_period=0,
-        stop_atr_mult=2.0, max_bars_in_trade=0),
-    "Cassure 20 / 10 + tendance MM200": StrategyParams(
-        strategy_type="cassure", breakout_period=20, breakout_exit_period=10, trend_period=200,
-        stop_atr_mult=2.0, max_bars_in_trade=0),
-    "Croisement MM 20 / 100": StrategyParams(
-        strategy_type="croisement", fast_period=20, slow_period=100, trend_period=0,
-        stop_atr_mult=3.0, max_bars_in_trade=0),
-    "Croisement MM 50 / 200": StrategyParams(
-        strategy_type="croisement", fast_period=50, slow_period=200, trend_period=0,
-        stop_atr_mult=3.0, max_bars_in_trade=0),
+    # Acheter un repli : stop à 2,5 ATR, stop temporel de 24 bougies.
+    "Repli RSI(2) < 10 + MM200": StrategyParams(),
+    "Repli RSI(2) < 5 + MM200": StrategyParams(rsi_entry=5.0),
+    "Repli RSI(14) < 30 + MM200": StrategyParams(rsi_period=14, rsi_entry=30.0),
+    "Repli RSI(2) < 10 sans filtre": StrategyParams(trend_period=0),
+    "Bollinger rebond 20/2 + MM200": StrategyParams(strategy_type="bollinger"),
+    "Bollinger rebond 20/2,5 + MM200": StrategyParams(strategy_type="bollinger", bb_std=2.5),
+    "Bollinger rebond 20/2 sans filtre": StrategyParams(strategy_type="bollinger", trend_period=0),
+    # Suivre une tendance.
+    "Bollinger cassure 20/2": StrategyParams(strategy_type="bollinger_cassure", trend_period=0, **TREND),
+    "Bollinger cassure 20/2 + MM200": StrategyParams(strategy_type="bollinger_cassure", **TREND),
+    "Cassure 20/10": StrategyParams(breakout_period=20, breakout_exit_period=10, trend_period=0, **TURTLE),
+    "Cassure 55/20": StrategyParams(breakout_period=55, breakout_exit_period=20, trend_period=0, **TURTLE),
+    "Cassure 100/50": StrategyParams(breakout_period=100, breakout_exit_period=50, trend_period=0, **TURTLE),
+    "Cassure 20/10 + MM200": StrategyParams(breakout_period=20, breakout_exit_period=10, **TURTLE),
+    "Croisement MM 10/50": StrategyParams(strategy_type="croisement", fast_period=10, slow_period=50,
+                                          trend_period=0, **TREND),
+    "Croisement MM 20/100": StrategyParams(strategy_type="croisement", fast_period=20, slow_period=100,
+                                           trend_period=0, **TREND),
+    "Croisement MM 50/200": StrategyParams(strategy_type="croisement", fast_period=50, slow_period=200,
+                                           trend_period=0, **TREND),
+    "MACD 12/26/9": StrategyParams(strategy_type="macd", trend_period=0, **TREND),
+    "MACD 12/26/9 + MM200": StrategyParams(strategy_type="macd", **TREND),
+    "Momentum 50": StrategyParams(strategy_type="momentum", momentum_period=50, trend_period=0, **TREND),
+    "Momentum 100": StrategyParams(strategy_type="momentum", momentum_period=100, trend_period=0, **TREND),
+    "Momentum 200": StrategyParams(strategy_type="momentum", momentum_period=200, trend_period=0, **TREND),
+    "Supertrend 10/2": StrategyParams(strategy_type="supertrend", st_period=10, st_mult=2.0, trend_period=0, **TREND),
+    "Supertrend 10/3": StrategyParams(strategy_type="supertrend", st_period=10, st_mult=3.0, trend_period=0, **TREND),
+    "Supertrend 20/3": StrategyParams(strategy_type="supertrend", st_period=20, st_mult=3.0, trend_period=0, **TREND),
 }
 
 
@@ -113,11 +128,10 @@ def evaluate_variant(
         if len(market_valid) >= MIN_MARKET_TRADES:
             per_market.append(np.mean(market_valid))
     if len(valid) >= 2:
-        alpha = 0.05
-        means = bootstrap_means(np.array(valid))
-        ci_low, ci_high, ci_adj = (float(q) for q in np.quantile(means, [alpha / 2, 1 - alpha / 2, alpha / n_tests / 2]))
+        ci_low, ci_high = (float(q) for q in np.quantile(bootstrap_means(np.array(valid), n_resamples=10_000), [0.025, 0.975]))
     else:
-        ci_low = ci_high = ci_adj = math.nan
+        ci_low = ci_high = math.nan
+    ci_adj = adjusted_lower_bound(np.array(valid), n_tests)
     exp, study_exp = _mean(valid), _mean(study)
     positive = int(sum(m > 0 for m in per_market))
     return LabRow(
