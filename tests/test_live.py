@@ -352,3 +352,15 @@ def test_live_and_backtest_eliminate_a_losing_strategy_at_the_same_trade(tmp_pat
 def test_prices_in_messages_stay_readable_for_memecoins():
     assert px(68_450.0) == "68450.00" and px(187.43) == "187.43"
     assert px(0.00001234) == "0.000012340"  # PEPE : « 0.00 » ne dirait rien
+
+
+def test_short_history_warning_is_given_once_per_candle(tmp_path, caplog):
+    df = frame_from_closes(100 + np.arange(60, dtype=float))  # 60 bougies : moins que le temps de chauffe
+    bot, broker = make_bot(tmp_path, df)
+    with caplog.at_level(logging.WARNING, logger="tradingbot.live"):
+        now = broker.at_open(30)
+        bot.step(now)
+        bot.step(now + 30_000)  # même bougie, tour suivant : pas de nouveau message
+        bot.step(broker.at_open(31))
+    warnings = [r.getMessage() for r in caplog.records if "Pas assez d'historique" in r.getMessage()]
+    assert len(warnings) == 2 and "il en faut" in warnings[0]

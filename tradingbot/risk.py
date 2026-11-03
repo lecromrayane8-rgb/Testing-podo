@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
+from statistics import NormalDist
 
 Z_95 = 1.96
 CANDIDATE_MIN_TRADES = 30
@@ -60,9 +61,15 @@ def elimination_reason(stats: TradeStats, min_trades: int) -> str | None:
     return None
 
 
-def is_candidate(stats: TradeStats) -> bool:
-    """Gagnante de façon nette sur assez de trades : candidate au testnet (jamais à l'argent réel seule)."""
-    return stats.n >= CANDIDATE_MIN_TRADES and stats.bounds()[0] > 0
+def is_candidate(stats: TradeStats, n_tests: int = 1) -> bool:
+    """Gagnante de façon nette sur assez de trades : candidate au testnet (jamais à l'argent réel seule).
+
+    `n_tests` : nombre de bots (ou de stratégies) comparés. Parmi 80 bots sans aucun avantage, environ 2
+    passeraient le seuil à 95 % par chance : le seuil est durci d'autant (correction de Bonferroni)."""
+    if stats.n < CANDIDATE_MIN_TRADES:
+        return False
+    z = NormalDist().inv_cdf(1 - 0.025 / max(n_tests, 1))
+    return stats.bounds(z)[0] > 0
 
 
 def position_size(equity: float, entry_price: float, stop_price: float, p: RiskParams) -> float:

@@ -121,6 +121,7 @@ class Bot:
         self.state.setdefault("last_candle_ts", None)
         self.state.setdefault("capital", None)
         self.guard = RiskGuard.from_dict(settings.risk, self.state.get("guard"))
+        self._short_history_ts = -1  # dernière bougie signalée comme trop courte en historique
 
     # --- comptabilité -------------------------------------------------------------
     def _init_capital(self) -> None:
@@ -167,7 +168,13 @@ class Bot:
         candles = self.broker.fetch_candles(self.s.timeframe, self.lookback)
         closed = candles[candles["ts"] + self.tf_ms <= now_ms]
         if len(closed) < self.s.strategy.warmup_bars:
-            self.log.warning("Pas assez d'historique (%d bougies) pour calculer les indicateurs", len(closed))
+            latest = int(closed["ts"].iloc[-1]) if len(closed) else 0
+            if latest != self._short_history_ts:  # une fois par bougie, pas à chaque tour
+                self._short_history_ts = latest
+                self.log.warning(
+                    "Pas assez d'historique (%d bougies, il en faut %d) : le bot attend",
+                    len(closed), self.s.strategy.warmup_bars,
+                )
             return
         last_ts = int(closed["ts"].iloc[-1])
         if self.state["last_candle_ts"] is not None and last_ts <= self.state["last_candle_ts"]:

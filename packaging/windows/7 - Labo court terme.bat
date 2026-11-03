@@ -6,6 +6,6 @@ echo les 8 cryptos les plus agitees du moment et les memecoins assez echanges su
 echo 60 jours d'historique en 1 min, 300 jours en 5 min. Compter 20 a 40 minutes.
 echo Il dit si le tres court terme gagne encore une fois les frais payes.
 echo.
-tradingbot\tradingbot.exe labo --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --timeframes "1m,5m" --scanner 8 --memecoins
+tradingbot\tradingbot.exe labo --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --timeframes "1m,5m" --scanner 8 --memecoins --resultats laboratoire-court-terme.json
 echo.
 pause

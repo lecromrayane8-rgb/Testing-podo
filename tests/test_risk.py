@@ -63,3 +63,12 @@ def test_a_clearly_losing_strategy_is_eliminated_but_not_a_noisy_one():
     assert elimination_reason(noisy, 20) is None  # perd un peu, mais le hasard peut l'expliquer
     assert elimination_reason(losing, 0) is None  # 0 = jamais d'élimination
     assert is_candidate(winning) and not is_candidate(noisy)
+
+
+def test_candidate_threshold_hardens_with_the_number_of_bots_compared():
+    from tradingbot.risk import TradeStats, is_candidate
+    lucky = TradeStats()  # gain moyen de 2,3 écarts-types : convaincant seul, banal parmi 80 bots
+    for k in range(30):
+        lucky.add(0.0042 + (0.01 if k % 2 else -0.01))
+    assert is_candidate(lucky, n_tests=1)
+    assert not is_candidate(lucky, n_tests=80)

@@ -19,28 +19,34 @@ LES FICHIERS À DOUBLE-CLIQUER
     des données qu'elle n'a pas vues. Compter 10 à 20 minutes.
 7 - Labo court terme : les mêmes 24 variantes en bougies de 1 et 5 minutes, sur BTC, ETH, SOL, les
     8 cryptos les plus agitées du moment et les memecoins cotés sur Binance (DOGE, SHIB, PEPE,
-    FLOKI, BONK, WIF) quand ils sont assez échangés. Compter 20 à 40 minutes.
-8 - Tournoi en 1 minute : les stratégies « à surveiller » ou « prometteur » du DERNIER labo lancé
-    s'affrontent en argent fictif, en bougies d'1 minute, sur les cryptos agitées et les memecoins.
-    Chaque bot (une stratégie sur une crypto) a 1000 USDT fictifs. Le tableau de bord du tournoi
-    s'ouvre tout seul (dossier data\tournoi). Fermer la fenêtre arrête le tournoi.
+    FLOKI, BONK, WIF) quand ils sont assez échangés. Compter 20 à 40 minutes. Ses résultats ont
+    leur propre fichier : ils n'effacent plus ceux du labo 6.
+8 - Tournoi en 1 minute : les stratégies « à surveiller » du labo court terme (7) s'affrontent en
+    argent fictif, en bougies d'1 minute (dossier data\tournoi-court-terme). S'il n'en a retenu
+    aucune, le tournoi refuse de démarrer et le dit.
+9 - Tournoi long terme : les stratégies « à surveiller » ou « prometteur » du labo 6, chacune
+    dans son unité de temps (4 h, 1 jour...), sur les marchés du labo, les cryptos agitées et les
+    memecoins. Plus il y a de cryptos, plus les trades arrivent vite (dossier data\tournoi).
+    Dans les tournois, chaque bot (une stratégie sur une crypto) a 1000 USDT fictifs, le tableau
+    de bord s'ouvre tout seul et fermer la fenêtre arrête le tournoi.
 Modifier les reglages : ouvre le fichier .env dans le Bloc-notes (stratégie, bots, mode, clés...).
 
 DANS L'ORDRE
-1. Lance « 7 - Labo court terme » et envoie le tableau et le VERDICT à Claude.
-2. Lance « 8 - Tournoi en 1 minute » et laisse-le tourner plusieurs jours. Regarde le
-   « Classement » du tableau de bord : une stratégie y est marquée « candidate au testnet »
-   seulement après 30 trades nettement positifs, frais compris.
-3. Si le labo court terme ne retient aucune stratégie, c'est que le 1 minute perd après frais
-   sur ces marchés. Relance alors « 6 - Laboratoire de strategies », puis « 8 » : ses stratégies
-   « à surveiller » seront essayées en 1 minute (moins prouvé, mais en argent fictif).
+1. Lance « 6 - Laboratoire de strategies » (si tu as lancé le 7 après lui, ses résultats ont
+   été effacés par l'ancienne version : relance-le une fois).
+2. Lance « 9 - Tournoi long terme » et laisse-le tourner plusieurs semaines, PC allumé.
+3. Regarde le « Classement » et le tableau « Par stratégie » : une stratégie y est marquée
+   « candidate au testnet » seulement après 30 trades nettement positifs, frais compris, avec un
+   seuil d'autant plus dur qu'il y a de bots en compétition (sinon la chance en ferait gagner).
+4. Le court terme (7 puis 8) : seulement pour revérifier de temps en temps. Sur tes premiers
+   essais réels, il perdait partout après frais.
 
 LE GARDIEN (correction automatique)
 Après 20 trades, une stratégie qui perd nettement (même en comptant la malchance) est éliminée :
 le bot n'ouvre plus de position, et le tableau de bord affiche « Éliminée » avec la raison.
 Le gardien ne change JAMAIS les réglages d'une stratégie et ne passe jamais en argent réel :
-il coupe ce qui perd, c'est tout. Le tournoi reprend là où il s'était arrêté ; pour le
-recommencer de zéro, ferme-le et supprime le dossier data\tournoi.
+il coupe ce qui perd, c'est tout. Un tournoi reprend là où il s'était arrêté ; pour le
+recommencer de zéro, ferme-le et supprime son dossier (data\tournoi ou data\tournoi-court-terme).
 
 Si tu avais déjà un fichier .env d'une version précédente, ajoute-y cette ligne pour avoir
 les 3 bots : BOTS=BTC/USDT@15m,BTC/USDT@1h,BTC/USDT@1d

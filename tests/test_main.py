@@ -197,3 +197,66 @@ def test_tournament_explains_what_is_missing(tmp_path, monkeypatch, caplog):
     lab_file(tmp_path / "data" / "laboratoire.json", ("Cassure 20/10", "15m", "perd de l'argent", -0.4))
     assert main.main(["tournoi"]) == 1
     assert "aucune stratégie « à surveiller »" in caplog.text
+
+
+def test_short_term_lab_keeps_its_own_results_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    walk = frame_from_closes(100 * np.exp(np.cumsum(np.random.default_rng(3).normal(0.0, 0.01, 1500))))
+    monkeypatch.setattr(main, "load_or_fetch", lambda *args, **kwargs: walk)
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: None)
+    assert main.main(["labo", "--symbols", "BTC/USDT", "--timeframes", "1h",
+                      "--resultats", "laboratoire-court-terme.json"]) == 0
+    assert (tmp_path / "data" / "laboratoire-court-terme.json").exists()
+    assert not (tmp_path / "data" / "laboratoire.json").exists()  # le labo long terme n'est pas écrasé
+
+
+def test_each_lab_has_its_own_tournament_folder():
+    assert main.tournament_dir("laboratoire.json") == "tournoi"
+    assert main.tournament_dir("laboratoire-court-terme.json") == "tournoi-court-terme"
+
+
+def test_long_term_tournament_runs_on_the_lab_markets_at_their_own_pace(tmp_path, monkeypatch, caplog):
+    from tradingbot.scanner import ScanResult
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    data_dir = tmp_path / "data"
+    lab_file(data_dir / "laboratoire-court-terme.json", ("Supertrend 10/3", "1m", "perd de l'argent", -0.3))
+    payload = lab_file(data_dir / "laboratoire.json", ("Supertrend 10/3", "4h", "à surveiller", 0.5))
+    payload["marches"] = ["BTC/USDT", "ETH/USDT", "actions-AAPL"]  # un CSV d'actions ne se trade pas
+    (data_dir / "laboratoire.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    folder = data_dir / "tournoi"
+    folder.mkdir(parents=True)
+    (folder / "tournoi.json").write_text(json.dumps({  # un autre tournoi avait tourné dans ce dossier
+        "started": "2026-01-01T00:00:00+00:00", "strategies": [{"variant": "Momentum 100", "timeframe": "1m"}]}),
+        encoding="utf-8")
+
+    class PublicData:
+        def __init__(self, exchange_id, symbol, exchange=None, cache_seconds=0.0):
+            self.symbol = symbol
+
+    runs = {}
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: None)
+    monkeypatch.setattr(main, "CcxtBroker", PublicData)
+    monkeypatch.setattr(main, "pick_markets", lambda *a, **k: [ScanResult("PEPE/USDT", 0.2, 3e7, 0.0)])
+    monkeypatch.setattr(main.webbrowser, "open", lambda uri: None)
+    monkeypatch.setattr(main, "run_bots", lambda bots, poll, after_cycle=None: runs.update(bots=bots, poll=poll))
+
+    assert main.main(["tournoi", "--avec-marches-du-labo"]) == 0
+    assert [b.name for b in runs["bots"]] == [
+        "BTC/USDT 4h · Supertrend 10/3", "ETH/USDT 4h · Supertrend 10/3", "PEPE/USDT 4h · Supertrend 10/3"]
+    assert runs["poll"] == 30  # bougies de 4 h : le rythme habituel suffit
+    registry = json.loads((folder / "tournoi.json").read_text(encoding="utf-8"))
+    assert registry["started"] != "2026-01-01T00:00:00+00:00" and registry["lab_file"] == "laboratoire.json"
+
+    assert main.main(["tournoi", "--labo", "laboratoire-court-terme.json", "--unite", "1m"]) == 1
+    assert "Le labo (1m) n'a retenu aucune stratégie" in caplog.text
+    assert "relance d'abord « 6 - Laboratoire de strategies »" in caplog.text
+
+
+def test_tournament_rejects_an_unknown_unit_clearly(tmp_path, monkeypatch, caplog):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    lab_file(tmp_path / "data" / "laboratoire.json", ("Supertrend 10/3", "4h", "à surveiller", 0.5))
+    assert main.main(["tournoi", "--unite", "1x"]) == 1
+    assert "Unité de temps inconnue : '1x'" in caplog.text

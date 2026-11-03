@@ -31,12 +31,14 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   à revoir). `--scanner N` / `--memecoins` ajoutent des cryptos ; sous 15 min, historique plafonné (60 j en 1m).
 - `tradingbot/scanner.py` : cryptos spot USDT les plus agitées sur 24 h, volume ≥ 5 M$, sans stables ni tokens à
   levier ; `MEMECOINS` (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) gardés seulement s'ils sont assez échangés.
-- Commande `tournoi` (`main.py`) : stratégies « à surveiller »/« prometteur » du dernier labo × cryptos du scanner,
-  toujours en paper, un compte fictif par bot (`bot_label` = variante), données partagées par crypto
-  (`CcxtBroker` avec cache), dossier et tableau de bord propres (`data/tournoi/`, `tournoi.json`).
+- Commande `tournoi` (`main.py`) : stratégies « à surveiller »/« prometteur » d'un labo (`--labo`, défaut
+  `laboratoire.json` ; le labo court terme écrit `laboratoire-court-terme.json` via `labo --resultats`) × cryptos du
+  scanner (+ `--avec-marches-du-labo`), toujours en paper, un compte fictif par bot (`bot_label` = variante), données
+  partagées par crypto (`CcxtBroker` avec cache), un dossier par labo (`data/tournoi/`, `data/tournoi-court-terme/`).
 - Élimination (`risk.TradeStats`, `elimination_reason`, `is_candidate`) : après `ELIMINATE_AFTER_TRADES` trades,
   borne haute à 95 % < 0 → plus d'entrée ; mêmes règles en backtest et en live (test de parité). Jamais de
-  modification automatique des réglages. « Candidate au testnet » : ≥ 30 trades et borne basse > 0.
+  modification automatique des réglages. « Candidate au testnet » : ≥ 30 trades et borne basse > 0, seuil durci
+  par Bonferroni selon le nombre de bots (ou de stratégies, trades réunis) comparés.
 - `tradingbot/backtest.py` : simulation bougie par bougie, mêmes règles que le live ; ordres au marché ou limites.
 - `tradingbot/live.py` : boucle live, état JSON dans `data/` repris au redémarrage, ordres limites suivis d'un tour à l'autre.
 - `tradingbot/broker.py` : plateforme via ccxt (testnet, demo, réel) et `PaperBroker` simulé (ordres au marché
@@ -73,6 +75,10 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   (+0,15 % à +0,84 % par trade, ~60 trades) mais non prouvées (fourchette contenant 0).
 - Fait (03/11/2026) : scanner + memecoins, labo court terme (1m/5m), tournoi paper en 1 minute, élimination
   automatique, nouvelle interface sombre « équipe de trading ». Lanceurs 7 (labo court terme) et 8 (tournoi 1m).
-- En attente : le labo (6 ou 7) sur de vraies données, puis quelques jours de tournoi ; photo du classement.
+- Résultat réel rapporté par l'utilisateur : le labo court terme (1m/5m) perd partout après frais ; le labo long
+  terme a des stratégies « à surveiller ». Recommandation : abandonner le 1 minute, tournoi long terme (lanceur 9,
+  `tournoi --avec-marches-du-labo`) sur beaucoup de cryptos pour accumuler des trades plus vite.
+- En attente : photos des tableaux des deux labos (calculer l'avantage brut = espérance + ~0,3 % de coûts, pour
+  savoir si des frais plus bas changeraient quelque chose), puis plusieurs semaines de tournoi long terme.
 - L'utilisateur veut du levier et du court terme : on n'en parle qu'après une structure « prometteuse »
   confirmée en paper puis testnet. Le levier ne change pas le signe de l'espérance, il l'amplifie.

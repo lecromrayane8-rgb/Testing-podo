@@ -203,7 +203,10 @@ def test_tournament_page_ranks_bots_and_groups_them_by_strategy(tournament):
     assert "Tournoi en argent fictif" in page and "Par stratégie" in page and "en course depuis 6 h" in page
     assert "Laboratoire de stratégies" not in page  # le tournoi a sa propre page, sans les études
     assert "Éliminée" in page and "perd nettement après 25 trades" in page
-    assert page.count("candidate au testnet") == 1  # 30 trades réguliers et positifs : seulement celui-là
+    # 30 trades réguliers et positifs : le bot, et sa stratégie (trades de ses cryptos réunis), pas les autres
+    assert page.count("candidate au testnet") == 2
+    board = page.split("<h2>Par stratégie</h2>")
+    assert board[0].count("candidate au testnet") == 1 and board[1].count("candidate au testnet") == 1
     assert "0,39120" in page and "&lt;b&gt;DOGE" in page and "<b>DOGE" not in page
     data = json.loads(re.search(r'id="chart-data">(.*?)</script>', page).group(1))
     assert [sr["name"] for sr in data["series"]] == ["Supertrend 10/3", "Momentum 100"]

@@ -510,7 +510,7 @@ def leaderboard(views: list[BotView], now: datetime, stale_after_s: float) -> st
     for rank, v in enumerate(ranked, start=1):
         style, icon, label, detail = status(v, now, stale_after_s)
         badges = chip(style, icon, label)
-        if not v.eliminated and is_candidate(v.stats):
+        if not v.eliminated and is_candidate(v.stats, n_tests=len(views)):
             badges += " " + chip("good", "✓", "candidate au testnet")
         if detail:
             badges += f'<p class="why">{esc(detail)}</p>'
@@ -547,9 +547,11 @@ def strategy_table(views: list[BotView]) -> str:
         pnl = sum(v.pnl for v in started)
         trades = [t for v in members for t in v.trades]
         wins = sum(t["pnl"] > 0 for t in trades)
+        # Trades de toutes les cryptos réunis, comme dans le labo : 30 trades arrivent bien plus vite.
+        badge = " " + chip("good", "✓", "candidate au testnet") if is_candidate(stats, n_tests=len(groups)) else ""
         rows.append(
             "<tr>"
-            f"<td>{esc(label)}</td><td class=\"n\">{len(members)}</td><td class=\"n\">{len(trades)}</td>"
+            f"<td>{esc(label)}{badge}</td><td class=\"n\">{len(members)}</td><td class=\"n\">{len(trades)}</td>"
             f"<td class=\"n\">{fmt(100 * wins / len(trades), 0) + ' %' if trades else '—'}</td>"
             f"<td class=\"n\">{fmt_signed(100 * stats.mean, 2, ' %') if stats.n else '—'}</td>"
             f"<td class=\"n\">{delta(pnl) + ' (' + fmt_signed(100 * pnl / initial, 2, ' %') + ')' if initial else '—'}</td>"

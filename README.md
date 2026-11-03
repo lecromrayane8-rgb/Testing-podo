@@ -104,8 +104,9 @@ Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit 
 2. Clic droit sur le ZIP → Propriétés → coche « Débloquer » → OK, puis clic droit → « Extraire tout ».
 3. Dans le dossier extrait, double-clique sur `1 - Tester la robustesse.bat`, puis suis `LISEZ-MOI.txt`.
    `4 - Lancer le bot.bat` lance 3 bots en argent fictif (15 min, 1 h, 1 jour) et `5 - Tableau de bord.bat`
-   ouvre la page de suivi. `7 - Labo court terme.bat` puis `8 - Tournoi en 1 minute.bat` testent le très court
-   terme sur les cryptos agitées et les memecoins (voir « Le tournoi » plus bas).
+   ouvre la page de suivi. `9 - Tournoi long terme.bat` fait s'affronter en argent fictif les stratégies retenues
+   par le labo ; `7 - Labo court terme.bat` puis `8 - Tournoi en 1 minute.bat` font de même en très court terme
+   (voir « Le tournoi » plus bas).
 
 Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires »
 puis « Exécuter quand même ». C'est normal pour un programme qui n'est pas signé.
@@ -180,7 +181,8 @@ argent fictif. Le labo peut **tester** des actions ; le bot ne peut pas encore e
 **Le très court terme** (`7 - Labo court terme.bat`) :
 
 ```bash
-python main.py labo --symbols BTC/USDT,ETH/USDT,SOL/USDT --timeframes 1m,5m --scanner 8 --memecoins
+python main.py labo --symbols BTC/USDT,ETH/USDT,SOL/USDT --timeframes 1m,5m --scanner 8 --memecoins \
+    --resultats laboratoire-court-terme.json
 ```
 
 `--scanner 8` ajoute les 8 cryptos les plus agitées des dernières 24 h, `--memecoins` les memecoins cotés sur
@@ -188,7 +190,11 @@ Binance (DOGE, SHIB, PEPE, FLOKI, BONK, WIF). Le scanner ne garde que les paires
 moins 5 millions de dollars par jour, sans monnaies stables ni tokens à levier : sur une crypto peu échangée, le
 prix affiché n'est pas celui auquel on peut revendre. En 1 et 5 minutes, l'historique est limité à 60 et 300
 jours (environ 86 000 bougies) pour que le labo reste rapide. Les frais pèsent lourd sur de si petits mouvements
-(environ 0,3 % par aller-retour avec l'écart et le glissement) : c'est ce que ce labo vérifie.
+(environ 0,3 % par aller-retour avec l'écart et le glissement) : c'est ce que ce labo vérifie. `--resultats` range
+ses résultats à part (`data/laboratoire-court-terme.json`) pour ne pas effacer ceux du labo long terme.
+
+Premier essai sur de vraies données (novembre 2026) : en 1 et 5 minutes, le labo n'a trouvé que des stratégies
+perdantes après frais. Un aller-retour coûte plus que ce que ces stratégies captent sur de si petits mouvements.
 
 ## Étape 2 : paper trading (prix réels, ordres simulés, sans clé)
 
@@ -228,23 +234,30 @@ sont plus surveillés. La page fonctionne hors ligne (`data/tableau-de-bord.html
 ### Le tournoi : les stratégies du labo en argent fictif, sur les cryptos agitées
 
 ```bash
-python main.py tournoi --unite 1m      # ou « 8 - Tournoi en 1 minute.bat »
+python main.py tournoi --avec-marches-du-labo                             # « 9 - Tournoi long terme.bat »
+python main.py tournoi --labo laboratoire-court-terme.json --unite 1m     # « 8 - Tournoi en 1 minute.bat »
 ```
 
-Le tournoi reprend les stratégies **« à surveiller » ou « prometteur » du dernier labo** (jamais celles qui
-perdent), 6 au plus, et les fait tourner chacune sur les cryptos choisies par le scanner et sur les memecoins
-assez échangés : un bot par stratégie et par crypto, chacun avec 1 000 USDT fictifs (`--capital`). Tout reste
+Le tournoi reprend les stratégies **« à surveiller » ou « prometteur » d'un labo** (`--labo`, par défaut
+`laboratoire.json`, celui du labo long terme ; jamais celles qui perdent), 6 au plus, et les fait tourner chacune
+sur les cryptos choisies par le scanner et sur les memecoins assez échangés : un bot par stratégie et par crypto,
+chacun avec 1 000 USDT fictifs (`--capital`). Tout reste
 **en argent fictif**, quel que soit le `MODE` du `.env`. Les achats se font au prix vendeur et les ventes au prix
 acheteur, frais et glissement compris : sur les petites cryptos, l'écart coûte cher et le cacher rendrait le test
 trop beau.
 
 - `--unite 1m` force une unité de temps pour toutes les stratégies ; sans elle, chacune garde celle du labo.
+- `--avec-marches-du-labo` ajoute les marchés sur lesquels le labo a trouvé ses stratégies. Les stratégies long
+  terme tradent rarement : plus il y a de cryptos en même temps, plus les trades s'accumulent vite.
 - `--symbols PEPE/USDT,WIF/USDT` remplace le scanner, `--top 8` règle sa taille, `--sans-memecoins` les retire.
-- Le gardien élimine les stratégies qui perdent nettement ; une stratégie est marquée **« candidate au testnet »**
-  après au moins 30 trades dont la fourchette de confiance reste au-dessus de zéro. Ce n'est pas un feu vert pour
+- Le gardien élimine les stratégies qui perdent nettement. Un bot, ou une stratégie (trades de toutes ses cryptos
+  réunis, comme dans le labo), est marqué **« candidate au testnet »** après au moins 30 trades dont la fourchette
+  de confiance reste au-dessus de zéro. Le seuil est durci selon le nombre de bots (ou de stratégies) comparés :
+  parmi 80 bots sans avantage, environ 2 passeraient sinon le seuil par chance. Ce n'est pas un feu vert pour
   l'argent réel : c'est le signal pour la tester plusieurs semaines en testnet.
-- Le tournoi a son propre dossier et son propre tableau de bord (`data/tournoi/`). Relancé, il reprend ses bots ;
-  pour repartir de zéro, supprime ce dossier.
+- Chaque labo a son tournoi, son dossier et son tableau de bord (`data/tournoi/`, `data/tournoi-court-terme/`).
+  Relancé, un tournoi reprend ses bots ; pour repartir de zéro, supprime son dossier. Les bougies de moins de
+  15 minutes sont suivies toutes les 15 secondes, les autres au rythme de `POLL_SECONDS`.
 - La console affiche les achats, les ventes, les éliminations et un résumé toutes les 5 minutes ; le détail de
   chaque bougie est dans le tableau de bord. Le tournoi n'écrit pas dans Obsidian : des dizaines de bots en
   1 minute y créeraient des milliers de notes par jour.
@@ -335,8 +348,8 @@ tail -f data/bot.log
 |---|---|
 | `python main.py backtest [--days N] [--capital X] [--csv fichier]` | tester la stratégie sur l'historique |
 | `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
-| `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins]` | comparer les stratégies, validées hors échantillon |
-| `python main.py tournoi [--unite 1m] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X]` | faire s'affronter en argent fictif les stratégies retenues par le labo |
+| `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins] [--resultats fichier]` | comparer les stratégies, validées hors échantillon |
+| `python main.py tournoi [--labo fichier] [--unite 1m] [--avec-marches-du-labo] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X]` | faire s'affronter en argent fictif les stratégies retenues par un labo |
 | `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
 | `python main.py run` | lancer les bots selon `MODE` et `BOTS` |
 | `python main.py tableau [--no-open]` | générer et ouvrir le tableau de bord |
@@ -344,8 +357,9 @@ tail -f data/bot.log
 
 Fichiers produits dans `data/` : `bot.log` (journal), `state_*.json` (position en cours, reprise au redémarrage),
 `trades_*.csv` (historique des trades), `paper_wallet_*.json` (portefeuilles simulés), `robustesse.json`
-(dernier test), `laboratoire.json` (dernier labo) et `tableau-de-bord.html`. Le tournoi range les siens dans
-`data/tournoi/`, avec `tournoi.json` (cryptos et stratégies en compétition).
+(dernier test), `laboratoire.json` (dernier labo long terme), `laboratoire-court-terme.json` et
+`tableau-de-bord.html`. Les tournois rangent les leurs dans `data/tournoi/` et `data/tournoi-court-terme/`, avec
+`tournoi.json` (cryptos et stratégies en compétition).
 
 ## Limites connues
 

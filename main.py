@@ -189,7 +189,7 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
         print(env_lines(VARIANTS[best.variant]))
         print(f"BOTS={','.join(f'{m}@{best.timeframe}' for m in tradable)}")
     save_lab(
-        s.data_dir / LAB_FILE, rows, verdict,
+        s.data_dir / Path(args.resultats).name, rows, verdict,
         date=datetime.now(timezone.utc).isoformat(timespec="seconds"), jours=args.days, marches=markets,
     )
     refresh_dashboard(s)
@@ -285,28 +285,58 @@ def tournament_summary(bots: list[Bot]) -> str:
     )
 
 
+def tournament_dir(lab_file: str) -> str:
+    """Un dossier par labo : « laboratoire.json » -> tournoi, « laboratoire-court-terme.json » -> tournoi-court-terme."""
+    stem = Path(lab_file).stem
+    suffix = stem.removeprefix("laboratoire").strip("-_")
+    return f"{TOURNAMENT_DIR}-{slug(suffix)}" if suffix else TOURNAMENT_DIR
+
+
+def is_short_term(timeframe: str) -> bool:
+    try:
+        return timeframe_to_ms(timeframe) < 15 * 60_000
+    except (ValueError, ccxt.BaseError):
+        return False
+
+
+def unmarked(symbol: str) -> ScanResult:
+    return ScanResult(symbol, math.nan, math.nan, math.nan)
+
+
 def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
-    lab = load_lab(s.data_dir / LAB_FILE)
+    lab_file = Path(args.labo).name
+    lab = load_lab(s.data_dir / lab_file)
     if not lab or not lab.get("rows"):
         raise ValueError(
-            "Lance d'abord le laboratoire (« 6 - Laboratoire de strategies ») : "
-            "le tournoi reprend ses stratégies « à surveiller »."
+            f"Aucun résultat de labo dans data/{lab_file}. Lance d'abord le laboratoire correspondant "
+            "(« 6 - Laboratoire de strategies » ou « 7 - Labo court terme ») : le tournoi reprend ses stratégies "
+            "« à surveiller »."
         )
     if args.unite:
-        timeframe_to_ms(args.unite)  # unité invalide : erreur claire avant de démarrer
+        try:  # unité invalide : erreur claire avant de démarrer
+            timeframe_to_ms(args.unite)
+        except (ValueError, ccxt.BaseError):
+            raise ValueError(f"Unité de temps inconnue : {args.unite!r} (exemples : 1m, 5m, 1h, 4h, 1d)") from None
     picks = tournament_picks(lab, args.unite, args.strategies)
     if not picks:
+        timeframes = {r.get("timeframe", "?") for r in lab["rows"]}
+        hint = (" Pour le long terme, relance d'abord « 6 - Laboratoire de strategies »."
+                if all(is_short_term(tf) for tf in timeframes) else "")
         raise ValueError(
-            "Le labo n'a retenu aucune stratégie « à surveiller » ou « prometteur » : rien à mettre en compétition. "
-            "C'est le signe qu'aucune ne gagne après frais sur ces marchés."
+            f"Le labo ({', '.join(sorted(timeframes))}) n'a retenu aucune stratégie « à surveiller » ou « prometteur » : "
+            "rien à mettre en compétition. C'est le signe qu'aucune ne gagne après frais sur ces marchés et à ces "
+            f"unités de temps.{hint}"
         )
     exchange = make_exchange(s.exchange)
     if args.symbols:
-        markets = [ScanResult(x.strip().upper(), math.nan, math.nan, math.nan) for x in args.symbols.split(",") if x.strip()]
+        markets = [unmarked(x.strip().upper()) for x in args.symbols.split(",") if x.strip()]
     else:
         markets = pick_markets(exchange, top=args.top, memecoins=not args.sans_memecoins)
+    if args.avec_marches_du_labo:  # là où le labo a trouvé ses stratégies, en plus des autres
+        known = {m.symbol for m in markets}
+        markets = [unmarked(m) for m in lab.get("marches", []) if "/" in m and m not in known] + markets
     # Toujours en argent fictif, chaque bot avec son propre compte de `--capital` (MAX_CAPITAL vise le vrai compte).
-    base = replace(s, mode="paper", data_dir=s.data_dir / TOURNAMENT_DIR, paper_start_balance=args.capital,
+    base = replace(s, mode="paper", data_dir=s.data_dir / tournament_dir(lab_file), paper_start_balance=args.capital,
                    max_capital=args.capital, bots=())
     # Pas de notes Obsidian : des dizaines de bots en 1 minute y écriraient des milliers de notes par jour.
     data, chosen = {}, []
@@ -325,12 +355,16 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
             state_path, journal_path = bot_paths(bs)
             bots.append(Bot(make_broker(bs, market_data), bs, StateStore(state_path), journal_path))
     registry_path = base.data_dir / "tournoi.json"
-    try:  # un tournoi relancé reprend ses bots : il garde sa date de départ
-        started = json.loads(registry_path.read_text(encoding="utf-8")).get("started")
-    except (OSError, ValueError, AttributeError):
+    lineup = sorted((v, tf) for v, tf, _ in picks)
+    try:  # le même tournoi relancé reprend ses bots et garde sa date de départ ; un autre repart de zéro
+        previous = json.loads(registry_path.read_text(encoding="utf-8"))
+        same = sorted((p["variant"], p["timeframe"]) for p in previous.get("strategies", [])) == lineup
+        started = previous.get("started") if same else None
+    except (OSError, ValueError, AttributeError, KeyError, TypeError):
         started = None
     registry = {
         "started": started or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "lab_file": lab_file,
         "markets": [asdict(m) for m in chosen],
         "strategies": [
             {"variant": v, "timeframe": tf, "lab_timeframe": row["timeframe"], "lab_verdict": row["verdict"],
@@ -358,7 +392,9 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
         webbrowser.open(refresh().resolve().as_uri())
     except Exception as exc:  # le tableau de bord ne doit jamais empêcher de trader
         log.warning("Tableau de bord du tournoi non écrit : %s", exc)
-    run_bots(bots, min(s.poll_seconds, 15), after_cycle=refresh)
+    # Bougies de moins de 15 min : un tour toutes les 15 s au plus ; au-delà, le rythme habituel suffit.
+    fast = any(is_short_term(tf) for _, tf, _ in picks)
+    run_bots(bots, min(s.poll_seconds, 15) if fast else s.poll_seconds, after_cycle=refresh)
 
 
 def cmd_dashboard(s: Settings, args: argparse.Namespace) -> None:
@@ -402,11 +438,16 @@ def main(argv: list[str] | None = None) -> int:
     lb.add_argument("--csv-dir", help="dossier de CSV quotidiens (actions, ETF...) ajoutés aux tests en 1 jour")
     lb.add_argument("--scanner", type=int, default=0, help="ajouter les N cryptos les plus agitées du moment")
     lb.add_argument("--memecoins", action="store_true", help="ajouter les memecoins cotés et assez échangés")
+    lb.add_argument("--resultats", default=LAB_FILE,
+                    help="fichier des résultats dans data (le court terme a le sien pour ne pas écraser le long terme)")
     tn = sub.add_parser("tournoi", help="faire s'affronter en argent fictif les stratégies retenues par le labo")
     tn.add_argument("--unite", help="forcer une unité de temps pour toutes les stratégies (ex. 1m)")
     tn.add_argument("--top", type=int, default=8, help="nombre de cryptos agitées choisies par le scanner")
     tn.add_argument("--symbols", help="liste de paires à la place du scanner (ex. BTC/USDT,PEPE/USDT)")
     tn.add_argument("--sans-memecoins", action="store_true", help="ne pas ajouter les memecoins")
+    tn.add_argument("--labo", default=LAB_FILE, help="fichier de résultats du labo à reprendre (dans data)")
+    tn.add_argument("--avec-marches-du-labo", action="store_true",
+                    help="ajouter les marchés sur lesquels le labo a testé ses stratégies")
     tn.add_argument("--strategies", type=int, default=6, help="nombre maximum de stratégies en compétition")
     tn.add_argument("--capital", type=float, default=1000.0, help="capital fictif de chaque bot")
     sub.add_parser("check", help="vérifier la connexion et les soldes")
