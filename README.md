@@ -91,6 +91,11 @@ Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit 
   `python main.py reset-guard`.
 - **Capital confié** : `MAX_CAPITAL` limite l'argent que le bot utilise (obligatoire en réel). Le bot ne touche pas
   aux autres avoirs du compte : il ne vend que ce qu'il a lui-même acheté.
+- **Élimination d'une stratégie perdante** (le « gardien ») : après `ELIMINATE_AFTER_TRADES` trades (20 par défaut,
+  0 = jamais), si même le haut de la fourchette de confiance à 95 % du gain moyen par trade est négatif, la
+  stratégie perd nettement : le bot n'ouvre plus de position et le tableau de bord affiche « Éliminée » avec la
+  raison. La règle est la même en backtest et en direct (test de parité). Elle coupe ce qui perd, elle ne
+  modifie jamais un réglage. `python main.py reset-guard` (bots arrêtés) redonne sa chance à une stratégie.
 
 ## Windows sans Python (le plus simple)
 
@@ -99,7 +104,8 @@ Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit 
 2. Clic droit sur le ZIP → Propriétés → coche « Débloquer » → OK, puis clic droit → « Extraire tout ».
 3. Dans le dossier extrait, double-clique sur `1 - Tester la robustesse.bat`, puis suis `LISEZ-MOI.txt`.
    `4 - Lancer le bot.bat` lance 3 bots en argent fictif (15 min, 1 h, 1 jour) et `5 - Tableau de bord.bat`
-   ouvre la page de suivi.
+   ouvre la page de suivi. `7 - Labo court terme.bat` puis `8 - Tournoi en 1 minute.bat` testent le très court
+   terme sur les cryptos agitées et les memecoins (voir « Le tournoi » plus bas).
 
 Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires »
 puis « Exécuter quand même ». C'est normal pour un programme qui n'est pas signé.
@@ -171,6 +177,19 @@ Verdicts : **prometteur** (tout est réuni), **à surveiller** (positif, mais le
 Pour une variante prometteuse, le labo affiche les lignes exactes à copier dans `.env` pour l'essayer en
 argent fictif. Le labo peut **tester** des actions ; le bot ne peut pas encore en **acheter**.
 
+**Le très court terme** (`7 - Labo court terme.bat`) :
+
+```bash
+python main.py labo --symbols BTC/USDT,ETH/USDT,SOL/USDT --timeframes 1m,5m --scanner 8 --memecoins
+```
+
+`--scanner 8` ajoute les 8 cryptos les plus agitées des dernières 24 h, `--memecoins` les memecoins cotés sur
+Binance (DOGE, SHIB, PEPE, FLOKI, BONK, WIF). Le scanner ne garde que les paires spot en USDT échangées pour au
+moins 5 millions de dollars par jour, sans monnaies stables ni tokens à levier : sur une crypto peu échangée, le
+prix affiché n'est pas celui auquel on peut revendre. En 1 et 5 minutes, l'historique est limité à 60 et 300
+jours (environ 86 000 bougies) pour que le labo reste rapide. Les frais pèsent lourd sur de si petits mouvements
+(environ 0,3 % par aller-retour avec l'écart et le glissement) : c'est ce que ce labo vérifie.
+
 ## Étape 2 : paper trading (prix réels, ordres simulés, sans clé)
 
 ```bash
@@ -199,10 +218,39 @@ BOTS=BTC/USDT@15m,BTC/USDT@1h,BTC/USDT@1d
 python main.py tableau   # ou double-clic sur « 5 - Tableau de bord.bat »
 ```
 
-Une page s'ouvre dans ton navigateur : résultat total, carte de chaque bot (valeur, résultat, trades, position et
-stop), courbe du rendement cumulé, derniers trades et dernier test de robustesse. Pendant `run`, le bot la réécrit à
-chaque tour et elle se recharge toute seule chaque minute. Un bot qui ne donne plus de nouvelles depuis 10 minutes
-y apparaît en rouge : ses stops ne sont plus surveillés. La page fonctionne hors ligne (`data/tableau-de-bord.html`).
+Une page s'ouvre dans ton navigateur, sombre par défaut (bouton « Clair / sombre ») : résultat net après frais,
+portefeuille, trades, positions, puis « l'équipe » (scanner, stratèges, exécution, gardien), les positions ouvertes
+avec leur stop, le classement des bots, la courbe du rendement cumulé, le journal des achats et ventes, le dernier
+labo et le dernier test de robustesse. Pendant `run`, le bot la réécrit à chaque tour et elle se recharge toute
+seule chaque minute. Un bot qui ne donne plus de nouvelles depuis 10 minutes y apparaît en rouge : ses stops ne
+sont plus surveillés. La page fonctionne hors ligne (`data/tableau-de-bord.html`), aussi sur tablette et téléphone.
+
+### Le tournoi : les stratégies du labo en argent fictif, sur les cryptos agitées
+
+```bash
+python main.py tournoi --unite 1m      # ou « 8 - Tournoi en 1 minute.bat »
+```
+
+Le tournoi reprend les stratégies **« à surveiller » ou « prometteur » du dernier labo** (jamais celles qui
+perdent), 6 au plus, et les fait tourner chacune sur les cryptos choisies par le scanner et sur les memecoins
+assez échangés : un bot par stratégie et par crypto, chacun avec 1 000 USDT fictifs (`--capital`). Tout reste
+**en argent fictif**, quel que soit le `MODE` du `.env`. Les achats se font au prix vendeur et les ventes au prix
+acheteur, frais et glissement compris : sur les petites cryptos, l'écart coûte cher et le cacher rendrait le test
+trop beau.
+
+- `--unite 1m` force une unité de temps pour toutes les stratégies ; sans elle, chacune garde celle du labo.
+- `--symbols PEPE/USDT,WIF/USDT` remplace le scanner, `--top 8` règle sa taille, `--sans-memecoins` les retire.
+- Le gardien élimine les stratégies qui perdent nettement ; une stratégie est marquée **« candidate au testnet »**
+  après au moins 30 trades dont la fourchette de confiance reste au-dessus de zéro. Ce n'est pas un feu vert pour
+  l'argent réel : c'est le signal pour la tester plusieurs semaines en testnet.
+- Le tournoi a son propre dossier et son propre tableau de bord (`data/tournoi/`). Relancé, il reprend ses bots ;
+  pour repartir de zéro, supprime ce dossier.
+- La console affiche les achats, les ventes, les éliminations et un résumé toutes les 5 minutes ; le détail de
+  chaque bougie est dans le tableau de bord. Le tournoi n'écrit pas dans Obsidian : des dizaines de bots en
+  1 minute y créeraient des milliers de notes par jour.
+
+Le scanner choisit les cryptos agitées **du moment** : il ne les lance pas au moment de leur création (les gains
+affichés au lancement d'un memecoin sont rarement exécutables, faute d'acheteurs et à cause des frais).
 
 ## Étape 3 : connexion à un espace de trading de test (faux argent, vraie plateforme)
 
@@ -287,7 +335,8 @@ tail -f data/bot.log
 |---|---|
 | `python main.py backtest [--days N] [--capital X] [--csv fichier]` | tester la stratégie sur l'historique |
 | `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
-| `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier]` | comparer les stratégies, validées hors échantillon |
+| `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins]` | comparer les stratégies, validées hors échantillon |
+| `python main.py tournoi [--unite 1m] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X]` | faire s'affronter en argent fictif les stratégies retenues par le labo |
 | `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
 | `python main.py run` | lancer les bots selon `MODE` et `BOTS` |
 | `python main.py tableau [--no-open]` | générer et ouvrir le tableau de bord |
@@ -295,7 +344,8 @@ tail -f data/bot.log
 
 Fichiers produits dans `data/` : `bot.log` (journal), `state_*.json` (position en cours, reprise au redémarrage),
 `trades_*.csv` (historique des trades), `paper_wallet_*.json` (portefeuilles simulés), `robustesse.json`
-(dernier test) et `tableau-de-bord.html`.
+(dernier test), `laboratoire.json` (dernier labo) et `tableau-de-bord.html`. Le tournoi range les siens dans
+`data/tournoi/`, avec `tournoi.json` (cryptos et stratégies en compétition).
 
 ## Limites connues
 
@@ -306,6 +356,9 @@ Fichiers produits dans `data/` : `bot.log` (journal), `state_*.json` (position e
 - Les prix du testnet Binance peuvent s'écarter fortement du marché réel ; le mode `demo` est plus réaliste.
 - Les frais payés en BNB ne sont pas déduits du PnL calculé par le bot.
 - Si la réponse d'un ordre se perd sur le réseau, le bot peut ignorer une position ouverte : surveille le journal.
+- En argent fictif, un ordre au marché est servi en entier au meilleur prix du carnet : sur une petite crypto, un
+  gros ordre réel ferait bouger le prix. Garde des montants modestes par rapport au volume échangé.
+- Le tournoi suit les cryptos choisies au lancement : relance-le de temps en temps pour que le scanner les renouvelle.
 
 ## Tests
 

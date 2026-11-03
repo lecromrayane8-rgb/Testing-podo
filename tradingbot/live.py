@@ -4,6 +4,8 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import math
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +16,7 @@ from .broker import Fill, OrderStatus, atomic_write, combine_fills
 from .config import Settings
 from .data import timeframe_to_ms
 from .obsidian import JOURNAL, ObsidianJournal
-from .risk import RiskGuard, position_size
+from .risk import RiskGuard, TradeStats, elimination_reason, position_size
 from .strategy import compute_signals, exit_reason, initial_stop
 
 log = logging.getLogger(__name__)
@@ -33,10 +35,32 @@ def _day(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
 
-def bot_paths(settings: Settings) -> tuple[Path, Path]:
-    """État et journal des trades d'un bot : un jeu de fichiers par mode, plateforme, paire et unité."""
+def px(price: float) -> str:
+    """Prix lisible pour toutes les cryptos : 68450.00 pour le BTC, 0.000012340 pour PEPE (5 chiffres utiles)."""
+    if not price or not math.isfinite(price) or price <= 0:
+        return f"{price:.2f}"
+    return f"{price:.{max(2, 4 - math.floor(math.log10(price)))}f}"
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^0-9A-Za-z]+", "-", text).strip("-")
+
+
+def bot_tag(settings: Settings) -> str:
+    """Identifiant de fichier d'un bot : mode, plateforme, paire, unité (et stratégie dans le tournoi)."""
     tag = f"{settings.mode}_{settings.exchange}_{settings.symbol.replace('/', '-')}_{settings.timeframe}"
+    return f"{tag}_{slug(settings.bot_label)}" if settings.bot_label else tag
+
+
+def bot_paths(settings: Settings) -> tuple[Path, Path]:
+    """État et journal des trades d'un bot."""
+    tag = bot_tag(settings)
     return settings.data_dir / f"state_{tag}.json", settings.data_dir / f"trades_{tag}.csv"
+
+
+def bot_name(settings: Settings) -> str:
+    name = f"{settings.symbol} {settings.timeframe}"
+    return f"{name} · {settings.bot_label}" if settings.bot_label else name
 
 
 class BotLog(logging.LoggerAdapter):
@@ -84,7 +108,7 @@ class Bot:
         self.store = store
         self.journal_path = journal_path
         self.notes = notes
-        self.name = f"{settings.symbol} {settings.timeframe}"
+        self.name = bot_name(settings)
         self.log = BotLog(log, {"bot": self.name})
         self.tf_ms = timeframe_to_ms(settings.timeframe)
         # Assez d'historique pour que les moyennes exponentielles (RSI, ATR, MACD) et le Supertrend
@@ -158,9 +182,11 @@ class Bot:
             verdict = "signal de vente" if row.exit else "position gardée"
         else:
             verdict = "signal d'achat" if row.entry else "pas de signal d'achat, en attente"
-        self.log.info(
-            "Bougie de %s terminée : clôture %.2f, %s (valeur %.2f)",
-            _local(last_ts), row.close, verdict, self.equity(row.close),
+        # Dans le tournoi (des dizaines de bots), ce détail resterait illisible : la console garde les trades.
+        self.log.log(
+            logging.DEBUG if self.s.bot_label else logging.INFO,
+            "Bougie de %s terminée : clôture %s, %s (valeur %.2f)",
+            _local(last_ts), px(row.close), verdict, self.equity(row.close),
         )
         if self.state["order"]:
             return  # un ordre limite est déjà en cours
@@ -171,7 +197,9 @@ class Bot:
                 self._exit(reason, last_ts, now_ms)
         elif row.entry:
             blocked = self.guard.blocked_reason()
-            if blocked:
+            if self.state.get("eliminated"):
+                self.log.info("Signal d'achat ignoré : stratégie éliminée (%s)", self.state["eliminated"])
+            elif blocked:
                 self.log.warning("Signal d'achat ignoré : %s", blocked)
             else:
                 self._enter(row.atr, last_ts, now_ms)
@@ -203,7 +231,7 @@ class Bot:
             return
         order_id, price = placed
         self._track_order(order_id, "buy", qty, price, "entree", bar_ts, atr=atr_value)
-        self.log.info("Ordre limite d'ACHAT %.8f à %.2f (id %s)", qty, price, order_id, extra=JOURNAL)
+        self.log.info("Ordre limite d'ACHAT %.8f à %s (id %s)", qty, px(price), order_id, extra=JOURNAL)
 
     def _buy_market(self, atr_value: float, bar_ts: int, now_ms: int) -> None:
         price = self.broker.last_price()
@@ -224,8 +252,8 @@ class Bot:
         }
         self._save()
         self.log.info(
-            "ACHAT %.8f %s à %.2f (coût %.2f), stop %.2f",
-            fill.qty, self.s.symbol, fill.price, fill.quote, self.state["position"]["stop"],
+            "ACHAT %.8f %s à %s (coût %.2f), stop %s",
+            fill.qty, self.s.symbol, px(fill.price), fill.quote, px(self.state["position"]["stop"]),
             extra=JOURNAL,
         )
 
@@ -242,7 +270,7 @@ class Bot:
             return
         order_id, price = placed
         self._track_order(order_id, "sell", qty, price, reason, last_ts + self.tf_ms)
-        self.log.info("Ordre limite de VENTE (%s) %.8f à %.2f (id %s)", reason, qty, price, order_id, extra=JOURNAL)
+        self.log.info("Ordre limite de VENTE (%s) %.8f à %s (id %s)", reason, qty, px(price), order_id, extra=JOURNAL)
 
     def _sell_market(self, reason: str, price: float, now_ms: int, previous: Fill | None = None) -> None:
         """Vend au marché ce qui reste de la position (après un éventuel ordre limite partiel)."""
@@ -260,10 +288,18 @@ class Bot:
         pnl = fill.quote - pos["cost"]
         self.state["capital"] += pnl
         self.state["position"] = None
+        stats = TradeStats.from_dict(self.state.get("perf"))
+        stats.add(pnl / pos["cost"])
+        self.state["perf"] = stats.to_dict()
+        if not self.state.get("eliminated"):
+            elimination = elimination_reason(stats, self.s.risk.eliminate_after_trades)
+            if elimination:
+                self.state["eliminated"] = elimination
+                self.log.warning("Stratégie éliminée, plus aucun achat : %s", elimination)
         self._save()
         self.log.info(
-            "VENTE (%s) %.8f à %.2f : PnL %+.2f (%+.2f %%), capital %.2f",
-            reason, fill.qty, fill.price, pnl, 100 * pnl / pos["cost"], self.state["capital"],
+            "VENTE (%s) %.8f à %s : PnL %+.2f (%+.2f %%), capital %.2f",
+            reason, fill.qty, px(fill.price), pnl, 100 * pnl / pos["cost"], self.state["capital"],
             extra=JOURNAL,
         )
         self._record_trade(pos, fill, pnl, reason, now_ms)

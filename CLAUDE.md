@@ -19,7 +19,7 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 
 ## Architecture
 
-- `main.py` : ligne de commande (`backtest`, `robustesse`, `check`, `run`, `tableau`, `reset-guard`).
+- `main.py` : ligne de commande (`backtest`, `robustesse`, `labo`, `tournoi`, `check`, `run`, `tableau`, `reset-guard`).
 - `BOTS=PAIRE@UNITE,...` : plusieurs bots dans une boucle (`live.run_bots`). En paper, un compte fictif par bot ;
   sur un vrai compte, `MAX_CAPITAL` est le montant de chaque bot (validé dans `config.py`).
 - `tradingbot/strategy.py` : huit familles (`STRATEGY_TYPE`) : retour_moyenne (RSI, défaut), bollinger, cassure
@@ -27,14 +27,27 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   pour le backtest ET le live (tests de parité par famille). Le backtest respecte le même temps de chauffe que le live.
 - `tradingbot/lab.py` : commande `labo`, 24 variantes × 7 marchés × 4 unités = 96 combinaisons, étude 60 % /
   validation 40 %, Bonferroni (approximation normale) sur le nombre d'essais, comparaison au buy & hold.
-  Études sans garde-fous live (`research_risk`). Pas de levier dans le labo (choix de l'utilisateur, à revoir).
+  Études sans garde-fous live ni élimination (`research_risk`). Pas de levier dans le labo (choix de l'utilisateur,
+  à revoir). `--scanner N` / `--memecoins` ajoutent des cryptos ; sous 15 min, historique plafonné (60 j en 1m).
+- `tradingbot/scanner.py` : cryptos spot USDT les plus agitées sur 24 h, volume ≥ 5 M$, sans stables ni tokens à
+  levier ; `MEMECOINS` (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) gardés seulement s'ils sont assez échangés.
+- Commande `tournoi` (`main.py`) : stratégies « à surveiller »/« prometteur » du dernier labo × cryptos du scanner,
+  toujours en paper, un compte fictif par bot (`bot_label` = variante), données partagées par crypto
+  (`CcxtBroker` avec cache), dossier et tableau de bord propres (`data/tournoi/`, `tournoi.json`).
+- Élimination (`risk.TradeStats`, `elimination_reason`, `is_candidate`) : après `ELIMINATE_AFTER_TRADES` trades,
+  borne haute à 95 % < 0 → plus d'entrée ; mêmes règles en backtest et en live (test de parité). Jamais de
+  modification automatique des réglages. « Candidate au testnet » : ≥ 30 trades et borne basse > 0.
 - `tradingbot/backtest.py` : simulation bougie par bougie, mêmes règles que le live ; ordres au marché ou limites.
 - `tradingbot/live.py` : boucle live, état JSON dans `data/` repris au redémarrage, ordres limites suivis d'un tour à l'autre.
-- `tradingbot/broker.py` : plateforme via ccxt (testnet, demo, réel) et `PaperBroker` simulé.
+- `tradingbot/broker.py` : plateforme via ccxt (testnet, demo, réel) et `PaperBroker` simulé (ordres au marché
+  servis au prix vendeur/acheteur du carnet, frais et glissement compris).
 - `tradingbot/robustness.py` : intervalle de confiance bootstrap, sous-périodes, correction de Bonferroni.
 - `tradingbot/obsidian.py` : notes Markdown dans le coffre `OBSIDIAN_VAULT` (trades, backtests, journal, tableau de bord).
 - `tradingbot/dashboard.py` : page HTML autonome `data/tableau-de-bord.html`, réécrite à chaque tour de `run`.
   Palette et règles de lisibilité issues du skill dataviz ; les textes venant des données passent par `esc()`.
+  Sombre par défaut (bouton clair/sombre), chiffres clés, « équipe » (scanner, stratèges, exécution, gardien),
+  positions, classement, par stratégie, courbe (par bot, ou par stratégie dans le tournoi : la couleur suit
+  l'entité), journal. Vérifiée à 1280, 820 et 390 px (pas de défilement horizontal de la page).
 - Le guide du trading pour l'utilisateur est un document Claude Docs : https://claude.ai/artifact/3CF8W3xks9c3oxa3mNqbA5
 - `packaging/` et `.github/workflows/windows-package.yml` : version Windows sans Python, publiée en pré-version
   `windows-dev` (https://github.com/lecromrayane8-rgb/Testing-podo/releases/tag/windows-dev).
@@ -58,6 +71,8 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - Premier test de robustesse réel (03/11/2026, avec l'ancien biais du garde-fou) : le retour à la moyenne perd
   sur 15m, 1h et 4h pour les 5 cryptos (souvent significativement) ; en 1d, 4 cryptos sur 5 sont positives
   (+0,15 % à +0,84 % par trade, ~60 trades) mais non prouvées (fourchette contenant 0).
-- En attente : le laboratoire sur de vraies données (« 6 - Laboratoire de strategies.bat »).
+- Fait (03/11/2026) : scanner + memecoins, labo court terme (1m/5m), tournoi paper en 1 minute, élimination
+  automatique, nouvelle interface sombre « équipe de trading ». Lanceurs 7 (labo court terme) et 8 (tournoi 1m).
+- En attente : le labo (6 ou 7) sur de vraies données, puis quelques jours de tournoi ; photo du classement.
 - L'utilisateur veut du levier et du court terme : on n'en parle qu'après une structure « prometteuse »
   confirmée en paper puis testnet. Le levier ne change pas le signe de l'espérance, il l'amplifie.

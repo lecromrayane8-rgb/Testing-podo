@@ -9,8 +9,9 @@ import pytest
 from tests.test_live import dip_scenario, settings
 from tests.conftest import FakeBroker
 from tradingbot.dashboard import (
-    fmt, fmt_qty, fmt_signed, load_views, nice_ticks, render, tick_decimals, write_dashboard,
+    fmt, fmt_price, fmt_qty, fmt_signed, load_views, nice_ticks, render, tick_decimals, write_dashboard,
 )
+from tradingbot.lab import VARIANTS
 from tradingbot.live import Bot, StateStore, bot_paths
 from tradingbot.risk import RiskParams
 from tradingbot.robustness import ROBUST, RobustnessRow, save_results
@@ -86,7 +87,7 @@ def test_dashboard_shows_every_bot_and_its_state(three_bots):
     for name in ("BTC/USDT 15m", "BTC/USDT 1h", "BTC/USDT 1d"):
         assert name in page
     assert "En position" in page and "58 500,00" in page
-    assert "Arrêté ? Aucune nouvelle depuis 3 h" in page  # le bot 1d ne donne plus signe de vie
+    assert "Arrêté ?" in page and "Aucune nouvelle depuis 3 h" in page  # le bot 1d ne donne plus signe de vie
     assert "+42,50" in page  # résultat total : 30 + 12,50
     assert page.count('class="line"') == 3 and "<svg" in page
     assert "Lance le test de robustesse" in page
@@ -155,3 +156,63 @@ def test_yesterdays_daily_loss_limit_is_not_shown_as_blocking(tmp_path):
                                     "updated_at": NOW.isoformat(), "guard": guard})
     assert load_views(s, NOW)[0].blocked is None
     assert load_views(s, datetime(2026, 11, 2, 20, 0, tzinfo=timezone.utc))[0].blocked
+
+
+def test_memecoin_prices_keep_their_digits():
+    assert fmt_price(0.00001234) == "0,000012340" and fmt_price(0.3912) == "0,39120"
+    assert fmt_price(187.43) == "187,43" and fmt_price(58_500.0) == "58 500,00" and fmt_price(None) == "—"
+
+
+def tournament_bot(s, symbol, variant, state, trades=()):
+    bs = replace(s, symbol=symbol, timeframe="1m", strategy=VARIANTS[variant], bot_label=variant)
+    state_path, journal_path = bot_paths(bs)
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps({"capital": 1000.0, "initial_capital": 1000.0, "equity": 1000.0,
+                                      "updated_at": NOW.isoformat(), **state}), encoding="utf-8")
+    if trades:
+        with journal_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(trades[0]))
+            writer.writeheader()
+            writer.writerows(trades)
+    return bs
+
+
+@pytest.fixture
+def tournament(tmp_path):
+    s = replace(settings(tmp_path), data_dir=tmp_path / "tournoi")
+    steady = [trade(40 - i, 60.0 + (i % 3)) for i in range(30)]  # +1 % par trade, très régulier
+    bots = [
+        tournament_bot(s, "PEPE/USDT", "Supertrend 10/3", {"equity": 2_830.0}, steady),
+        tournament_bot(s, "DOGE/USDT", "Supertrend 10/3", {}),
+        tournament_bot(s, "PEPE/USDT", "Momentum 100", {"eliminated": "perd nettement après 25 trades (−0,61 % par trade)",
+                                                         "equity": 900.0}, [trade(2, -100.0, "stop")]),
+        tournament_bot(s, "DOGE/USDT", "Momentum 100", {"position": {"qty": 1000.0, "entry_price": 0.3912,
+                                                                     "stop": 0.3795, "entry_time": NOW.isoformat()},
+                                                        "last_price": 0.3931}),
+    ]
+    registry = {"started": (NOW - timedelta(hours=6)).isoformat(), "capital": 1000.0,
+                "markets": [{"symbol": "PEPE/USDT", "amplitude": 0.21, "volume": 3e7, "change": 0.05},
+                            {"symbol": "<b>DOGE</b>/USDT", "amplitude": 0.09, "volume": 5e8, "change": 0.02}],
+                "strategies": []}
+    return s, bots, registry
+
+
+def test_tournament_page_ranks_bots_and_groups_them_by_strategy(tournament):
+    s, bots, registry = tournament
+    page = render(load_views(s, NOW, bots), s, None, NOW, registry=registry)
+    assert "Tournoi en argent fictif" in page and "Par stratégie" in page and "en course depuis 6 h" in page
+    assert "Laboratoire de stratégies" not in page  # le tournoi a sa propre page, sans les études
+    assert "Éliminée" in page and "perd nettement après 25 trades" in page
+    assert page.count("candidate au testnet") == 1  # 30 trades réguliers et positifs : seulement celui-là
+    assert "0,39120" in page and "&lt;b&gt;DOGE" in page and "<b>DOGE" not in page
+    data = json.loads(re.search(r'id="chart-data">(.*?)</script>', page).group(1))
+    assert [sr["name"] for sr in data["series"]] == ["Supertrend 10/3", "Momentum 100"]
+    keys = re.findall(r'var\(--series-(\d)\)"></span><span><span class="pair">[^<]+</span>'
+                      r'<span class="strat"><span class="sep"> · </span>([^<]+)</span>', page)
+    assert keys and all(slot == {"Supertrend 10/3": "1", "Momentum 100": "2"}[name] for slot, name in keys)
+
+
+def test_tournament_dashboard_is_written_in_its_own_folder(tournament):
+    s, bots, registry = tournament
+    path = write_dashboard(s, NOW, bots=bots, registry=registry)
+    assert path.parent == s.data_dir and "PEPE/USDT 1m" in path.read_text(encoding="utf-8")

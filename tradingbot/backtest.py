@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 
 from .execution import ExecutionParams
-from .risk import RiskGuard, RiskParams, position_size
+from .risk import RiskGuard, RiskParams, TradeStats, elimination_reason, position_size
 from .strategy import StrategyParams, compute_signals, exit_reason, initial_stop
 
 
@@ -110,6 +110,8 @@ def run_backtest(
     bars_in_market = 0
     fees_paid = 0.0
     skipped_entries = 0
+    stats = TradeStats()
+    eliminated: str | None = None
 
     def open_position(i: int, entry_index: int, price: float, atr_value: float, fee: float) -> None:
         nonlocal cash, pos, fees_paid
@@ -122,13 +124,15 @@ def run_backtest(
             pos = _Position(entry_index, index[i], price, qty, cost, stop)
 
     def close_position(i: int, price: float, reason: str, fee: float) -> None:
-        nonlocal cash, pos, fees_paid
+        nonlocal cash, pos, fees_paid, eliminated
         proceeds = pos.qty * price * (1 - fee)
         fees_paid += pos.qty * price * fee
         cash += proceeds
         trades.append(
             Trade(pos.entry_time, index[i], pos.entry_price, price, pos.qty, pos.cost, proceeds, reason)
         )
+        stats.add((proceeds - pos.cost) / pos.cost)
+        eliminated = eliminated or elimination_reason(stats, risk.eliminate_after_trades)
         pos = None
 
     def market_buy(i: int, entry_index: int, atr_value: float) -> None:
@@ -189,7 +193,7 @@ def run_backtest(
             reason = exit_reason(exit_sig[i], i - pos.entry_index + 1, strategy) if order is None else None
             if reason:
                 pending_exit = reason
-        elif order is None and guard.can_open() and entry_sig[i]:
+        elif order is None and not eliminated and guard.can_open() and entry_sig[i]:
             pending_entry_atr = atr_[i]
 
     if pos:
@@ -203,7 +207,7 @@ def run_backtest(
         type_ordres=ex.order_type,
         frais_payes=fees_paid,
         entrees_abandonnees=skipped_entries,
-        arret_garde_fou=guard.halted,
+        arret_garde_fou=guard.halted or (f"stratégie éliminée : {eliminated}" if eliminated else None),
     )
     return result
 

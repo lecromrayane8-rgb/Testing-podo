@@ -1,27 +1,31 @@
-"""Point d'entrée : python main.py {backtest,robustesse,check,run,tableau,reset-guard} --help"""
+"""Point d'entrée : python main.py {backtest,robustesse,labo,tournoi,check,run,tableau,reset-guard} --help"""
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import math
 import sys
+import time
 import webbrowser
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
 import ccxt
 
 from tradingbot.backtest import format_comparison, format_report, run_backtest
-from tradingbot.broker import CcxtBroker, PaperBroker
+from tradingbot.broker import CcxtBroker, PaperBroker, atomic_write
 from tradingbot.config import ConfigError, Settings, load_dotenv
 from tradingbot.dashboard import ROBUSTNESS_FILE, write_dashboard
 from tradingbot.data import load_csv, load_or_fetch, make_exchange, timeframe_to_ms
 from tradingbot.lab import (
-    LAB_FILE, PROMISING, VARIANTS, env_lines, format_lab, overall_lab_verdict, run_lab, save_lab,
+    LAB_FILE, PROMISING, VARIANTS, env_lines, format_lab, load_lab, overall_lab_verdict, run_lab, save_lab,
 )
-from tradingbot.live import Bot, StateStore, bot_paths, run_bots
-from tradingbot.obsidian import ObsidianHandler, ObsidianJournal
+from tradingbot.live import Bot, StateStore, bot_paths, px, run_bots, slug
+from tradingbot.obsidian import JOURNAL, ObsidianHandler, ObsidianJournal
 from tradingbot.robustness import evaluate, format_robustness, overall_verdict, research_risk, save_results
+from tradingbot.scanner import ScanResult, pick_markets
 
 log = logging.getLogger("tradingbot")
 
@@ -30,8 +34,20 @@ LONG_TERM_DAYS = 2500  # bougies d'un jour : ~7 ans d'historique pour avoir asse
 LAB_SYMBOLS = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT,PAXG/USDT,EUR/USDT"  # PAXG = or, EUR = euro/dollar
 
 
+TOURNAMENT_DIR = "tournoi"
+WATCH = "à surveiller"
+SUMMARY_SECONDS = 300  # résumé du tournoi dans la console toutes les 5 minutes
+
+
 def history_days(timeframe: str, days: int) -> int:
-    return max(days, LONG_TERM_DAYS) if timeframe_to_ms(timeframe) >= DAY_MS else days
+    """Jours d'historique : ~7 ans en bougies d'un jour, et environ 86 000 bougies au plus sous 15 min
+    (60 jours en 1 min, 300 en 5 min) pour que le labo reste rapide."""
+    tf_ms = timeframe_to_ms(timeframe)
+    if tf_ms >= DAY_MS:
+        return max(days, LONG_TERM_DAYS)
+    if tf_ms < 15 * 60_000:
+        return min(days, int(60 * tf_ms / 60_000))
+    return days
 
 
 def setup_logging(data_dir: Path) -> None:
@@ -43,14 +59,15 @@ def setup_logging(data_dir: Path) -> None:
     )
 
 
-def make_broker(s: Settings):
+def make_broker(s: Settings, data: CcxtBroker | None = None):
     if s.mode == "paper":
-        data = CcxtBroker(s.exchange, s.symbol)
+        data = data or CcxtBroker(s.exchange, s.symbol)
         # Un compte fictif par bot : deux bots sur la même paire ne se partagent jamais leurs fonds.
         pair = s.symbol.replace("/", "-")
-        wallet = s.data_dir / f"paper_wallet_{s.exchange}_{pair}_{s.timeframe}.json"
+        suffix = f"_{slug(s.bot_label)}" if s.bot_label else ""
+        wallet = s.data_dir / f"paper_wallet_{s.exchange}_{pair}_{s.timeframe}{suffix}.json"
         legacy = s.data_dir / f"paper_wallet_{s.exchange}_{pair}.json"  # nom des versions précédentes
-        if legacy.exists() and not wallet.exists() and s.timeframe == s.markets[0][1]:
+        if legacy.exists() and not wallet.exists() and not s.bot_label and s.timeframe == s.markets[0][1]:
             legacy.rename(wallet)
         return PaperBroker(data, wallet, s.paper_start_balance, s.execution)
     venue = {"testnet": "testnet", "demo": "demo", "live": "real"}[s.mode]
@@ -70,8 +87,7 @@ def refresh_dashboard(s: Settings) -> None:
 
 
 def bot_settings(s: Settings) -> list[Settings]:
-    """Un jeu de réglages par bot (BOTS), chacun avec sa paire et son unité de temps."""
-    return [replace(s, symbol=symbol, timeframe=timeframe) for symbol, timeframe in s.markets]
+    return s.per_bot()
 
 
 def cmd_backtest(s: Settings, args: argparse.Namespace) -> None:
@@ -138,6 +154,9 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
     symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
     timeframes = [x.strip() for x in args.timeframes.split(",") if x.strip()]
     exchange = make_exchange(s.exchange)
+    if args.scanner or args.memecoins:
+        extra = pick_markets(exchange, top=args.scanner, memecoins=args.memecoins)
+        symbols += [r.symbol for r in extra if r.symbol not in symbols]
     datasets: dict[str, dict] = {}
     for tf in timeframes:
         for symbol in symbols:
@@ -187,7 +206,7 @@ def cmd_check(s: Settings, args: argparse.Namespace) -> None:
         candles = broker.fetch_candles(bs.timeframe, 5)
         base, quote = bs.symbol.split("/")
         print(f"\n[{bs.symbol} {bs.timeframe}] connexion OK : mode={bs.mode} plateforme={bs.exchange}")
-        print(f"Prix {bs.symbol} : {price:.2f}")
+        print(f"Prix {bs.symbol} : {px(price)}")
         print(f"Soldes disponibles : {balances.base:.8f} {base} | {balances.quote:.2f} {quote}")
         print(f"Dernière bougie {bs.timeframe} : {candles.index[-1]}")
         print_fees(bs, broker.trading_fees())
@@ -240,6 +259,108 @@ def cmd_run(s: Settings, args: argparse.Namespace) -> None:
     run_bots(bots, s.poll_seconds, after_cycle=lambda: write_dashboard(s))
 
 
+def tournament_picks(lab: dict, unite: str | None, limit: int) -> list[tuple[str, str, dict]]:
+    """(variante, unité, ligne du labo) des stratégies « prometteur » ou « à surveiller », les meilleures d'abord."""
+    picks, seen = [], set()
+    for row in lab.get("rows", []):  # le labo les trie déjà de la meilleure espérance à la moins bonne
+        if row.get("verdict") not in (PROMISING, WATCH) or row.get("variant") not in VARIANTS:
+            continue
+        key = (row["variant"], unite or row["timeframe"])
+        if key not in seen:
+            seen.add(key)
+            picks.append((*key, row))
+    return picks[:limit]
+
+
+def tournament_summary(bots: list[Bot]) -> str:
+    """Une ligne pour la console : le détail de chaque bougie reste dans le tableau de bord."""
+    states = [b.state for b in bots]
+    realized = sum(st["capital"] - (st.get("initial_capital") or st["capital"]) for st in states if st.get("capital"))
+    quotes = {b.s.symbol.split("/")[-1] for b in bots}
+    unit = f" {quotes.pop()}" if len(quotes) == 1 else ""
+    return (
+        f"Tournoi : {len(bots)} bots, {sum(1 for st in states if st.get('position'))} en position, "
+        f"{sum((st.get('perf') or {}).get('n', 0) for st in states)} trades clôturés, "
+        f"résultat réalisé {realized:+.2f}{unit}, {sum(1 for st in states if st.get('eliminated'))} éliminé(s)"
+    )
+
+
+def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
+    lab = load_lab(s.data_dir / LAB_FILE)
+    if not lab or not lab.get("rows"):
+        raise ValueError(
+            "Lance d'abord le laboratoire (« 6 - Laboratoire de strategies ») : "
+            "le tournoi reprend ses stratégies « à surveiller »."
+        )
+    if args.unite:
+        timeframe_to_ms(args.unite)  # unité invalide : erreur claire avant de démarrer
+    picks = tournament_picks(lab, args.unite, args.strategies)
+    if not picks:
+        raise ValueError(
+            "Le labo n'a retenu aucune stratégie « à surveiller » ou « prometteur » : rien à mettre en compétition. "
+            "C'est le signe qu'aucune ne gagne après frais sur ces marchés."
+        )
+    exchange = make_exchange(s.exchange)
+    if args.symbols:
+        markets = [ScanResult(x.strip().upper(), math.nan, math.nan, math.nan) for x in args.symbols.split(",") if x.strip()]
+    else:
+        markets = pick_markets(exchange, top=args.top, memecoins=not args.sans_memecoins)
+    # Toujours en argent fictif, chaque bot avec son propre compte de `--capital` (MAX_CAPITAL vise le vrai compte).
+    base = replace(s, mode="paper", data_dir=s.data_dir / TOURNAMENT_DIR, paper_start_balance=args.capital,
+                   max_capital=args.capital, bots=())
+    # Pas de notes Obsidian : des dizaines de bots en 1 minute y écriraient des milliers de notes par jour.
+    data, chosen = {}, []
+    for m in markets:
+        try:  # une connexion et un cache par crypto, partagés par toutes les stratégies
+            data[m.symbol] = CcxtBroker(s.exchange, m.symbol, exchange=exchange, cache_seconds=5)
+            chosen.append(m)
+        except ValueError as exc:
+            log.warning("%s ignorée : %s", m.symbol, exc)
+    if not data:
+        raise ValueError("Aucune crypto utilisable : vérifie ta connexion internet.")
+    bots = []
+    for variant, tf, _ in picks:
+        for symbol, market_data in data.items():
+            bs = replace(base, symbol=symbol, timeframe=tf, strategy=VARIANTS[variant], bot_label=variant)
+            state_path, journal_path = bot_paths(bs)
+            bots.append(Bot(make_broker(bs, market_data), bs, StateStore(state_path), journal_path))
+    registry_path = base.data_dir / "tournoi.json"
+    try:  # un tournoi relancé reprend ses bots : il garde sa date de départ
+        started = json.loads(registry_path.read_text(encoding="utf-8")).get("started")
+    except (OSError, ValueError, AttributeError):
+        started = None
+    registry = {
+        "started": started or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "markets": [asdict(m) for m in chosen],
+        "strategies": [
+            {"variant": v, "timeframe": tf, "lab_timeframe": row["timeframe"], "lab_verdict": row["verdict"],
+             "lab_expectancy_pct": row.get("expectancy_pct")}
+            for v, tf, row in picks
+        ],
+        "capital": args.capital,
+    }
+    atomic_write(registry_path, json.dumps(registry, ensure_ascii=False, indent=2))
+    log.info(
+        "Tournoi : %d stratégies × %d cryptos = %d bots, %.0f USDT fictifs chacun",
+        len(picks), len(data), len(bots), args.capital, extra=JOURNAL,
+    )
+    bot_list = [b.s for b in bots]
+    last_summary = [-math.inf]
+
+    def refresh() -> Path:
+        path = write_dashboard(base, bots=bot_list, registry=registry)
+        if time.monotonic() - last_summary[0] >= SUMMARY_SECONDS:
+            last_summary[0] = time.monotonic()
+            log.info("%s", tournament_summary(bots))
+        return path
+
+    try:
+        webbrowser.open(refresh().resolve().as_uri())
+    except Exception as exc:  # le tableau de bord ne doit jamais empêcher de trader
+        log.warning("Tableau de bord du tournoi non écrit : %s", exc)
+    run_bots(bots, min(s.poll_seconds, 15), after_cycle=refresh)
+
+
 def cmd_dashboard(s: Settings, args: argparse.Namespace) -> None:
     path = write_dashboard(s)
     print(f"Tableau de bord : {path}")
@@ -252,17 +373,18 @@ def cmd_reset_guard(s: Settings, args: argparse.Namespace) -> None:
         state_path, _ = bot_paths(bs)
         store = StateStore(state_path)
         state = store.load()
-        if not state.get("guard"):
+        if not state.get("guard") and not state.get("eliminated"):
             print(f"[{bs.symbol} {bs.timeframe}] aucun garde-fou enregistré.")
             continue
-        state["guard"] = None
+        # Une stratégie éliminée repart de zéro : sinon ses anciens trades l'élimineraient au premier trade.
+        state.update(guard=None, eliminated=None, perf=None)
         store.save(state)
         print(f"[{bs.symbol} {bs.timeframe}] garde-fou réarmé : le bot pourra de nouveau ouvrir des positions.")
 
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
-    parser = argparse.ArgumentParser(description="Bot de trading spot (retour à la moyenne)")
+    parser = argparse.ArgumentParser(description="Bot de trading spot : backtest, labo, tournoi et bots en direct")
     sub = parser.add_subparsers(dest="command", required=True)
     bt = sub.add_parser("backtest", help="tester la stratégie sur l'historique")
     bt.add_argument("--days", type=int, default=730, help="profondeur d'historique en jours")
@@ -278,6 +400,15 @@ def main(argv: list[str] | None = None) -> int:
     lb.add_argument("--timeframes", default="15m,1h,4h,1d")
     lb.add_argument("--days", type=int, default=730)
     lb.add_argument("--csv-dir", help="dossier de CSV quotidiens (actions, ETF...) ajoutés aux tests en 1 jour")
+    lb.add_argument("--scanner", type=int, default=0, help="ajouter les N cryptos les plus agitées du moment")
+    lb.add_argument("--memecoins", action="store_true", help="ajouter les memecoins cotés et assez échangés")
+    tn = sub.add_parser("tournoi", help="faire s'affronter en argent fictif les stratégies retenues par le labo")
+    tn.add_argument("--unite", help="forcer une unité de temps pour toutes les stratégies (ex. 1m)")
+    tn.add_argument("--top", type=int, default=8, help="nombre de cryptos agitées choisies par le scanner")
+    tn.add_argument("--symbols", help="liste de paires à la place du scanner (ex. BTC/USDT,PEPE/USDT)")
+    tn.add_argument("--sans-memecoins", action="store_true", help="ne pas ajouter les memecoins")
+    tn.add_argument("--strategies", type=int, default=6, help="nombre maximum de stratégies en compétition")
+    tn.add_argument("--capital", type=float, default=1000.0, help="capital fictif de chaque bot")
     sub.add_parser("check", help="vérifier la connexion et les soldes")
     sub.add_parser("run", help="lancer le ou les bots (selon MODE et BOTS dans .env)")
     tb = sub.add_parser("tableau", help="générer et ouvrir le tableau de bord")
@@ -295,6 +426,7 @@ def main(argv: list[str] | None = None) -> int:
         "backtest": cmd_backtest,
         "robustesse": cmd_robustness,
         "labo": cmd_lab,
+        "tournoi": cmd_tournament,
         "check": cmd_check,
         "run": cmd_run,
         "tableau": cmd_dashboard,

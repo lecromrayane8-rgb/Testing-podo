@@ -55,36 +55,64 @@ class CcxtBroker:
         secret: str = "",
         password: str = "",
         venue: str = "real",
+        exchange: ccxt.Exchange | None = None,
+        cache_seconds: float = 0.0,
     ):
-        config: dict = {}
-        if api_key:
-            config.update(apiKey=api_key, secret=secret)
-        if password:
-            config["password"] = password
-        self.ex: ccxt.Exchange = make_exchange(exchange_id, **config)
-        if venue == "testnet":
-            self.ex.set_sandbox_mode(True)
-        elif venue == "demo":
-            if not hasattr(self.ex, "enable_demo_trading"):
-                raise ValueError(f"{exchange_id} ne propose pas de mode demo dans ccxt, utilise MODE=testnet")
-            self.ex.enable_demo_trading(True)
-        self.ex.load_markets()
+        """`exchange` : connexion publique déjà ouverte, partagée entre plusieurs paires (tournoi).
+        `cache_seconds` : les bots d'une même paire réutilisent bougies et prix pendant ce délai."""
+        if exchange is None:
+            config: dict = {}
+            if api_key:
+                config.update(apiKey=api_key, secret=secret)
+            if password:
+                config["password"] = password
+            exchange = make_exchange(exchange_id, **config)
+            if venue == "testnet":
+                exchange.set_sandbox_mode(True)
+            elif venue == "demo":
+                if not hasattr(exchange, "enable_demo_trading"):
+                    raise ValueError(f"{exchange_id} ne propose pas de mode demo dans ccxt, utilise MODE=testnet")
+                exchange.enable_demo_trading(True)
+        self.ex: ccxt.Exchange = exchange
+        if not self.ex.markets:
+            self.ex.load_markets()
         if symbol not in self.ex.markets:
             raise ValueError(f"Paire {symbol} introuvable sur {exchange_id} ({venue})")
         self.symbol = symbol
         self.market = self.ex.market(symbol)
         self.base, self.quote = self.market["base"], self.market["quote"]
+        self.cache_seconds = cache_seconds
+        self._cache: dict = {}
+
+    def _cached(self, key, fetch):
+        if self.cache_seconds <= 0:
+            return fetch()
+        hit = self._cache.get(key)
+        if hit and time.monotonic() - hit[0] < self.cache_seconds:
+            return hit[1]
+        value = fetch()
+        self._cache[key] = (time.monotonic(), value)
+        return value
 
     # --- données de marché -----------------------------------------------------
     def fetch_candles(self, timeframe: str, limit: int) -> pd.DataFrame:
-        return ohlcv_to_frame(self.ex.fetch_ohlcv(self.symbol, timeframe, limit=limit))
+        if self.cache_seconds <= 0:
+            return ohlcv_to_frame(self.ex.fetch_ohlcv(self.symbol, timeframe, limit=limit))
+        # Une seule requête pour tous les bots de la paire : on garde la plus longue demandée.
+        hit = self._cache.get(("candles", timeframe))
+        if hit and time.monotonic() - hit[0] < self.cache_seconds and len(hit[1]) >= limit:
+            return hit[1].iloc[-limit:]
+        size = max(limit, len(hit[1]) if hit else 0)
+        frame = ohlcv_to_frame(self.ex.fetch_ohlcv(self.symbol, timeframe, limit=size))
+        self._cache[("candles", timeframe)] = (time.monotonic(), frame)
+        return frame.iloc[-limit:]
 
     def last_price(self) -> float:
-        ticker = self.ex.fetch_ticker(self.symbol)
+        ticker = self._cached("ticker", lambda: self.ex.fetch_ticker(self.symbol))
         return float(ticker["last"] or ticker["close"])
 
     def best_bid_ask(self) -> tuple[float, float]:
-        book = self.ex.fetch_order_book(self.symbol, limit=5)
+        book = self._cached("book", lambda: self.ex.fetch_order_book(self.symbol, limit=5))
         return float(book["bids"][0][0]), float(book["asks"][0][0])
 
     def balances(self) -> Balances:
@@ -216,8 +244,17 @@ class PaperBroker:
     def trading_fees(self) -> tuple[float, float]:
         return self.execution.maker_fee_rate, self.execution.fee_rate
 
+    def _touch(self, side: str) -> float:
+        """Prix réellement disponible : on achète au vendeur le moins cher, on vend à l'acheteur le plus offrant.
+        Sur les petites cryptos, cet écart coûte cher : le compter rend le paper trading honnête."""
+        try:
+            bid, ask = self.best_bid_ask()
+            return ask if side == "buy" else bid
+        except (ccxt.BaseError, IndexError, KeyError):
+            return self.last_price()
+
     def market_buy(self, qty: float) -> Fill:
-        price = self.last_price() * (1 + self.execution.slippage)
+        price = self._touch("buy") * (1 + self.execution.slippage)
         spent = qty * price * (1 + self.execution.fee_rate)
         if spent > self.wallet["quote"] + 1e-9:
             raise ccxt.InsufficientFunds(f"paper : {spent:.2f} requis, {self.wallet['quote']:.2f} disponible")
@@ -229,7 +266,7 @@ class PaperBroker:
     def market_sell(self, qty: float) -> Fill:
         if qty > self.wallet["base"] + 1e-12:
             raise ccxt.InsufficientFunds(f"paper : {qty} requis, {self.wallet['base']} disponible")
-        price = self.last_price() * (1 - self.execution.slippage)
+        price = self._touch("sell") * (1 - self.execution.slippage)
         received = qty * price * (1 - self.execution.fee_rate)
         self.wallet["base"] -= qty
         self.wallet["quote"] += received

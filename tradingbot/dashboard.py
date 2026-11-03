@@ -9,23 +9,23 @@ import csv
 import html
 import json
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from .broker import atomic_write
 from .config import Settings
 from .lab import LAB_FILE, PROMISING, load_lab
-from .live import bot_paths
-from .risk import RiskGuard
+from .live import bot_name, bot_paths
+from .risk import RiskGuard, TradeStats, is_candidate
 from .robustness import ROBUST, load_results
 
 FILENAME = "tableau-de-bord.html"
 ROBUSTNESS_FILE = "robustesse.json"
 STALE_AFTER_S = 10 * 60
 MAX_SERIES = 8  # couleurs de la palette ; au-delà, un bot reste dans les cartes et le tableau
-MAX_TRADES = 30
-W, H, ML, MR, MT, MB = 960, 320, 64, 176, 16, 36
+MAX_EVENTS = 20
+W, H, ML, MR, MT, MB = 960, 320, 64, 208, 16, 36
 
 MODE_LABELS = {
     "paper": "argent fictif (paper)",
@@ -63,6 +63,9 @@ def parse_time(text) -> datetime | None:
 @dataclass
 class BotView:
     name: str
+    symbol: str
+    timeframe: str
+    label: str  # stratégie d'un bot du tournoi ("" sinon)
     slot: int
     initial: float | None
     equity: float | None
@@ -71,6 +74,9 @@ class BotView:
     order: dict | None
     blocked: str | None
     updated_at: datetime | None
+    last_price: float | None = None
+    eliminated: str | None = None
+    stats: TradeStats = field(default_factory=TradeStats)
 
     @property
     def started(self) -> bool:
@@ -112,11 +118,11 @@ def read_trades(path: Path) -> list[dict]:
     return sorted(trades, key=lambda t: t["sortie"])
 
 
-def load_views(settings: Settings, now: datetime | None = None) -> list[BotView]:
+def load_views(settings: Settings, now: datetime | None = None, bots: list[Settings] | None = None) -> list[BotView]:
     now = now or datetime.now(timezone.utc)
     views = []
-    for slot, (symbol, timeframe) in enumerate(settings.markets, start=1):
-        state_path, journal_path = bot_paths(replace(settings, symbol=symbol, timeframe=timeframe))
+    for slot, bs in enumerate(bots if bots is not None else settings.per_bot(), start=1):
+        state_path, journal_path = bot_paths(bs)
         try:
             state = json.loads(state_path.read_text(encoding="utf-8")) if state_path.exists() else {}
         except (OSError, ValueError):
@@ -126,13 +132,20 @@ def load_views(settings: Settings, now: datetime | None = None) -> list[BotView]
         initial = num(state.get("initial_capital"))
         if initial is None and capital is not None:
             initial = capital - sum(t["pnl"] for t in trades)
-        guard = RiskGuard.from_dict(settings.risk, state.get("guard")) if state.get("guard") else None
+        guard = RiskGuard.from_dict(bs.risk, state.get("guard")) if state.get("guard") else None
         equity = num(state.get("equity"), capital)
         if guard and equity is not None:
             # Copie locale (rien n'est sauvegardé) : la limite journalière d'un jour passé expire, comme dans le bot.
             guard.update(equity, now.astimezone(timezone.utc).strftime("%Y-%m-%d"))
+        stats = TradeStats()
+        for t in trades:
+            if t["pct"] is not None:
+                stats.add(t["pct"] / 100)
         views.append(BotView(
-            name=f"{symbol} {timeframe}",
+            name=bot_name(bs),
+            symbol=bs.symbol,
+            timeframe=bs.timeframe,
+            label=bs.bot_label,
             slot=slot,
             initial=initial,
             equity=equity,
@@ -141,6 +154,9 @@ def load_views(settings: Settings, now: datetime | None = None) -> list[BotView]
             order=state.get("order"),
             blocked=guard.blocked_reason() if guard else None,
             updated_at=parse_time(state.get("updated_at")),
+            last_price=num(state.get("last_price")),
+            eliminated=state.get("eliminated"),
+            stats=stats,
         ))
     return views
 
@@ -162,9 +178,12 @@ def fmt_signed(x: float, decimals: int = 2, unit: str = "") -> str:
 
 
 def fmt_price(x: float | None) -> str:
+    """Cinq chiffres significatifs, au moins deux décimales : 58 500,00 pour le BTC, 0,000012340 pour PEPE."""
     if x is None:
         return "—"
-    return fmt(x, 2 if x >= 1 else 6)
+    if x <= 0:
+        return fmt(x, 2)
+    return fmt(x, max(2, 4 - math.floor(math.log10(x))))
 
 
 def fmt_qty(x: float | None) -> str:
@@ -202,20 +221,22 @@ def delta(x: float, decimals: int = 2, unit: str = "") -> str:
     return f'<span class="{cls}" aria-hidden="true">{arrow}</span> {fmt_signed(x, decimals, unit)}'
 
 
-def status(view: BotView, now: datetime, stale_after_s: float = STALE_AFTER_S) -> tuple[str, str, str]:
-    """(style, icône, libellé) de l'état d'un bot."""
+def status(view: BotView, now: datetime, stale_after_s: float = STALE_AFTER_S) -> tuple[str, str, str, str]:
+    """(style, icône, libellé court, détail) de l'état d'un bot."""
     if not view.started:
-        return "muted", "○", "Pas encore lancé"
+        return "muted", "○", "Pas encore lancé", ""
     if view.updated_at and (now - view.updated_at).total_seconds() > stale_after_s:
-        return "critical", "✕", f"Arrêté ? Aucune nouvelle depuis {duration((now - view.updated_at).total_seconds())}"
+        return "critical", "✕", "Arrêté ?", f"Aucune nouvelle depuis {duration((now - view.updated_at).total_seconds())}"
+    if view.eliminated:
+        return "critical", "✕", "Éliminée", view.eliminated
     if view.blocked:
-        return "warning", "!", f"Achats bloqués : {view.blocked}"
+        return "warning", "!", "Achats bloqués", view.blocked
     if view.order:
         side = "d'achat" if view.order.get("side") == "buy" else "de vente"
-        return "neutral", "●", f"Ordre limite {side} en attente"
+        return "neutral", "●", f"Ordre limite {side} en attente", ""
     if view.position:
-        return "neutral", "●", "En position"
-    return "neutral", "○", "En attente d'un signal"
+        return "neutral", "●", "En position", ""
+    return "neutral", "○", "En attente d'un signal", ""
 
 
 def chip(style: str, icon: str, label: str) -> str:
@@ -223,22 +244,72 @@ def chip(style: str, icon: str, label: str) -> str:
 
 
 # --- graphique ---------------------------------------------------------------------------
+@dataclass
+class Series:
+    name: str
+    slot: int
+    points: list[tuple[float, float]]
+
+
+def _ms(t: datetime) -> float:
+    return t.timestamp() * 1000
+
+
 def points(view: BotView) -> list[tuple[float, float]]:
     """Rendement cumulé (%) : 0 au départ, puis après chaque trade clôturé, puis la valeur actuelle."""
-    if not view.started:
+    return group_points([view])
+
+
+def group_points(members: list[BotView]) -> list[tuple[float, float]]:
+    """Rendement cumulé (%) d'un groupe de bots (un bot seul, ou tous ceux d'une même stratégie)."""
+    started = [v for v in members if v.started]
+    starts = [(v.trades[0]["entree"] or v.trades[0]["sortie"]) if v.trades else v.updated_at for v in started]
+    starts = [t for t in starts if t is not None]
+    if not starts:
         return []
-    first = view.trades[0] if view.trades else None
-    start = (first["entree"] or first["sortie"]) if first else view.updated_at
-    if start is None:
-        return []
-    pts = [(start.timestamp() * 1000, 0.0)]
+    initial = sum(v.initial for v in started)
+    pts = [(_ms(min(starts)), 0.0)]
     realized = 0.0
-    for trade in view.trades:
-        realized += trade["pnl"]
-        pts.append((trade["sortie"].timestamp() * 1000, 100 * realized / view.initial))
-    if view.updated_at and view.updated_at.timestamp() * 1000 >= pts[-1][0]:
-        pts.append((view.updated_at.timestamp() * 1000, view.pnl_pct))
+    for when, pnl in sorted((t["sortie"], t["pnl"]) for v in started for t in v.trades):
+        realized += pnl
+        pts.append((_ms(when), 100 * realized / initial))
+    latest = max((v.updated_at for v in started if v.updated_at), default=None)
+    if latest and _ms(latest) >= pts[-1][0]:
+        pts.append((_ms(latest), 100 * sum(v.pnl for v in started) / initial))
     return pts
+
+
+def bot_series(views: list[BotView]) -> list[Series]:
+    return [Series(v.name, v.slot, pts) for v in views[:MAX_SERIES] if len(pts := points(v)) >= 2]
+
+
+def strategy_series(views: list[BotView]) -> list[Series]:
+    """Une courbe par stratégie : la couleur suit la stratégie, jamais son rang."""
+    groups: dict[str, list[BotView]] = {}
+    for v in views:
+        groups.setdefault(v.label, []).append(v)
+    series = []
+    for slot, (label, members) in enumerate(list(groups.items())[:MAX_SERIES], start=1):
+        if len(pts := group_points(members)) >= 2:
+            series.append(Series(label, slot, pts))
+    return series
+
+
+def color_slots(views: list[BotView]) -> dict[str, int]:
+    """Couleur de chaque bot dans les tableaux : celle de sa courbe (celle de sa stratégie dans le tournoi)."""
+    if any(v.label for v in views):
+        labels = {label: slot for slot, label in enumerate(dict.fromkeys(v.label for v in views), start=1)}
+        return {v.name: labels[v.label] for v in views if labels[v.label] <= MAX_SERIES}
+    return {v.name: v.slot for v in views if v.slot <= MAX_SERIES}
+
+
+def bot_cell(view: BotView, slots: dict[str, int]) -> str:
+    """Nom du bot avec la couleur de sa courbe ; sur téléphone, la stratégie passe à la ligne."""
+    slot = slots.get(view.name)
+    key = f'<span class="line-key" style="background: var(--series-{slot})"></span>' if slot else ""
+    strategy = f'<span class="strat"><span class="sep"> · </span>{esc(view.label)}</span>' if view.label else ""
+    return (f'<td class="bot-cell"><span class="bot">{key}<span><span class="pair">{esc(view.symbol)} '
+            f"{esc(view.timeframe)}</span>{strategy}</span></span></td>")
 
 
 def nice_ticks(lo: float, hi: float, count: int = 5) -> list[float]:
@@ -249,12 +320,11 @@ def nice_ticks(lo: float, hi: float, count: int = 5) -> list[float]:
     return [first + i * step for i in range(int(round((last - first) / step)) + 1)]
 
 
-def chart(views: list[BotView]) -> str:
-    series = [(v, pts) for v in views[:MAX_SERIES] if len(pts := points(v)) >= 2]
+def chart(series: list[Series]) -> str:
     if not series:
         return '<p class="empty">La courbe apparaîtra quand un bot aura tourné quelques minutes.</p>'
-    times = [t for _, pts in series for t, _ in pts]
-    values = [v for _, pts in series for _, v in pts]
+    times = [t for sr in series for t, _ in sr.points]
+    values = [v for sr in series for _, v in sr.points]
     t0, t1 = min(times), max(times)
     t1 = t1 if t1 > t0 else t0 + 3_600_000
     lo, hi = min(min(values), -0.5), max(max(values), 0.5)
@@ -282,12 +352,13 @@ def chart(views: list[BotView]) -> str:
         parts.append(f'<text class="tick" x="{x_of(t):.1f}" y="{H - 12}" text-anchor="{anchor}">{label}</text>')
 
     ends = []
-    for view, pts in series:
+    for sr in series:
+        pts = sr.points
         d = f"M{x_of(pts[0][0]):.1f} {y_of(pts[0][1]):.1f}" + "".join(
             f"H{x_of(t):.1f}V{y_of(v):.1f}" for t, v in pts[1:]
         )
-        parts.append(f'<path class="line" style="stroke: var(--series-{view.slot})" d="{d}"/>')
-        ends.append((view, x_of(pts[-1][0]), y_of(pts[-1][1]), pts[-1][1]))
+        parts.append(f'<path class="line" style="stroke: var(--series-{sr.slot})" d="{d}"/>')
+        ends.append((sr, x_of(pts[-1][0]), y_of(pts[-1][1]), pts[-1][1]))
     # Étiquettes directes en bout de ligne, écartées d'au moins 16 px, reliées par un trait si déplacées.
     ends.sort(key=lambda e: e[2])
     label_y = []
@@ -296,13 +367,13 @@ def chart(views: list[BotView]) -> str:
     overflow = label_y[-1] - (H - MB) if label_y else 0
     if overflow > 0:
         label_y = [y - overflow for y in label_y]
-    for (view, x, y, value), ly in zip(ends, label_y):
+    for (sr, x, y, value), ly in zip(ends, label_y):
         lx = W - MR + 14
         if abs(ly - y) > 2 or lx - x > 16:
             parts.append(f'<line class="leader" x1="{x:.1f}" y1="{y:.1f}" x2="{lx - 4}" y2="{ly:.1f}"/>')
-        parts.append(f'<circle class="end" style="fill: var(--series-{view.slot})" cx="{x:.1f}" cy="{y:.1f}" r="4"/>')
+        parts.append(f'<circle class="end" style="fill: var(--series-{sr.slot})" cx="{x:.1f}" cy="{y:.1f}" r="4"/>')
         parts.append(
-            f'<text class="end-label" x="{lx}" y="{ly + 4:.1f}">{esc(view.name)} '
+            f'<text class="end-label" x="{lx}" y="{ly + 4:.1f}">{esc(short(sr.name, 16))} '
             f'<tspan class="end-value">{fmt_signed(value, 2, " %")}</tspan></text>'
         )
     parts.append(f'<line id="crosshair" class="crosshair" x1="0" x2="0" y1="{MT}" y2="{H - MB}"/>')
@@ -310,67 +381,208 @@ def chart(views: list[BotView]) -> str:
 
     data = {
         "w": W, "ml": ML, "mr": MR, "t0": t0, "t1": t1,
-        "series": [{"name": v.name, "slot": v.slot, "points": pts} for v, pts in series],
+        "series": [{"name": sr.name, "slot": sr.slot, "points": sr.points} for sr in series],
     }
     payload = json.dumps(data).replace("</", "<\\/")
     legend = "".join(
-        f'<li><span class="line-key" style="background: var(--series-{v.slot})"></span>{esc(v.name)}</li>'
-        for v, _ in series
+        f'<li><span class="line-key" style="background: var(--series-{sr.slot})"></span>{esc(sr.name)}</li>'
+        for sr in series
     )
     return (
         f'<ul class="legend">{legend}</ul>'
         f'<div class="chart-box"><svg id="equity-chart" viewBox="0 0 {W} {H}" role="img" tabindex="0" '
-        f'aria-label="Rendement cumulé de chaque bot depuis son départ, en pourcentage">{"".join(parts)}</svg>'
+        f'aria-label="Rendement cumulé depuis le départ, en pourcentage">{"".join(parts)}</svg>'
         f'<div id="chart-tip" class="tip" hidden></div></div>'
         f'<script type="application/json" id="chart-data">{payload}</script>'
     )
 
 
+def short(text: str, size: int) -> str:
+    return text if len(text) <= size else text[: size - 1] + "…"
+
+
 # --- sections ------------------------------------------------------------------------------
-def bot_card(view: BotView, quote: str, now: datetime, stale_after_s: float) -> str:
-    style, icon, label = status(view, now, stale_after_s)
-    stats = []
-    if view.started:
-        stats.append(("Valeur", f"{fmt(view.equity)} {esc(quote)}"))
-        stats.append(("Résultat", f"{delta(view.pnl)} ({fmt_signed(view.pnl_pct, 2, ' %')})"))
-        rate = view.win_rate
-        stats.append(("Trades", f"{len(view.trades)}" + (f" · {fmt(100 * rate, 0)} % gagnants" if rate is not None else "")))
-        pos = view.position
-        if pos:
-            stats.append(("Position", f"{fmt_qty(num(pos.get('qty')))} à {fmt_price(num(pos.get('entry_price')))}"))
-            stats.append(("Stop", fmt_price(num(pos.get("stop")))))
-        else:
-            stats.append(("Position", "aucune"))
-    items = "".join(f"<div><dt>{name}</dt><dd>{value}</dd></div>" for name, value in stats)
-    key = f'<span class="line-key" style="background: var(--series-{view.slot})"></span>' if view.slot <= MAX_SERIES else ""
+ICONS = {
+    "scanner": '<circle cx="11" cy="11" r="6"/><path d="M16 16l4 4"/>',
+    "stratege": '<path d="M5 19V11M12 19V5M19 19v-6"/>',
+    "execution": '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
+    "gardien": '<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/>',
+}
+
+
+def kpis(views: list[BotView], quote: str) -> str:
+    started = [v for v in views if v.started]
+    if not started:
+        return '<p class="empty">Aucun bot n\'a encore tourné. Lance « 4 - Lancer le bot ».</p>'
+    initial = sum(v.initial for v in started)
+    equity = sum(v.equity for v in started)
+    pnl = equity - initial
+    trades = [t for v in views for t in v.trades]
+    wins = sum(t["pnl"] > 0 for t in trades)
+    unit = f" ({esc(quote)})" if quote else ""
+    tiles = [  # l'unité dans le libellé : les grands nombres tiennent sur une ligne
+        (f"Résultat net après frais{unit}", delta(pnl), fmt_signed(100 * pnl / initial, 2, " %"), " tile-hero"),
+        (f"Portefeuille{unit}", fmt(equity), f"départ {fmt(initial)}", ""),
+        ("Trades", str(len(trades)), f"{fmt(100 * wins / len(trades), 0)} % gagnants" if trades else "aucun pour l'instant", ""),
+        ("En position", f"{sum(1 for v in views if v.position)} / {len(views)}", "bots", ""),
+        ("Éliminées", str(sum(1 for v in views if v.eliminated)), "coupées par le gardien", ""),
+    ]
+    return '<div class="kpis">' + "".join(
+        f'<div class="tile{extra}"><p class="tile-label">{label}</p><p class="tile-value">{value}</p>'
+        f'<p class="tile-sub">{sub}</p></div>'
+        for label, value, sub, extra in tiles
+    ) + "</div>"
+
+
+def agent(kind: str, slot: int, name: str, role: str, metric: str, detail: str) -> str:
     return (
-        f'<article class="card"><h3>{key}{esc(view.name)}</h3>{chip(style, icon, label)}'
-        f'<dl class="stats">{items}</dl></article>'
+        f'<article class="agent"><div class="agent-head"><svg viewBox="0 0 24 24" aria-hidden="true" '
+        f'style="color: var(--series-{slot})">{ICONS[kind]}</svg><div><h3>{name}</h3><p class="role">{role}</p></div></div>'
+        f'<p class="agent-metric">{metric}</p><p class="agent-detail">{detail}</p></article>'
     )
 
 
-def trades_table(views: list[BotView]) -> str:
-    rows = sorted(((v, t) for v in views for t in v.trades), key=lambda vt: vt[1]["sortie"], reverse=True)
+def team(views: list[BotView], settings: Settings, registry: dict | None) -> str:
+    symbols = list(dict.fromkeys(v.symbol for v in views))
+    markets = (registry or {}).get("markets") or []
+    if markets:
+        hot = [f"{esc(m['symbol'].split('/')[0])} {fmt(100 * m['amplitude'], 0)} %" for m in markets[:3]
+               if num(m.get("amplitude")) is not None]
+        scanner = agent("scanner", 1, "Scanner", "choisit les cryptos agitées et assez échangées",
+                        f"{len(markets)} cryptos suivies", "amplitude sur 24 h : " + ", ".join(hot) if hot else "liste fixée à la main")
+    else:
+        scanner = agent("scanner", 1, "Scanner", "suit les marchés choisis dans les réglages",
+                        f"{len(symbols)} marché{'s' if len(symbols) > 1 else ''}", esc(", ".join(symbols[:4])))
+    labels = list(dict.fromkeys(v.label for v in views if v.label))
+    if labels:
+        totals = {lab: sum(v.pnl for v in views if v.label == lab) for lab in labels}
+        best = max(totals, key=totals.get)
+        dead = len({v.label for v in views if v.eliminated})
+        strat = agent("stratege", 2, "Stratèges", "les stratégies retenues par le labo",
+                      f"{len(labels)} en course", f"en tête : {esc(best)}" + (f" · {dead} avec des bots éliminés" if dead else ""))
+    else:
+        strat = agent("stratege", 2, "Stratège", "applique la même règle à chaque bot",
+                      esc(settings.strategy.strategy_type.replace("_", " ")), "réglages dans le fichier .env")
+    trades = sum(len(v.trades) for v in views)
+    execution = agent("execution", 3, "Exécution", "passe les ordres, frais et écart compris",
+                      f"{trades} trade{'s' if trades > 1 else ''}",
+                      f"{sum(1 for v in views if v.position)} position(s) ouverte(s)")
+    blocked = sum(1 for v in views if v.blocked)
+    eliminated = sum(1 for v in views if v.eliminated)
+    guard = agent("gardien", 4, "Gardien", "coupe les pertes, élimine les stratégies perdantes",
+                  f"{fmt(100 * settings.risk.risk_per_trade, 0)} % de risque par trade",
+                  f"{eliminated} éliminé(s) · {blocked} bloqué(s)")
+    return f'<div class="team">{scanner}{strat}{execution}{guard}</div>'
+
+
+def positions_table(views: list[BotView]) -> str:
+    slots = color_slots(views)
+    rows = []
+    for v in views:
+        pos = v.position
+        if not pos:
+            continue
+        entry, last = num(pos.get("entry_price")), v.last_price
+        latent = 100 * (last / entry - 1) if entry and last else None
+        since = parse_time(pos.get("entry_time"))
+        rows.append(
+            "<tr>"
+            f"{bot_cell(v, slots)}"
+            f"<td class=\"n\">{fmt_price(entry)}</td><td class=\"n\">{fmt_price(last)}</td>"
+            f"<td class=\"n\">{delta(latent, 2, ' %') if latent is not None else '—'}</td>"
+            f"<td class=\"n\">{fmt_price(num(pos.get('stop')))}</td>"
+            f"<td>{local(since) if since else '—'}</td>"
+            "</tr>"
+        )
     if not rows:
-        return '<p class="empty">Aucun trade clôturé pour l\'instant.</p>'
-    body = "".join(
-        "<tr>"
-        f"<td>{local(t['sortie'])}</td>"
-        f'<td class="bot"><span class="line-key" style="background: var(--series-{v.slot})"></span>{esc(v.name)}</td>'
-        f"<td class=\"n\">{fmt_price(t['prix_entree'])}</td>"
-        f"<td class=\"n\">{fmt_price(t['prix_sortie'])}</td>"
-        f"<td class=\"n\">{delta(t['pnl'])}</td>"
-        f"<td class=\"n\">{fmt_signed(t['pct'], 2, ' %') if t['pct'] is not None else '—'}</td>"
-        f"<td>{esc(t['raison'])}</td>"
-        "</tr>"
-        for v, t in rows[:MAX_TRADES]
-    )
-    more = f'<p class="note">Les {MAX_TRADES} derniers sur {len(rows)}. Le détail complet est dans les fichiers trades_*.csv.</p>' if len(rows) > MAX_TRADES else ""
+        return '<p class="empty">Aucune position ouverte : les bots attendent un signal.</p>'
     return (
-        '<div class="table-wrap"><table><thead><tr><th>Sortie</th><th>Bot</th><th class="n">Prix d\'entrée</th>'
-        '<th class="n">Prix de sortie</th><th class="n">Résultat</th><th class="n">%</th><th>Raison</th></tr></thead>'
-        f"<tbody>{body}</tbody></table></div>{more}"
+        '<div class="table-wrap"><table><thead><tr><th class="bot-cell">Bot</th><th class="n">Prix d\'entrée</th>'
+        '<th class="n">Dernier prix</th><th class="n">Latent</th><th class="n">Stop</th><th>Depuis</th></tr></thead>'
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
     )
+
+
+def leaderboard(views: list[BotView], now: datetime, stale_after_s: float) -> str:
+    ranked = sorted(views, key=lambda v: (v.started, v.pnl), reverse=True)
+    slots = color_slots(views)
+    rows = []
+    for rank, v in enumerate(ranked, start=1):
+        style, icon, label, detail = status(v, now, stale_after_s)
+        badges = chip(style, icon, label)
+        if not v.eliminated and is_candidate(v.stats):
+            badges += " " + chip("good", "✓", "candidate au testnet")
+        if detail:
+            badges += f'<p class="why">{esc(detail)}</p>'
+        rate = v.win_rate
+        rows.append(
+            "<tr>"
+            f'<td class="n">{rank}</td>{bot_cell(v, slots)}<td class="status">{badges}</td>'
+            f'<td class="n">{len(v.trades)}</td>'
+            f"<td class=\"n\">{fmt(100 * rate, 0) + ' %' if rate is not None else '—'}</td>"
+            f"<td class=\"n\">{fmt_signed(100 * v.stats.mean, 2, ' %') if v.stats.n else '—'}</td>"
+            f"<td class=\"n\">{delta(v.pnl) + ' (' + fmt_signed(v.pnl_pct, 2, ' %') + ')' if v.started else '—'}</td>"
+            "</tr>"
+        )
+    return (
+        '<div class="table-wrap"><table><thead><tr><th class="n">#</th><th class="bot-cell">Bot</th><th>Statut</th>'
+        '<th class="n">Trades</th><th class="n">Réussite</th><th class="n">Espérance / trade</th>'
+        f"<th class=\"n\">Résultat</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
+def strategy_table(views: list[BotView]) -> str:
+    groups: dict[str, list[BotView]] = {}
+    for v in views:
+        groups.setdefault(v.label, []).append(v)
+    rows = []
+    for label, members in sorted(groups.items(), key=lambda kv: -sum(v.pnl for v in kv[1])):
+        stats = TradeStats()
+        for v in members:
+            for t in v.trades:
+                if t["pct"] is not None:
+                    stats.add(t["pct"] / 100)
+        started = [v for v in members if v.started]
+        initial = sum(v.initial for v in started)
+        pnl = sum(v.pnl for v in started)
+        trades = [t for v in members for t in v.trades]
+        wins = sum(t["pnl"] > 0 for t in trades)
+        rows.append(
+            "<tr>"
+            f"<td>{esc(label)}</td><td class=\"n\">{len(members)}</td><td class=\"n\">{len(trades)}</td>"
+            f"<td class=\"n\">{fmt(100 * wins / len(trades), 0) + ' %' if trades else '—'}</td>"
+            f"<td class=\"n\">{fmt_signed(100 * stats.mean, 2, ' %') if stats.n else '—'}</td>"
+            f"<td class=\"n\">{delta(pnl) + ' (' + fmt_signed(100 * pnl / initial, 2, ' %') + ')' if initial else '—'}</td>"
+            f"<td class=\"n\">{sum(1 for v in members if v.eliminated)} / {len(members)}</td>"
+            "</tr>"
+        )
+    return (
+        '<div class="table-wrap"><table><thead><tr><th>Stratégie</th><th class="n">Bots</th><th class="n">Trades</th>'
+        '<th class="n">Réussite</th><th class="n">Espérance / trade</th><th class="n">Résultat</th>'
+        f"<th class=\"n\">Éliminés</th></tr></thead><tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
+def feed(views: list[BotView]) -> str:
+    events = []
+    for v in views:
+        for t in v.trades:
+            if t["entree"]:
+                events.append((t["entree"], v, "buy", "ACHAT", f"à {fmt_price(t['prix_entree'])}"))
+            events.append((t["sortie"], v, "sell", "VENTE", f"{esc(t['raison'])} · {delta(t['pnl'])}"))
+        pos = v.position
+        if pos and (when := parse_time(pos.get("entry_time"))):
+            events.append((when, v, "buy", "ACHAT", f"à {fmt_price(num(pos.get('entry_price')))} · stop "
+                                                    f"{fmt_price(num(pos.get('stop')))}"))
+    if not events:
+        return '<p class="empty">Aucun trade pour l\'instant : chaque achat et chaque vente s\'afficheront ici.</p>'
+    events.sort(key=lambda e: e[0], reverse=True)
+    items = "".join(
+        f'<li><time>{local(when)}</time><span class="tag tag-{kind}">{word}</span>'
+        f'<span class="who">{esc(v.name)}</span><span class="what">{what}</span></li>'
+        for when, v, kind, word, what in events[:MAX_EVENTS]
+    )
+    return f'<ol class="feed">{items}</ol>'
 
 
 def robustness_section(results: dict | None) -> str:
@@ -447,55 +659,67 @@ def lab_section(results: dict | None) -> str:
 
 
 def render(views: list[BotView], settings: Settings, robustness: dict | None, now: datetime,
-           lab: dict | None = None) -> str:
-    quotes = {name.split()[0].split("/")[-1] for name in (v.name for v in views)}
+           lab: dict | None = None, registry: dict | None = None) -> str:
+    tournament = registry is not None
+    quotes = {v.symbol.split("/")[-1] for v in views}
     quote = quotes.pop() if len(quotes) == 1 else ""
-    started = [v for v in views if v.started]
-    total_initial = sum(v.initial for v in started)
-    total_equity = sum(v.equity for v in started)
-    total_pnl = total_equity - total_initial
-    total_pct = 100 * total_pnl / total_initial if total_initial else 0.0
-    n_trades = sum(len(v.trades) for v in views)
     mode = MODE_LABELS.get(settings.mode, settings.mode)
+    title = "Tournoi en argent fictif" if tournament else "Tableau de bord"
+    started = parse_time((registry or {}).get("started"))
+    running = f" · en course depuis {duration((now - started).total_seconds())}" if started else ""
     banner = (
         '<p class="banner">Argent réel : chaque trade engage ton argent. Vérifie que les stops sont surveillés '
         "(statut des bots ci-dessous).</p>"
         if settings.mode == "live" else ""
     )
-    hero = (
-        f'<p class="hero-label">Résultat total</p><p class="hero">{delta(total_pnl)} {esc(quote)}</p>'
-        f'<p class="hero-sub">{fmt_signed(total_pct, 2, " %")} · valeur {fmt(total_equity)} {esc(quote)} · '
-        f'{len(views)} bot{"s" if len(views) > 1 else ""} · {n_trades} trade{"s" if n_trades > 1 else ""}</p>'
-        if started else '<p class="empty">Aucun bot n\'a encore tourné. Lance « 4 - Lancer le bot ».</p>'
-    )
     stale_after_s = max(STALE_AFTER_S, 3 * settings.poll_seconds)  # trois tours manqués
-    cards = "".join(bot_card(v, quote, now, stale_after_s) for v in views)
+    labelled = any(v.label for v in views)
+    sections = [
+        ("", kpis(views, quote)),
+        ("L'équipe", team(views, settings, registry)),
+        ("Positions ouvertes", positions_table(views)),
+        ("Classement", leaderboard(views, now, stale_after_s)),
+    ]
+    if labelled:
+        sections.append(("Par stratégie", strategy_table(views)))
+    sections += [
+        ("Rendement cumulé par stratégie" if labelled else "Rendement cumulé depuis le départ",
+         chart(strategy_series(views) if labelled else bot_series(views))),
+        ("Journal en direct", feed(views)),
+    ]
+    if not tournament:
+        sections += [("Laboratoire de stratégies", lab_section(lab)),
+                     ("Dernier test de robustesse", robustness_section(robustness))]
+    body = "".join(f"<section>{f'<h2>{name}</h2>' if name else ''}{content}</section>" for name, content in sections)
     return (
-        '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
+        '<!doctype html><html lang="fr" data-theme="dark"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        '<meta http-equiv="refresh" content="60"><title>Tableau de bord du bot</title>'
+        f'<meta http-equiv="refresh" content="60"><title>{title}</title>'
+        "<script>try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; }"
+        " catch (e) {}</script>"
         f"<style>{CSS}</style></head><body><main>"
-        f'<header><h1>Tableau de bord</h1><p class="meta">Mode {esc(mode)} · {esc(settings.exchange)} · '
-        f"mis à jour le {local(now, '%d/%m/%Y à %H:%M')} · la page se recharge chaque minute</p></header>"
-        f"{banner}<section>{hero}</section>"
-        f'<section><h2>Les bots</h2><div class="cards">{cards}</div></section>'
-        f"<section><h2>Rendement cumulé depuis le départ</h2>{chart(views)}</section>"
-        f"<section><h2>Derniers trades</h2>{trades_table(views)}</section>"
-        f"<section><h2>Laboratoire de stratégies</h2>{lab_section(lab)}</section>"
-        f"<section><h2>Dernier test de robustesse</h2>{robustness_section(robustness)}</section>"
+        f'<header class="topbar"><div><p class="brand">Trading bot <span class="badge">{esc(mode)}</span></p>'
+        f'<h1>{title}</h1><p class="meta">{esc(settings.exchange)} · 24 h/24{running} · mis à jour le '
+        f"{local(now, '%d/%m/%Y à %H:%M')} · la page se recharge chaque minute</p></div>"
+        '<button id="theme-toggle" class="theme" type="button">Clair / sombre</button></header>'
+        f"{banner}{body}"
         '<footer><p class="note">Les performances passées ne garantissent rien. Un bot arrêté ne surveille plus '
         "ses stops : garde un œil sur le statut de chaque bot.</p></footer>"
         f"</main><script>{JS}</script></body></html>"
     )
 
 
-def write_dashboard(settings: Settings, now: datetime | None = None) -> Path:
+def write_dashboard(settings: Settings, now: datetime | None = None, bots: list[Settings] | None = None,
+                    registry: dict | None = None) -> Path:
+    """`bots` et `registry` : ceux du tournoi ; sinon les bots de BOTS, avec labo et robustesse."""
     now = now or datetime.now(timezone.utc)
-    path = settings.data_dir / FILENAME
+    tournament = registry is not None
     page = render(
-        load_views(settings, now), settings, load_results(settings.data_dir / ROBUSTNESS_FILE), now,
-        load_lab(settings.data_dir / LAB_FILE),
+        load_views(settings, now, bots), settings,
+        None if tournament else load_results(settings.data_dir / ROBUSTNESS_FILE), now,
+        None if tournament else load_lab(settings.data_dir / LAB_FILE), registry,
     )
+    path = settings.data_dir / FILENAME
     atomic_write(path, page)
     return path
 
@@ -533,21 +757,62 @@ body { margin: 0; background: var(--page); color: var(--text-primary);
 main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
 h1 { font-size: 28px; margin: 0 0 4px; }
 h2 { font-size: 18px; margin: 0 0 12px; }
-h3 { font-size: 15px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
 section { margin-top: 32px; }
-.meta, .note, .hero-label, .hero-sub, .empty { color: var(--text-secondary); margin: 0; }
+.meta, .note, .empty { color: var(--text-secondary); margin: 0; }
 .note { font-size: 13px; margin-top: 8px; }
-.hero { font-size: 48px; font-weight: 600; margin: 0; line-height: 1.15; }
-.hero .up, .hero .down { font-size: 0.5em; vertical-align: 0.25em; }
 .banner { margin-top: 16px; padding: 12px 16px; border-radius: 8px; border: 2px solid var(--critical);
   font-weight: 600; }
-.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
-.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
-.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; margin: 16px 0 0; }
-.stats dt { color: var(--text-secondary); font-size: 13px; }
-.stats dd { margin: 0; font-weight: 600; }
+.topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.brand { margin: 0 0 4px; font-weight: 600; letter-spacing: 0.02em; color: var(--text-secondary); }
+.badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 12px;
+  border: 1px solid var(--series-1); color: var(--text-primary); text-transform: uppercase; }
+.theme { background: var(--surface-1); color: var(--text-primary); border: 1px solid var(--border);
+  border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; cursor: pointer; }
+.kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.tile-hero { grid-column: span 2; }
+@media (max-width: 1000px) {
+  .kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .tile-hero { grid-column: span 4; }
+}
+@media (max-width: 600px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile-hero { grid-column: span 2; }
+}
+.tile-label, .tile-sub { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.tile-value { margin: 4px 0; font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap; }
+.tile-hero .tile-value { font-size: 32px; }
+.tile-value .up, .tile-value .down { font-size: 0.6em; vertical-align: 0.2em; }
+.team { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1000px) { .team { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .team { grid-template-columns: minmax(0, 1fr); } }
+.agent { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+.agent-head { display: flex; gap: 12px; align-items: center; }
+.agent-head svg { width: 28px; height: 28px; flex: none; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round; }
+.agent h3 { margin: 0; font-size: 15px; }
+.role, .agent-detail { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.agent-metric { margin: 12px 0 2px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.feed { list-style: none; margin: 0; padding: 0; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 12px; }
+.feed li { display: grid; grid-template-columns: 96px 64px minmax(0, 1.2fr) minmax(0, 1fr); gap: 12px;
+  padding: 8px 14px; border-bottom: 1px solid var(--grid); font-size: 14px; align-items: baseline; }
+.feed li:last-child { border-bottom: 0; }
+.feed time { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.tag { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+.tag-buy { color: var(--series-1); }
+.tag-sell { color: var(--series-2); }
+.who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.what { color: var(--text-secondary); }
+@media (max-width: 600px) {
+  .feed li { grid-template-columns: 80px 56px 1fr; }
+  .feed .what { grid-column: 2 / -1; }
+}
 .chip { display: inline-flex; gap: 6px; align-items: baseline; padding: 2px 10px; border-radius: 999px;
-  border: 1px solid var(--border); font-size: 13px; color: var(--text-primary); }
+  border: 1px solid var(--border); font-size: 13px; color: var(--text-primary); white-space: nowrap; }
+td.status { white-space: normal; min-width: 200px; }
+.why { margin: 4px 0 0; max-width: 300px; color: var(--text-secondary); font-size: 12px; }
 .chip-good > span { color: var(--good); }
 .chip-warning { border-color: var(--warning); }
 .chip-warning > span { color: var(--warning); }
@@ -562,10 +827,7 @@ section { margin-top: 32px; }
 .legend li { display: flex; align-items: center; gap: 6px; }
 .chart-box { position: relative; background: var(--surface-1); border: 1px solid var(--border);
   border-radius: 12px; padding: 8px; overflow-x: auto; }
-svg { display: block; width: 100%; min-width: 760px; height: auto; font-size: 13px; outline-offset: 4px; }
-@media (max-width: 600px) {
-  .hero { font-size: 36px; }
-}
+.chart-box svg { display: block; width: 100%; min-width: 760px; height: auto; font-size: 13px; outline-offset: 4px; }
 .grid { stroke: var(--grid); stroke-width: 1; }
 .zero { stroke: var(--axis); stroke-width: 1; }
 .tick { fill: var(--muted); font-variant-numeric: tabular-nums; }
@@ -590,7 +852,15 @@ th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--gri
 th { color: var(--text-secondary); font-weight: 600; }
 tr:last-child td { border-bottom: 0; }
 .n { text-align: right; font-variant-numeric: tabular-nums; }
-td.bot { display: flex; align-items: center; gap: 8px; }
+.bot { display: flex; align-items: flex-start; gap: 8px; }
+.bot .line-key { flex: none; margin-top: 0.7em; }
+.pair { white-space: nowrap; }
+@media (max-width: 1000px) {  /* tablette et téléphone : le nom du bot reste visible quand on fait défiler */
+  .bot-cell { position: sticky; left: 0; z-index: 1; background: var(--surface-1); white-space: normal;
+    min-width: 150px; }
+  .strat { display: block; color: var(--text-secondary); font-size: 12px; }
+  .strat .sep { display: none; }
+}
 .verdict { font-weight: 600; margin: 8px 0 12px; }
 footer { margin-top: 40px; }
 """
@@ -647,6 +917,16 @@ JS = """
   svg.addEventListener('keydown', e => {
     if (e.key === 'ArrowLeft') { show(index - 1); e.preventDefault(); }
     if (e.key === 'ArrowRight') { show(index + 1); e.preventDefault(); }
+  });
+})();
+(() => {
+  const button = document.getElementById('theme-toggle');
+  if (!button) return;
+  button.addEventListener('click', () => {
+    const root = document.documentElement;
+    const next = root.dataset.theme === 'light' ? 'dark' : 'light';
+    root.dataset.theme = next;
+    try { localStorage.setItem('theme', next); } catch (e) {}
   });
 })();
 """

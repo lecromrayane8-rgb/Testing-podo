@@ -81,3 +81,119 @@ def test_robustness_skips_a_market_on_network_error(tmp_path, monkeypatch):
     assert main.main(["robustesse", "--symbols", "BTC/USDT,ETH/USDT", "--timeframes", "1h"]) == 0
     saved = json.loads((tmp_path / "data" / "robustesse.json").read_text(encoding="utf-8"))
     assert [r["market"] for r in saved["rows"]] == ["BTC/USDT 1h"]
+
+
+def test_reset_guard_gives_an_eliminated_strategy_a_fresh_start(tmp_path, monkeypatch):
+    from tradingbot.live import StateStore, bot_paths
+    from tradingbot.config import Settings
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    s = Settings.from_env()
+    state_path, _ = bot_paths(s)
+    StateStore(state_path).save({"eliminated": "perd nettement", "perf": {"n": 25, "total": -1.0, "total_sq": 1.0},
+                                 "capital": 9000.0})
+    assert main.main(["reset-guard"]) == 0
+    state = StateStore(state_path).load()
+    assert state["eliminated"] is None and state["perf"] is None and state["capital"] == 9000.0
+
+
+def test_history_is_capped_for_minute_candles():
+    assert main.history_days("1m", 730) == 60  # ~86 000 bougies : le labo reste rapide
+    assert main.history_days("5m", 730) == 300 and main.history_days("5m", 30) == 30
+    assert main.history_days("1h", 730) == 730 and main.history_days("1d", 730) == main.LONG_TERM_DAYS
+
+
+def lab_file(path, *rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"verdict": "…", "rows": [
+        {"variant": v, "timeframe": tf, "verdict": verdict, "expectancy_pct": exp} for v, tf, verdict, exp in rows
+    ]}
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return payload
+
+
+def test_tournament_picks_only_strategies_worth_watching(tmp_path):
+    lab = lab_file(
+        tmp_path / "laboratoire.json",
+        ("Supertrend 10/3", "4h", "prometteur", 0.6),
+        ("Momentum 100", "1h", "à surveiller", 0.4),
+        ("Supertrend 10/3", "1h", "à surveiller", 0.3),  # même stratégie : une seule fois si on force 1 min
+        ("Ancienne variante", "1h", "à surveiller", 0.2),  # n'existe plus dans le labo
+        ("Cassure 20/10", "15m", "perd de l'argent", -0.4),
+    )
+    assert [(v, tf) for v, tf, _ in main.tournament_picks(lab, None, 6)] == [
+        ("Supertrend 10/3", "4h"), ("Momentum 100", "1h"), ("Supertrend 10/3", "1h")]
+    assert [(v, tf) for v, tf, _ in main.tournament_picks(lab, "1m", 6)] == [
+        ("Supertrend 10/3", "1m"), ("Momentum 100", "1m")]
+    assert len(main.tournament_picks(lab, None, 1)) == 1
+
+
+def test_tournament_pits_every_watched_strategy_against_every_coin_in_paper(tmp_path, monkeypatch, caplog):
+    import logging
+    from tradingbot.broker import PaperBroker
+    from tradingbot.scanner import ScanResult
+    caplog.set_level(logging.INFO, logger="tradingbot")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("MODE", "testnet")  # même réglé sur une plateforme, le tournoi reste en argent fictif
+    monkeypatch.setenv("MAX_CAPITAL", "200")
+    lab_file(tmp_path / "data" / "laboratoire.json",
+             ("Supertrend 10/3", "4h", "prometteur", 0.6), ("Momentum 100", "1h", "à surveiller", 0.4),
+             ("Cassure 20/10", "15m", "perd de l'argent", -0.4))
+
+    class PublicData:  # données publiques seulement : aucune clé API
+        made = []
+
+        def __init__(self, exchange_id, symbol, exchange=None, cache_seconds=0.0):
+            if symbol == "GONE/USDT":
+                raise ValueError("Paire GONE/USDT introuvable")
+            self.symbol, self.exchange, self.cache_seconds = symbol, exchange, cache_seconds
+            PublicData.made.append(self)
+
+    scans, runs, opened = [], {}, []
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: "connexion partagée")
+    monkeypatch.setattr(main, "CcxtBroker", PublicData)
+    monkeypatch.setattr(main, "pick_markets", lambda exchange, top, memecoins: scans.append((top, memecoins)) or [
+        ScanResult("PEPE/USDT", 0.21, 3e7, 0.05), ScanResult("GONE/USDT", 0.2, 1e7, 0.0),
+        ScanResult("DOGE/USDT", 0.09, 5e8, 0.02)])
+    monkeypatch.setattr(main.webbrowser, "open", opened.append)
+
+    def fake_run(bots, poll, after_cycle=None):
+        runs.update(bots=bots, poll=poll)
+        after_cycle()
+
+    monkeypatch.setattr(main, "run_bots", fake_run)
+
+    assert main.main(["tournoi", "--unite", "1m", "--top", "3", "--capital", "500"]) == 0
+    bots = runs["bots"]
+    assert scans == [(3, True)] and runs["poll"] <= 15 and len(opened) == 1
+    assert sorted(b.name for b in bots) == [
+        "DOGE/USDT 1m · Momentum 100", "DOGE/USDT 1m · Supertrend 10/3",
+        "PEPE/USDT 1m · Momentum 100", "PEPE/USDT 1m · Supertrend 10/3"]
+    assert all(b.s.mode == "paper" and isinstance(b.broker, PaperBroker) for b in bots)
+    assert all(b.s.max_capital == 500 and b.broker.balances().quote == 500 for b in bots)
+    assert len({b.broker.wallet_path for b in bots}) == 4  # un compte fictif par bot
+    assert {d.symbol for d in PublicData.made} == {"PEPE/USDT", "DOGE/USDT"}  # une connexion par crypto
+    assert all(d.exchange == "connexion partagée" and d.cache_seconds > 0 for d in PublicData.made)
+    pepe = [b for b in bots if b.s.symbol == "PEPE/USDT"]
+    assert pepe[0].broker.data is pepe[1].broker.data
+    folder = tmp_path / "data" / "tournoi"
+    registry = json.loads((folder / "tournoi.json").read_text(encoding="utf-8"))
+    assert [m["symbol"] for m in registry["markets"]] == ["PEPE/USDT", "DOGE/USDT"]
+    assert [s["variant"] for s in registry["strategies"]] == ["Supertrend 10/3", "Momentum 100"]
+    page = (folder / "tableau-de-bord.html").read_text(encoding="utf-8")
+    assert "Tournoi en argent fictif" in page and "Momentum 100" in page
+    assert "Tournoi : 4 bots, 0 en position, 0 trades clôturés" in caplog.text  # résumé dans la console
+    assert main.main(["tournoi", "--unite", "1m", "--top", "3", "--capital", "500"]) == 0
+    again = json.loads((folder / "tournoi.json").read_text(encoding="utf-8"))
+    assert again["started"] == registry["started"]  # un tournoi relancé garde sa date de départ
+
+
+def test_tournament_explains_what_is_missing(tmp_path, monkeypatch, caplog):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    assert main.main(["tournoi"]) == 1
+    assert "Lance d'abord le laboratoire" in caplog.text
+    lab_file(tmp_path / "data" / "laboratoire.json", ("Cassure 20/10", "15m", "perd de l'argent", -0.4))
+    assert main.main(["tournoi"]) == 1
+    assert "aucune stratégie « à surveiller »" in caplog.text

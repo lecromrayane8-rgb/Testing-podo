@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
 from .data import timeframe_to_ms
@@ -79,11 +79,16 @@ class Settings:
     risk: RiskParams
     execution: ExecutionParams
     bots: tuple[tuple[str, str], ...] = ()
+    bot_label: str = ""  # nom de la stratégie d'un bot du tournoi (fichiers et affichage)
 
     @property
     def markets(self) -> tuple[tuple[str, str], ...]:
         """Les bots à faire tourner : BOTS, ou à défaut SYMBOL@TIMEFRAME."""
         return self.bots or ((self.symbol, self.timeframe),)
+
+    def per_bot(self) -> list["Settings"]:
+        """Un jeu de réglages par bot (BOTS), chacun avec sa paire et son unité de temps."""
+        return [replace(self, symbol=symbol, timeframe=timeframe) for symbol, timeframe in self.markets]
 
     @classmethod
     def from_env(cls) -> "Settings":

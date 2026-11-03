@@ -63,3 +63,20 @@ def test_limit_sell_pays_maker_fee(paper):
     market.last = 101.5
     assert broker.order_status(order_id).fill.quote == pytest.approx(2 * 101 * 0.999)
     assert broker.balances().quote == pytest.approx(quote_before + 2 * 101 * 0.999)
+
+
+def test_market_orders_pay_the_spread(paper):
+    broker, market = paper  # acheteurs à 100,0, vendeurs à 100,1
+    slip = broker.execution.slippage
+    assert broker.market_buy(1.0).price == pytest.approx(100.1 * (1 + slip))  # on achète au vendeur
+    assert broker.market_sell(1.0).price == pytest.approx(100.0 * (1 - slip))  # on vend à l'acheteur
+
+
+def test_market_order_falls_back_to_last_price_without_order_book(paper):
+    broker, market = paper
+
+    def no_book():
+        raise ccxt.NetworkError("carnet indisponible")
+
+    market.best_bid_ask = no_book
+    assert broker.market_buy(1.0).price == pytest.approx(100.0 * (1 + broker.execution.slippage))

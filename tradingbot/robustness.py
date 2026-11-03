@@ -33,7 +33,7 @@ def research_risk(risk: RiskParams) -> RiskParams:
     En direct, l'arrêt après -15 % protège l'argent. En étude, il couperait les trades dès qu'une
     stratégie perd, et ne laisserait juger qu'un bout de l'historique.
     """
-    return replace(risk, daily_loss_limit=1.0, max_drawdown=1.0)
+    return replace(risk, daily_loss_limit=1.0, max_drawdown=1.0, eliminate_after_trades=0)
 
 
 def adjusted_lower_bound(values: np.ndarray, n_tests: int, alpha: float = 0.05) -> float:

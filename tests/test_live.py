@@ -11,7 +11,7 @@ from tests.conftest import FakeBroker, frame_from_closes
 from tradingbot.backtest import run_backtest
 from tradingbot.config import ConfigError, Settings
 from tradingbot.execution import ExecutionParams
-from tradingbot.live import MAX_CONSECUTIVE_FAILURES, Bot, BotLog, StateStore, run_bots
+from tradingbot.live import MAX_CONSECUTIVE_FAILURES, Bot, BotLog, StateStore, px, run_bots
 from tradingbot.risk import RiskParams
 from tradingbot.strategy import StrategyParams
 
@@ -325,3 +325,30 @@ def test_candle_log_is_readable(tmp_path, caplog):
     assert any("terminée" in m and "pas de signal d'achat, en attente" in m for m in messages)
     assert any("signal d'achat (valeur" in m for m in messages)
     assert not any("signal_achat=" in m for m in messages)
+
+
+def losing_walk():
+    rng = np.random.default_rng(11)
+    return frame_from_closes(100 * np.exp(np.cumsum(rng.normal(-0.002, 0.01, 1200))))
+
+
+def test_live_and_backtest_eliminate_a_losing_strategy_at_the_same_trade(tmp_path):
+    strat = replace(STRAT, trend_period=0, stop_atr_mult=100)
+    risk = replace(RISK, eliminate_after_trades=8)
+    df = losing_walk()
+    result = run_backtest(df, strat, risk, execution=FREE)
+    assert "éliminée" in (result.metrics["arret_garde_fou"] or "")
+    expected = [t for t in result.trades if t.reason != "fin du test"]
+
+    bot, broker = make_bot(tmp_path, df, strategy=strat, risk=risk)
+    for i in range(1, len(df)):
+        bot.step(broker.at_open(i))
+    sells = [o for o in broker.orders if o[0] == "sell"]
+    assert bot.state["eliminated"].startswith("perd nettement")
+    assert len(sells) == len(expected)
+    assert [s[2] for s in sells] == pytest.approx([t.exit_price for t in expected])
+
+
+def test_prices_in_messages_stay_readable_for_memecoins():
+    assert px(68_450.0) == "68450.00" and px(187.43) == "187.43"
+    assert px(0.00001234) == "0.000012340"  # PEPE : « 0.00 » ne dirait rien

@@ -1,7 +1,11 @@
-"""Gestion du risque : taille de position et garde-fous (perte journalière, drawdown max)."""
+"""Gestion du risque : taille de position et garde-fous (perte journalière, drawdown max, élimination)."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import math
+from dataclasses import asdict, dataclass
+
+Z_95 = 1.96
+CANDIDATE_MIN_TRADES = 30
 
 
 @dataclass(frozen=True)
@@ -10,6 +14,55 @@ class RiskParams:
     max_position_pct: float = 0.95  # exposition max (spot, sans levier)
     daily_loss_limit: float = 0.03  # plus de nouvelle entrée ce jour-là au-delà
     max_drawdown: float = 0.15  # arrêt des entrées jusqu'à réarmement manuel
+    eliminate_after_trades: int = 20  # élimine une stratégie qui perd nettement après N trades (0 = jamais)
+
+
+@dataclass
+class TradeStats:
+    """Statistiques incrémentales des rendements par trade (en fraction : 0.01 = +1 %)."""
+
+    n: int = 0
+    total: float = 0.0
+    total_sq: float = 0.0
+
+    def add(self, ret: float) -> None:
+        self.n += 1
+        self.total += ret
+        self.total_sq += ret * ret
+
+    @property
+    def mean(self) -> float:
+        return self.total / self.n if self.n else math.nan
+
+    def bounds(self, z: float = Z_95) -> tuple[float, float]:
+        """Fourchette de l'espérance par trade (approximation normale)."""
+        if self.n < 2:
+            return math.nan, math.nan
+        var = max(self.total_sq - self.n * self.mean ** 2, 0.0) / (self.n - 1)
+        half = z * math.sqrt(var / self.n)
+        return self.mean - half, self.mean + half
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "TradeStats":
+        return cls(**(data or {}))
+
+
+def elimination_reason(stats: TradeStats, min_trades: int) -> str | None:
+    """Une stratégie est éliminée quand, après assez de trades, même le haut de sa fourchette est négatif."""
+    if not min_trades or stats.n < min_trades:
+        return None
+    if stats.bounds()[1] < 0:
+        pct = f"{100 * stats.mean:+.2f}".replace(".", ",")
+        return f"perd nettement après {stats.n} trades ({pct} % par trade)"
+    return None
+
+
+def is_candidate(stats: TradeStats) -> bool:
+    """Gagnante de façon nette sur assez de trades : candidate au testnet (jamais à l'argent réel seule)."""
+    return stats.n >= CANDIDATE_MIN_TRADES and stats.bounds()[0] > 0
 
 
 def position_size(equity: float, entry_price: float, stop_price: float, p: RiskParams) -> float:
