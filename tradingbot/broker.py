@@ -299,6 +299,7 @@ class PaperBroker:
 
 def atomic_write(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # Un fichier temporaire par processus : le labo et les bots peuvent écrire le même fichier en même temps.
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp.write_text(content, encoding="utf-8")
     os.replace(tmp, path)

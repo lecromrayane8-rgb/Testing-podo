@@ -313,3 +313,15 @@ def test_trend_strategies_trade_live_exactly_like_the_backtest(tmp_path, random_
     assert len(expected) > 5 and len(sells) == len(expected)
     for trade, buy, sell in zip(expected, buys, sells):
         assert buy[2] == pytest.approx(trade.entry_price) and sell[2] == pytest.approx(trade.exit_price)
+
+
+def test_candle_log_is_readable(tmp_path, caplog):
+    df = dip_scenario([156.0])
+    bot, broker = make_bot(tmp_path, df)
+    with caplog.at_level(logging.INFO, logger="tradingbot.live"):
+        for i in range(95, 103):
+            bot.step(broker.at_open(i))
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("terminée" in m and "pas de signal d'achat, en attente" in m for m in messages)
+    assert any("signal d'achat (valeur" in m for m in messages)
+    assert not any("signal_achat=" in m for m in messages)

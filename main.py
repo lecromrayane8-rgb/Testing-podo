@@ -61,6 +61,14 @@ def make_notes(s: Settings) -> ObsidianJournal | None:
     return ObsidianJournal(s.obsidian_vault) if s.obsidian_vault else None
 
 
+def refresh_dashboard(s: Settings) -> None:
+    """Après une étude : un échec d'écriture (bot qui écrit au même moment...) ne doit pas masquer les résultats."""
+    try:
+        print(f"\nTableau de bord mis à jour : {write_dashboard(s)}")
+    except Exception as exc:
+        log.warning("Tableau de bord non mis à jour (relance « 5 - Tableau de bord ») : %s", exc)
+
+
 def bot_settings(s: Settings) -> list[Settings]:
     """Un jeu de réglages par bot (BOTS), chacun avec sa paire et son unité de temps."""
     return [replace(s, symbol=symbol, timeframe=timeframe) for symbol, timeframe in s.markets]
@@ -121,7 +129,7 @@ def cmd_robustness(s: Settings, args: argparse.Namespace) -> None:
         s.data_dir / ROBUSTNESS_FILE, rows, verdict,
         date=datetime.now(timezone.utc).isoformat(timespec="seconds"), jours=args.days, ordres=s.execution.order_type,
     )
-    print(f"\nTableau de bord mis à jour : {write_dashboard(s)}")
+    refresh_dashboard(s)
     if notes := make_notes(s):
         print(f"Note Obsidian : {notes.robustness(s, rows, table, verdict, args.days)}")
 
@@ -165,7 +173,7 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
         s.data_dir / LAB_FILE, rows, verdict,
         date=datetime.now(timezone.utc).isoformat(timespec="seconds"), jours=args.days, marches=markets,
     )
-    print(f"\nTableau de bord mis à jour : {write_dashboard(s)}")
+    refresh_dashboard(s)
     if notes := make_notes(s):
         print(f"Note Obsidian : {notes.lab(s, rows, table, verdict, args.days)}")
 

@@ -24,6 +24,11 @@ def _iso(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat(timespec="seconds")
 
 
+def _local(ms: int) -> str:
+    """Heure d'ouverture d'une bougie, à l'heure de l'ordinateur (plus lisible que l'heure UTC)."""
+    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).astimezone().strftime("%d/%m %H:%M")
+
+
 def _day(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
@@ -146,13 +151,19 @@ class Bot:
         self.state["last_candle_ts"] = last_ts
 
         row = compute_signals(closed, self.s.strategy).iloc[-1]
+        pos = self.state["position"]
+        if self.state["order"]:
+            verdict = "ordre limite en attente"
+        elif pos:
+            verdict = "signal de vente" if row.exit else "position gardée"
+        else:
+            verdict = "signal d'achat" if row.entry else "pas de signal d'achat, en attente"
         self.log.info(
-            "Bougie %s clôture=%.2f signal_achat=%s signal_sortie=%s equity=%.2f",
-            _iso(last_ts), row.close, bool(row.entry), bool(row.exit), self.equity(row.close),
+            "Bougie de %s terminée : clôture %.2f, %s (valeur %.2f)",
+            _local(last_ts), row.close, verdict, self.equity(row.close),
         )
         if self.state["order"]:
             return  # un ordre limite est déjà en cours
-        pos = self.state["position"]
         if pos:
             bars_held = (last_ts - pos["entry_bar_ts"]) // self.tf_ms + 1
             reason = exit_reason(bool(row.exit), bars_held, self.s.strategy)
