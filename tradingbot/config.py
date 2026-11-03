@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass, fields
 from pathlib import Path
 
+from .data import timeframe_to_ms
 from .execution import ExecutionParams
 from .risk import RiskParams
 from .strategy import StrategyParams
@@ -45,6 +46,19 @@ def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
 
 
+def parse_bots(raw: str) -> tuple[tuple[str, str], ...]:
+    """`BTC/USDT@15m,ETH/USDT@4h` -> ((BTC/USDT, 15m), (ETH/USDT, 4h))."""
+    bots = []
+    for item in (x.strip() for x in raw.split(",")):
+        if not item:
+            continue
+        symbol, sep, timeframe = item.partition("@")
+        if not sep or not symbol.strip() or not timeframe.strip():
+            raise ConfigError(f"BOTS : « {item} » doit s'écrire PAIRE@UNITE, par exemple BTC/USDT@1h")
+        bots.append((symbol.strip().upper(), timeframe.strip()))
+    return tuple(bots)
+
+
 @dataclass(frozen=True)
 class Settings:
     mode: str
@@ -63,6 +77,12 @@ class Settings:
     strategy: StrategyParams
     risk: RiskParams
     execution: ExecutionParams
+    bots: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def markets(self) -> tuple[tuple[str, str], ...]:
+        """Les bots à faire tourner : BOTS, ou à défaut SYMBOL@TIMEFRAME."""
+        return self.bots or ((self.symbol, self.timeframe),)
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -83,6 +103,7 @@ class Settings:
             strategy=_params_from_env(StrategyParams),
             risk=_params_from_env(RiskParams),
             execution=_params_from_env(ExecutionParams),
+            bots=parse_bots(_env("BOTS")),
         )
 
     def validate_for_trading(self) -> None:
@@ -98,6 +119,21 @@ class Settings:
                 )
             if self.max_capital <= 0:
                 raise ConfigError("MODE=live exige MAX_CAPITAL > 0 (montant max confié au bot, ex. 200).")
+        markets = self.markets
+        if len(set(markets)) != len(markets):
+            raise ConfigError("BOTS contient deux fois le même bot (même paire et même unité de temps)")
+        for symbol, timeframe in markets:
+            try:
+                timeframe_to_ms(timeframe)
+            except Exception:
+                raise ConfigError(
+                    f"Unité de temps invalide pour {symbol} : « {timeframe} » (ex. 15m, 1h, 4h, 1d)"
+                ) from None
+        if self.mode != "paper" and len(markets) > 1 and self.max_capital <= 0:
+            raise ConfigError(
+                "Avec plusieurs bots sur un vrai compte, MAX_CAPITAL (montant confié à CHAQUE bot) est obligatoire, "
+                "sinon chacun croirait disposer de tout le solde."
+            )
         r = self.risk
         if not 0 < r.risk_per_trade <= 0.05:
             raise ConfigError("RISK_PER_TRADE doit être entre 0 et 0.05 (5 % max par trade)")

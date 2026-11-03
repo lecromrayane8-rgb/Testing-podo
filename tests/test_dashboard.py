@@ -1,0 +1,140 @@
+import csv
+import json
+import re
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from tests.test_live import dip_scenario, settings
+from tests.conftest import FakeBroker
+from tradingbot.dashboard import (
+    fmt, fmt_qty, fmt_signed, load_views, nice_ticks, render, tick_decimals, write_dashboard,
+)
+from tradingbot.live import Bot, StateStore, bot_paths
+from tradingbot.robustness import ROBUST, RobustnessRow, save_results
+
+NOW = datetime(2026, 11, 3, 18, 0, tzinfo=timezone.utc)
+BOTS = (("BTC/USDT", "15m"), ("BTC/USDT", "1h"), ("BTC/USDT", "1d"))
+
+
+def write_bot(s, symbol, timeframe, state, trades=()):
+    state_path, journal_path = bot_paths(replace(s, symbol=symbol, timeframe=timeframe))
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    if trades:
+        with journal_path.open("w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=list(trades[0]))
+            writer.writeheader()
+            writer.writerows(trades)
+
+
+def trade(hours_ago, pnl, reason="rebond"):
+    exit_time = NOW - timedelta(hours=hours_ago)
+    return {
+        "entree": (exit_time - timedelta(hours=2)).isoformat(), "sortie": exit_time.isoformat(),
+        "prix_entree": 60000.0, "prix_sortie": 60000.0 + pnl * 10, "quantite": 0.1, "cout": 6000.0,
+        "pnl": pnl, "raison": reason,
+    }
+
+
+@pytest.fixture
+def three_bots(tmp_path):
+    s = settings(tmp_path, bots=BOTS)
+    fresh = (NOW - timedelta(minutes=1)).isoformat()
+    write_bot(s, "BTC/USDT", "15m", {"capital": 10_030.0, "initial_capital": 10_000.0, "equity": 10_030.0,
+                                     "updated_at": fresh}, [trade(5, 50.0), trade(3, -20.0, "stop")])
+    write_bot(s, "BTC/USDT", "1h", {"capital": 10_000.0, "initial_capital": 10_000.0, "equity": 10_012.5,
+                                    "updated_at": fresh, "position": {"qty": 0.1, "entry_price": 60000.0, "stop": 58500.0}})
+    write_bot(s, "BTC/USDT", "1d", {"capital": 10_000.0, "initial_capital": 10_000.0, "equity": 10_000.0,
+                                    "updated_at": (NOW - timedelta(hours=3)).isoformat()})
+    return s
+
+
+def test_french_number_format():
+    assert fmt(1234.5) == "1 234,50"
+    assert fmt_signed(-0.004) == "0,00" and fmt_signed(12.345, 1, " %") == "+12,3 %"
+
+
+@pytest.mark.parametrize("lo, hi", [(-0.5, 0.5), (-3.2, 12.7), (0.0, 250.0), (-0.8, 0.4)])
+def test_ticks_cover_the_range_with_zero(lo, hi):
+    ticks = nice_ticks(lo, hi)
+    assert ticks[0] <= lo and ticks[-1] >= hi
+    assert any(abs(t) < 1e-9 for t in ticks)
+    decimals = tick_decimals(ticks[1] - ticks[0])
+    assert len({fmt_signed(t, decimals) for t in ticks}) == len(ticks)  # aucune graduation ne s'affiche en double
+
+
+def test_tick_labels_show_their_true_value():
+    assert tick_decimals(0.25) == 2 and tick_decimals(0.5) == 1 and tick_decimals(5.0) == 0
+
+
+def test_quantities_drop_useless_zeros():
+    assert fmt_qty(0.05) == "0,05" and fmt_qty(0.00672) == "0,00672" and fmt_qty(2.0) == "2"
+
+
+def test_views_compute_results_per_bot(three_bots):
+    scalp, hourly, daily = load_views(three_bots)
+    assert scalp.pnl == pytest.approx(30.0) and scalp.win_rate == 0.5
+    assert hourly.pnl == pytest.approx(12.5) and hourly.position["stop"] == 58500.0
+    assert daily.trades == []
+
+
+def test_dashboard_shows_every_bot_and_its_state(three_bots):
+    page = render(load_views(three_bots), three_bots, None, NOW)
+    for name in ("BTC/USDT 15m", "BTC/USDT 1h", "BTC/USDT 1d"):
+        assert name in page
+    assert "En position" in page and "58 500,00" in page
+    assert "Arrêté ? Aucune nouvelle depuis 3 h" in page  # le bot 1d ne donne plus signe de vie
+    assert "+42,50" in page  # résultat total : 30 + 12,50
+    assert page.count('class="line"') == 3 and "<svg" in page
+    assert "Lance le test de robustesse" in page
+
+
+def test_chart_data_is_valid_json_with_one_series_per_bot(three_bots):
+    page = render(load_views(three_bots), three_bots, None, NOW)
+    payload = re.search(r'<script type="application/json" id="chart-data">(.*?)</script>', page).group(1)
+    data = json.loads(payload)
+    assert [s["name"] for s in data["series"]] == ["BTC/USDT 15m", "BTC/USDT 1h", "BTC/USDT 1d"]
+    assert data["series"][0]["points"][-1][1] == pytest.approx(0.3)
+
+
+def test_untrusted_text_is_escaped(tmp_path):
+    s = settings(tmp_path)
+    write_bot(s, "BTC/USDT", "1h", {"capital": 100.0, "initial_capital": 100.0, "equity": 100.0},
+              [trade(1, 1.0, "<script>alert(1)</script>")])
+    page = render(load_views(s), s, None, NOW)
+    assert "<script>alert(1)</script>" not in page and "&lt;script&gt;" in page
+
+
+def test_dashboard_before_any_run(tmp_path):
+    s = settings(tmp_path)
+    page = render(load_views(s), s, None, NOW)
+    assert "Pas encore lancé" in page and "La courbe apparaîtra" in page and "Aucun trade" in page
+
+
+def test_live_mode_shows_a_warning_banner(three_bots):
+    page = render(load_views(three_bots), replace(three_bots, mode="live"), None, NOW)
+    assert "Argent réel" in page
+
+
+def test_robustness_results_are_shown(three_bots):
+    row = RobustnessRow("ETH/USDT 4h", 120, 0.61, 0.21, 0.05, 0.37, 0.01, (0.3, 0.1, float("nan"), -0.2), 0.08, ROBUST)
+    path = three_bots.data_dir / "robustesse.json"
+    save_results(path, [row], "VERDICT : 1 marché robuste", date=NOW.isoformat(), jours=730, ordres="market")
+    page = render(load_views(three_bots), three_bots, json.loads(path.read_text(encoding="utf-8")), NOW)
+    assert "ETH/USDT 4h" in page and "chip-good" in page and "2/3" in page and "VERDICT : 1 marché robuste" in page
+
+
+def test_dashboard_reflects_a_real_bot_run(tmp_path):
+    s = settings(tmp_path)
+    df = dip_scenario([156.0, 159.0, 161.0, 162.0])
+    broker = FakeBroker(df)
+    state_path, journal_path = bot_paths(s)
+    bot = Bot(broker, s, StateStore(state_path), journal_path)
+    for i in range(95, 106):
+        bot.step(broker.at_open(i))
+    path = write_dashboard(s)
+    page = path.read_text(encoding="utf-8")
+    assert path.name == "tableau-de-bord.html" and page.endswith("</html>")
+    assert "rebond" in page and 'class="line"' in page

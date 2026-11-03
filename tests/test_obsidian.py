@@ -64,10 +64,11 @@ def test_handler_copies_only_marked_logs_and_alerts(journal):
 
 def test_same_minute_notes_do_not_overwrite_each_other(journal):
     record = {"entree": "2026-11-03T12:00:00+00:00", "sortie": "2026-11-03T14:05:00+00:00", "pnl": 5.0, "raison": "rebond"}
-    first = journal.trade("testnet", "BTC/USDT", record, cost=100.0)
-    second = journal.trade("testnet", "BTC/USDT", record, cost=100.0)
+    first = journal.trade("testnet", "BTC/USDT", "1h", record, cost=100.0)
+    second = journal.trade("testnet", "BTC/USDT", "1h", record, cost=100.0)
     assert first != second and first.exists() and second.exists()
-    assert "rendement_pct: 5.0" in first.read_text(encoding="utf-8")
+    text = first.read_text(encoding="utf-8")
+    assert "rendement_pct: 5.0" in text and 'unite: "1h"' in text
 
 
 def test_bot_writes_a_note_for_each_closed_trade(tmp_path):

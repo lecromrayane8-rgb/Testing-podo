@@ -28,6 +28,19 @@ def _day(ms: int) -> str:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
 
 
+def bot_paths(settings: Settings) -> tuple[Path, Path]:
+    """État et journal des trades d'un bot : un jeu de fichiers par mode, plateforme, paire et unité."""
+    tag = f"{settings.mode}_{settings.exchange}_{settings.symbol.replace('/', '-')}_{settings.timeframe}"
+    return settings.data_dir / f"state_{tag}.json", settings.data_dir / f"trades_{tag}.csv"
+
+
+class BotLog(logging.LoggerAdapter):
+    """Préfixe chaque message du nom du bot, sans toucher aux `extra` (JOURNAL) passés à l'appel."""
+
+    def process(self, msg, kwargs):
+        return f"[{self.extra['bot']}] {msg}", kwargs
+
+
 class StateStore:
     def __init__(self, path: Path):
         self.path = path
@@ -66,6 +79,8 @@ class Bot:
         self.store = store
         self.journal_path = journal_path
         self.notes = notes
+        self.name = f"{settings.symbol} {settings.timeframe}"
+        self.log = BotLog(log, {"bot": self.name})
         self.tf_ms = timeframe_to_ms(settings.timeframe)
         self.lookback = min(settings.strategy.warmup_bars + 150, 1000)
         self.state = store.load()
@@ -84,7 +99,8 @@ class Bot:
         if capital <= 0:
             raise RuntimeError("Aucun solde disponible en devise de cotation pour trader.")
         self.state["capital"] = capital
-        log.info("Capital confié au bot : %.2f", capital, extra=JOURNAL)
+        self.state.setdefault("initial_capital", capital)
+        self.log.info("Capital confié au bot : %.2f", capital, extra=JOURNAL)
 
     def equity(self, price: float) -> float:
         pos = self.state["position"]
@@ -111,13 +127,15 @@ class Bot:
         self._on_candles(now_ms)
         if self.state["order"] and now_ms >= self.state["order"]["expires_ts"]:
             self._expire_order(now_ms)
+        # Pour le tableau de bord : dernière valeur connue, position latente comprise.
+        self.state.update(last_price=price, equity=self.equity(price), updated_at=_iso(now_ms))
         self._save()
 
     def _on_candles(self, now_ms: int) -> None:
         candles = self.broker.fetch_candles(self.s.timeframe, self.lookback)
         closed = candles[candles["ts"] + self.tf_ms <= now_ms]
         if len(closed) < self.s.strategy.warmup_bars:
-            log.warning("Pas assez d'historique (%d bougies) pour calculer les indicateurs", len(closed))
+            self.log.warning("Pas assez d'historique (%d bougies) pour calculer les indicateurs", len(closed))
             return
         last_ts = int(closed["ts"].iloc[-1])
         if self.state["last_candle_ts"] is not None and last_ts <= self.state["last_candle_ts"]:
@@ -125,7 +143,7 @@ class Bot:
         self.state["last_candle_ts"] = last_ts
 
         row = compute_indicators(closed, self.s.strategy).iloc[-1]
-        log.info(
+        self.log.info(
             "Bougie %s clôture=%.2f RSI=%.1f MM_tendance=%.2f MM_sortie=%.2f equity=%.2f",
             _iso(last_ts), row.close, row.rsi, row.trend_ma, row.exit_ma, self.equity(row.close),
         )
@@ -140,7 +158,7 @@ class Bot:
         elif entry_signal(row.close, row.trend_ma, row.rsi, row.atr, self.s.strategy):
             blocked = self.guard.blocked_reason()
             if blocked:
-                log.warning("Signal d'achat ignoré : %s", blocked)
+                self.log.warning("Signal d'achat ignoré : %s", blocked)
             else:
                 self._enter(row.atr, last_ts, now_ms)
 
@@ -162,7 +180,7 @@ class Bot:
         bid, _ = self.broker.best_bid_ask()
         qty = self._entry_qty(bid, atr_value, self.ex.maker_fee_rate)
         if qty <= 0:
-            log.warning("Signal d'achat ignoré : taille sous le minimum de la plateforme (capital trop faible ?)")
+            self.log.warning("Signal d'achat ignoré : taille sous le minimum de la plateforme (capital trop faible ?)")
             return
         placed = self._place_limit("buy", qty, bid)
         if placed is None:
@@ -171,13 +189,13 @@ class Bot:
             return
         order_id, price = placed
         self._track_order(order_id, "buy", qty, price, "entree", bar_ts, atr=atr_value)
-        log.info("Ordre limite d'ACHAT %.8f à %.2f (id %s)", qty, price, order_id, extra=JOURNAL)
+        self.log.info("Ordre limite d'ACHAT %.8f à %.2f (id %s)", qty, price, order_id, extra=JOURNAL)
 
     def _buy_market(self, atr_value: float, bar_ts: int, now_ms: int) -> None:
         price = self.broker.last_price()
         qty = self._entry_qty(price, atr_value, self.ex.fee_rate + self.ex.slippage)
         if qty <= 0:
-            log.warning("Signal d'achat ignoré : taille sous le minimum de la plateforme (capital trop faible ?)")
+            self.log.warning("Signal d'achat ignoré : taille sous le minimum de la plateforme (capital trop faible ?)")
             return
         self._open_position(self.broker.market_buy(qty), atr_value, bar_ts, now_ms)
 
@@ -191,7 +209,7 @@ class Bot:
             "entry_time": _iso(now_ms),
         }
         self._save()
-        log.info(
+        self.log.info(
             "ACHAT %.8f %s à %.2f (coût %.2f), stop %.2f",
             fill.qty, self.s.symbol, fill.price, fill.quote, self.state["position"]["stop"],
             extra=JOURNAL,
@@ -210,7 +228,7 @@ class Bot:
             return
         order_id, price = placed
         self._track_order(order_id, "sell", qty, price, reason, last_ts + self.tf_ms)
-        log.info("Ordre limite de VENTE (%s) %.8f à %.2f (id %s)", reason, qty, price, order_id, extra=JOURNAL)
+        self.log.info("Ordre limite de VENTE (%s) %.8f à %.2f (id %s)", reason, qty, price, order_id, extra=JOURNAL)
 
     def _sell_market(self, reason: str, price: float, now_ms: int, previous: Fill | None = None) -> None:
         """Vend au marché ce qui reste de la position (après un éventuel ordre limite partiel)."""
@@ -229,7 +247,7 @@ class Bot:
         self.state["capital"] += pnl
         self.state["position"] = None
         self._save()
-        log.info(
+        self.log.info(
             "VENTE (%s) %.8f à %.2f : PnL %+.2f (%+.2f %%), capital %.2f",
             reason, fill.qty, fill.price, pnl, 100 * pnl / pos["cost"], self.state["capital"],
             extra=JOURNAL,
@@ -237,7 +255,7 @@ class Bot:
         self._record_trade(pos, fill, pnl, reason, now_ms)
 
     def _forget_position(self) -> None:
-        log.error(
+        self.log.error(
             "Position introuvable sur le compte (vendue manuellement ?). "
             "Position oubliée, capital recalculé depuis le solde."
         )
@@ -255,7 +273,7 @@ class Bot:
             except ccxt.OrderImmediatelyFillable:
                 bid, ask = self.broker.best_bid_ask()
                 price = bid if side == "buy" else ask
-        log.warning("Ordre limite %s refusé 3 fois (le marché bouge trop vite)", side)
+        self.log.warning("Ordre limite %s refusé 3 fois (le marché bouge trop vite)", side)
         return None
 
     def _track_order(self, order_id: str, side: str, qty: float, price: float, reason: str, bar_ts: int, atr: float | None = None) -> None:
@@ -276,20 +294,20 @@ class Bot:
         status = self.broker.order_status(order["id"])
         if status.open:
             if order["side"] == "sell" and price <= self.state["position"]["stop"]:
-                log.warning("Stop touché pendant l'ordre limite de vente : annulation et vente au marché")
+                self.log.warning("Stop touché pendant l'ordre limite de vente : annulation et vente au marché")
                 self._finish_order(self.broker.cancel(order["id"]), "stop", now_ms)
             return
         self._finish_order(status, order["reason"], now_ms)
 
     def _expire_order(self, now_ms: int) -> None:
         order = self.state["order"]
-        log.info("Ordre limite %s expiré : annulation", order["id"], extra=JOURNAL)
+        self.log.info("Ordre limite %s expiré : annulation", order["id"], extra=JOURNAL)
         self._finish_order(self.broker.cancel(order["id"]), order["reason"], now_ms)
 
     def _finish_order(self, status: OrderStatus, reason: str, now_ms: int) -> None:
         order = self.state["order"]
         if status.open:
-            log.warning("Annulation de l'ordre %s pas encore confirmée, nouvel essai au prochain tour", order["id"])
+            self.log.warning("Annulation de l'ordre %s pas encore confirmée, nouvel essai au prochain tour", order["id"])
             return
         self.state["order"] = None
         if order["side"] == "sell":
@@ -312,11 +330,11 @@ class Bot:
                 if qty > 0:
                     fill = combine_fills(fill, self.broker.market_buy(qty))
             elif fill is None:
-                log.info("Achat limite non exécuté : trade abandonné (LIMIT_ENTRY_FALLBACK=skip)", extra=JOURNAL)
+                self.log.info("Achat limite non exécuté : trade abandonné (LIMIT_ENTRY_FALLBACK=skip)", extra=JOURNAL)
         if fill is None:
             return
         if self.broker.normalize_qty(fill.qty, fill.price) <= 0:
-            log.warning("Achat partiel de %.8f trop petit pour être revendu : ignoré", fill.qty)
+            self.log.warning("Achat partiel de %.8f trop petit pour être revendu : ignoré", fill.qty)
             self.state["capital"] -= fill.quote
             return
         self._open_position(fill, order["atr"], order["bar_ts"], now_ms)
@@ -329,14 +347,15 @@ class Bot:
             "prix_entree": pos["entry_price"],
             "prix_sortie": fill.price,
             "quantite": fill.qty,
+            "cout": round(pos["cost"], 4),
             "pnl": round(pnl, 4),
             "raison": reason,
         }
         if self.notes:
             try:
-                self.notes.trade(self.s.mode, self.s.symbol, record, pos["cost"])
+                self.notes.trade(self.s.mode, self.s.symbol, self.s.timeframe, record, pos["cost"])
             except OSError as exc:  # le journal ne doit jamais arrêter le bot (et ses stops)
-                log.warning("Note Obsidian non écrite : %s", exc)
+                self.log.warning("Note Obsidian non écrite : %s", exc)
         if not self.journal_path:
             return
         new = not self.journal_path.exists()
@@ -347,18 +366,42 @@ class Bot:
                 writer.writerow(list(record))
             writer.writerow(list(record.values()))
 
-    def run_forever(self) -> None:
-        log.info(
-            "Démarrage du bot : mode=%s plateforme=%s paire=%s unité=%s ordres=%s",
-            self.s.mode, self.s.exchange, self.s.symbol, self.s.timeframe, self.ex.order_type,
-            extra=JOURNAL,
+
+MAX_CONSECUTIVE_FAILURES = 5
+
+
+def run_bots(bots: list[Bot], poll_seconds: int, after_cycle=None, sleep=time.sleep, cycles: int | None = None) -> None:
+    """Fait tourner plusieurs bots dans la même boucle : la panne de l'un n'arrête pas les autres."""
+    for bot in bots:
+        bot.log.info(
+            "Démarrage : mode=%s plateforme=%s ordres=%s", bot.s.mode, bot.s.exchange, bot.ex.order_type, extra=JOURNAL
         )
-        while True:
+    failures = {bot.name: 0 for bot in bots}
+    active = list(bots)
+    done = 0
+    while active and (cycles is None or done < cycles):
+        for bot in list(active):
             try:
-                self.step()
+                bot.step()
+                failures[bot.name] = 0
             except ccxt.AuthenticationError:
-                log.critical("Clés API refusées par la plateforme : vérifie API_KEY / API_SECRET et le MODE.")
+                bot.log.critical("Clés API refusées par la plateforme : vérifie API_KEY / API_SECRET et le MODE.")
                 raise
             except (ccxt.NetworkError, ccxt.ExchangeError) as exc:
-                log.warning("Erreur plateforme, nouvel essai dans %ss : %s", self.s.poll_seconds, exc)
-            time.sleep(self.s.poll_seconds)
+                bot.log.warning("Erreur plateforme, nouvel essai dans %ss : %s", poll_seconds, exc)
+            except Exception:
+                failures[bot.name] += 1
+                bot.log.exception("Erreur inattendue (%d/%d)", failures[bot.name], MAX_CONSECUTIVE_FAILURES)
+                if failures[bot.name] >= MAX_CONSECUTIVE_FAILURES:
+                    bot.log.critical("Bot arrêté après %d erreurs de suite : ses stops ne sont plus surveillés", MAX_CONSECUTIVE_FAILURES)
+                    active.remove(bot)
+        if after_cycle:
+            try:
+                after_cycle()
+            except Exception as exc:  # le tableau de bord ne doit jamais arrêter le trading
+                log.warning("Tableau de bord non mis à jour : %s", exc)
+        done += 1
+        if active and (cycles is None or done < cycles):
+            sleep(poll_seconds)
+    if not active:
+        raise RuntimeError("Tous les bots se sont arrêtés sur des erreurs : voir data/bot.log")

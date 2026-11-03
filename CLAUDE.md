@@ -19,13 +19,18 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 
 ## Architecture
 
-- `main.py` : ligne de commande (`backtest`, `robustesse`, `check`, `run`, `reset-guard`).
+- `main.py` : ligne de commande (`backtest`, `robustesse`, `check`, `run`, `tableau`, `reset-guard`).
+- `BOTS=PAIRE@UNITE,...` : plusieurs bots dans une boucle (`live.run_bots`). En paper, un compte fictif par bot ;
+  sur un vrai compte, `MAX_CAPITAL` est le montant de chaque bot (validé dans `config.py`).
 - `tradingbot/strategy.py` : règles (RSI(2) survendu au-dessus de la MM200, sortie au rebond, stop ATR, stop temporel).
 - `tradingbot/backtest.py` : simulation bougie par bougie, mêmes règles que le live ; ordres au marché ou limites.
 - `tradingbot/live.py` : boucle live, état JSON dans `data/` repris au redémarrage, ordres limites suivis d'un tour à l'autre.
 - `tradingbot/broker.py` : plateforme via ccxt (testnet, demo, réel) et `PaperBroker` simulé.
 - `tradingbot/robustness.py` : intervalle de confiance bootstrap, sous-périodes, correction de Bonferroni.
 - `tradingbot/obsidian.py` : notes Markdown dans le coffre `OBSIDIAN_VAULT` (trades, backtests, journal, tableau de bord).
+- `tradingbot/dashboard.py` : page HTML autonome `data/tableau-de-bord.html`, réécrite à chaque tour de `run`.
+  Palette et règles de lisibilité issues du skill dataviz ; les textes venant des données passent par `esc()`.
+- Le guide du trading pour l'utilisateur est un document Claude Docs : https://claude.ai/artifact/3CF8W3xks9c3oxa3mNqbA5
 - `packaging/` et `.github/workflows/windows-package.yml` : version Windows sans Python, publiée en pré-version
   `windows-dev` (https://github.com/lecromrayane8-rgb/Testing-podo/releases/tag/windows-dev).
 
@@ -43,8 +48,9 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 
 ## État actuel
 
-- Fait : stratégie, backtest, modes paper/testnet/demo/live, ordres limites, test de robustesse,
-  journal Obsidian, version Windows sans Python.
+- Fait : stratégie, backtest, modes paper/testnet/demo/live, ordres limites, test de robustesse (15m, 1h, 4h, 1d),
+  journal Obsidian, version Windows sans Python, plusieurs bots en parallèle, tableau de bord, guide du trading.
 - En attente : premier test de robustesse sur de vraies données. L'utilisateur lance
-  « 1 - Tester la robustesse.bat » et envoie le tableau et le verdict.
-- Ensuite, seulement si un marché est « robuste » : paper puis testnet sur ce marché, avec le journal Obsidian.
+  « 1 - Tester la robustesse.bat » et envoie le tableau et le verdict. En parallèle, 3 bots paper
+  (BTC/USDT 15m, 1h, 1d) peuvent tourner : argent fictif, aucun risque.
+- Ensuite, seulement si un marché est « robuste » : testnet sur ce marché, avec le journal Obsidian.

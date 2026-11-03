@@ -1,6 +1,9 @@
+import logging
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
+import ccxt
 import numpy as np
 import pytest
 
@@ -8,7 +11,7 @@ from tests.conftest import FakeBroker, frame_from_closes
 from tradingbot.backtest import run_backtest
 from tradingbot.config import ConfigError, Settings
 from tradingbot.execution import ExecutionParams
-from tradingbot.live import Bot, StateStore
+from tradingbot.live import MAX_CONSECUTIVE_FAILURES, Bot, BotLog, StateStore, run_bots
 from tradingbot.risk import RiskParams
 from tradingbot.strategy import StrategyParams
 
@@ -194,3 +197,79 @@ def test_pending_limit_order_survives_restart(tmp_path):
     restarted.step(broker.at_open(103))
     assert restarted.state["order"] is None
     assert restarted.state["position"]["entry_price"] == df["open"].iloc[102]
+
+
+class StubBot:
+    """Bot minimal pour tester la boucle : `step` applique le comportement donné."""
+
+    def __init__(self, name, behaviour):
+        self.name = name
+        self.behaviour = behaviour
+        self.calls = 0
+        self.s = SimpleNamespace(mode="paper", exchange="binance")
+        self.ex = SimpleNamespace(order_type="market")
+        self.log = BotLog(logging.getLogger("tradingbot.test"), {"bot": name})
+
+    def step(self):
+        self.calls += 1
+        self.behaviour()
+
+
+def ok():
+    pass
+
+
+def network_down():
+    raise ccxt.NetworkError("coupure")
+
+
+def bug():
+    raise RuntimeError("bug")
+
+
+def test_a_failing_bot_never_stops_the_others():
+    healthy, flaky = StubBot("BTC/USDT 1h", ok), StubBot("ETH/USDT 1h", network_down)
+    refreshed = []
+    run_bots([healthy, flaky], poll_seconds=0, after_cycle=lambda: refreshed.append(1), sleep=lambda s: None, cycles=3)
+    assert healthy.calls == 3 and flaky.calls == 3
+    assert len(refreshed) == 3
+
+
+def test_a_bot_with_repeated_bugs_is_set_aside():
+    healthy, broken = StubBot("BTC/USDT 1h", ok), StubBot("BTC/USDT 15m", bug)
+    run_bots([healthy, broken], poll_seconds=0, sleep=lambda s: None, cycles=8)
+    assert broken.calls == MAX_CONSECUTIVE_FAILURES
+    assert healthy.calls == 8
+
+
+def test_all_bots_broken_stops_the_loop():
+    with pytest.raises(RuntimeError, match="Tous les bots"):
+        run_bots([StubBot("BTC/USDT 1h", bug)], poll_seconds=0, sleep=lambda s: None)
+
+
+def test_a_dashboard_failure_never_stops_trading():
+    def broken_dashboard():
+        raise ValueError("rendu impossible")
+
+    bot = StubBot("BTC/USDT 1h", ok)
+    run_bots([bot], poll_seconds=0, after_cycle=broken_dashboard, sleep=lambda s: None, cycles=2)
+    assert bot.calls == 2
+
+
+def test_bad_api_keys_stop_everything():
+    def refused():
+        raise ccxt.AuthenticationError("clé refusée")
+
+    with pytest.raises(ccxt.AuthenticationError):
+        run_bots([StubBot("BTC/USDT 1h", refused)], poll_seconds=0, sleep=lambda s: None, cycles=5)
+
+
+def test_state_records_what_the_dashboard_needs(tmp_path):
+    df = dip_scenario([156.0])
+    bot, broker = make_bot(tmp_path, df)
+    for i in range(95, 103):
+        bot.step(broker.at_open(i))
+    state = bot.state
+    assert state["initial_capital"] == 10_000.0
+    assert state["equity"] == pytest.approx(bot.equity(broker.price))
+    assert state["last_price"] == broker.price and state["updated_at"]

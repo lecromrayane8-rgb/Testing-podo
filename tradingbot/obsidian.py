@@ -29,21 +29,21 @@ Pour une analyse, demande à Claude de lire ce dossier.
 > Les tableaux ci-dessous utilisent l'extension communautaire **Dataview** :
 > Réglages → Extensions communautaires → Parcourir → « Dataview » → Installer, puis Activer.
 
-## Trades en direct, par mode
+## Trades en direct, par mode et unité de temps
 
 ```dataview
-TABLE WITHOUT ID key AS "Mode", length(rows) AS "Trades",
+TABLE WITHOUT ID key AS "Mode · unité", length(rows) AS "Trades",
   round(length(filter(rows.pnl, (p) => p > 0)) / length(rows) * 100, 1) AS "Réussite %",
   round(sum(rows.pnl), 2) AS "PnL total"
 FROM "Trading bot/Trades"
-GROUP BY mode
+GROUP BY mode + " · " + unite
 ```
 
 ## Derniers trades
 
 ```dataview
-TABLE WITHOUT ID file.link AS "Trade", mode AS "Mode", paire AS "Paire", raison AS "Sortie",
-  round(pnl, 2) AS "PnL", round(rendement_pct, 2) AS "%"
+TABLE WITHOUT ID file.link AS "Trade", mode AS "Mode", paire AS "Paire", unite AS "Unité",
+  raison AS "Sortie", round(pnl, 2) AS "PnL", round(rendement_pct, 2) AS "%"
 FROM "Trading bot/Trades"
 SORT sortie DESC
 LIMIT 30
@@ -184,17 +184,20 @@ class ObsidianJournal:
         )
         return self._new_note("Robustesse", f"{now:%Y-%m-%d %Hh%M} robustesse", frontmatter(values) + body)
 
-    def trade(self, mode: str, symbol: str, record: dict, cost: float) -> Path:
+    def trade(self, mode: str, symbol: str, timeframe: str, record: dict, cost: float) -> Path:
         exit_time = datetime.fromisoformat(record["sortie"]).astimezone()
         return_pct = 100 * record["pnl"] / cost
-        values = {"type": "trade", "mode": mode, "paire": symbol, **record, "rendement_pct": return_pct, "tags": ["trade"]}
+        values = {
+            "type": "trade", "mode": mode, "paire": symbol, "unite": timeframe,
+            **record, "rendement_pct": return_pct, "tags": ["trade"],
+        }
         outcome = "gagnant" if record["pnl"] > 0 else "perdant"
         body = (
             f"# Trade {symbol} du {exit_time:%d/%m/%Y %H:%M}\n\n"
             f"Trade **{outcome}** : {record['pnl']:+.2f} ({return_pct:+.2f} %), sortie « {record['raison']} ».\n\n"
             "## Ce que je retiens\n\n- \n"
         )
-        return self._new_note("Trades", f"{exit_time:%Y-%m-%d %Hh%M} {symbol}", frontmatter(values) + body)
+        return self._new_note("Trades", f"{exit_time:%Y-%m-%d %Hh%M} {symbol} {timeframe}", frontmatter(values) + body)
 
     def event(self, message: str, alert: bool = False) -> None:
         now = self.clock()

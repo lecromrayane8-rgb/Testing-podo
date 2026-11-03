@@ -1,10 +1,12 @@
-"""Point d'entrée : python main.py {backtest,robustesse,check,run,reset-guard} --help"""
+"""Point d'entrée : python main.py {backtest,robustesse,check,run,tableau,reset-guard} --help"""
 from __future__ import annotations
 
 import argparse
 import logging
 import sys
+import webbrowser
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import ccxt
@@ -12,12 +14,16 @@ import ccxt
 from tradingbot.backtest import format_comparison, format_report, run_backtest
 from tradingbot.broker import CcxtBroker, PaperBroker
 from tradingbot.config import ConfigError, Settings, load_dotenv
-from tradingbot.data import load_csv, load_or_fetch, make_exchange
-from tradingbot.live import Bot, StateStore
+from tradingbot.dashboard import ROBUSTNESS_FILE, write_dashboard
+from tradingbot.data import load_csv, load_or_fetch, make_exchange, timeframe_to_ms
+from tradingbot.live import Bot, StateStore, bot_paths, run_bots
 from tradingbot.obsidian import ObsidianHandler, ObsidianJournal
-from tradingbot.robustness import evaluate, format_robustness, overall_verdict
+from tradingbot.robustness import evaluate, format_robustness, overall_verdict, save_results
 
 log = logging.getLogger("tradingbot")
+
+DAY_MS = 86_400_000
+LONG_TERM_DAYS = 2500  # bougies d'un jour : ~7 ans d'historique pour avoir assez de trades
 
 
 def setup_logging(data_dir: Path) -> None:
@@ -32,7 +38,8 @@ def setup_logging(data_dir: Path) -> None:
 def make_broker(s: Settings):
     if s.mode == "paper":
         data = CcxtBroker(s.exchange, s.symbol)
-        wallet = s.data_dir / f"paper_wallet_{s.exchange}_{s.symbol.replace('/', '-')}.json"
+        # Un compte fictif par bot : deux bots sur la même paire ne se partagent jamais leurs fonds.
+        wallet = s.data_dir / f"paper_wallet_{s.exchange}_{s.symbol.replace('/', '-')}_{s.timeframe}.json"
         return PaperBroker(data, wallet, s.paper_start_balance, s.execution)
     venue = {"testnet": "testnet", "demo": "demo", "live": "real"}[s.mode]
     return CcxtBroker(s.exchange, s.symbol, s.api_key, s.api_secret, s.api_password, venue=venue)
@@ -42,9 +49,9 @@ def make_notes(s: Settings) -> ObsidianJournal | None:
     return ObsidianJournal(s.obsidian_vault) if s.obsidian_vault else None
 
 
-def state_paths(s: Settings) -> tuple[Path, Path]:
-    tag = f"{s.mode}_{s.exchange}_{s.symbol.replace('/', '-')}_{s.timeframe}"
-    return s.data_dir / f"state_{tag}.json", s.data_dir / f"trades_{tag}.csv"
+def bot_settings(s: Settings) -> list[Settings]:
+    """Un jeu de réglages par bot (BOTS), chacun avec sa paire et son unité de temps."""
+    return [replace(s, symbol=symbol, timeframe=timeframe) for symbol, timeframe in s.markets]
 
 
 def cmd_backtest(s: Settings, args: argparse.Namespace) -> None:
@@ -80,8 +87,9 @@ def cmd_robustness(s: Settings, args: argparse.Namespace) -> None:
     exchange = make_exchange(s.exchange)
     rows = []
     for symbol, tf in markets:
+        days = max(args.days, LONG_TERM_DAYS) if timeframe_to_ms(tf) >= DAY_MS else args.days
         try:
-            df = load_or_fetch(s.exchange, symbol, tf, args.days, s.data_dir / "cache", exchange)
+            df = load_or_fetch(s.exchange, symbol, tf, days, s.data_dir / "cache", exchange)
         except ccxt.BadSymbol:
             log.warning("%s introuvable sur %s : ignoré", symbol, s.exchange)
             continue
@@ -90,24 +98,32 @@ def cmd_robustness(s: Settings, args: argparse.Namespace) -> None:
     table = format_robustness(rows, args.periods)
     verdict = overall_verdict(rows)
     print(f"\n=== Robustesse sur {s.exchange}, {args.days} jours, ordres {s.execution.order_type} ===")
+    if any(timeframe_to_ms(tf) >= DAY_MS for tf in timeframes):
+        print(f"(bougies d'un jour : historique étendu à {max(args.days, LONG_TERM_DAYS)} jours pour avoir assez de trades)")
     print(table)
     print()
     print(verdict)
+    save_results(
+        s.data_dir / ROBUSTNESS_FILE, rows, verdict,
+        date=datetime.now(timezone.utc).isoformat(timespec="seconds"), jours=args.days, ordres=s.execution.order_type,
+    )
+    print(f"\nTableau de bord mis à jour : {write_dashboard(s)}")
     if notes := make_notes(s):
-        print(f"\nNote Obsidian : {notes.robustness(s, rows, table, verdict, args.days)}")
+        print(f"Note Obsidian : {notes.robustness(s, rows, table, verdict, args.days)}")
 
 
 def cmd_check(s: Settings, args: argparse.Namespace) -> None:
     s.validate_for_trading()
-    broker = make_broker(s)
-    balances = broker.balances()
-    price = broker.last_price()
-    candles = broker.fetch_candles(s.timeframe, 5)
-    base, quote = s.symbol.split("/")
-    print(f"Connexion OK : mode={s.mode} plateforme={s.exchange}")
-    print(f"Prix {s.symbol} : {price:.2f}")
-    print(f"Soldes disponibles : {balances.base:.8f} {base} | {balances.quote:.2f} {quote}")
-    print(f"Dernière bougie {s.timeframe} : {candles.index[-1]}")
+    for bs in bot_settings(s):
+        broker = make_broker(bs)
+        balances = broker.balances()
+        price = broker.last_price()
+        candles = broker.fetch_candles(bs.timeframe, 5)
+        base, quote = bs.symbol.split("/")
+        print(f"\n[{bs.symbol} {bs.timeframe}] connexion OK : mode={bs.mode} plateforme={bs.exchange}")
+        print(f"Prix {bs.symbol} : {price:.2f}")
+        print(f"Soldes disponibles : {balances.base:.8f} {base} | {balances.quote:.2f} {quote}")
+        print(f"Dernière bougie {bs.timeframe} : {candles.index[-1]}")
     fees = broker.trading_fees()
     if fees is None:
         print("Frais du compte : non fournis par la plateforme (vérifie-les sur son site)")
@@ -125,24 +141,36 @@ def cmd_check(s: Settings, args: argparse.Namespace) -> None:
 def cmd_run(s: Settings, args: argparse.Namespace) -> None:
     s.validate_for_trading()
     if s.mode == "live":
-        log.warning("MODE LIVE : le bot va passer de vrais ordres, capital max %.2f", s.max_capital)
-    state_path, journal_path = state_paths(s)
+        log.warning("MODE LIVE : les bots vont passer de vrais ordres, capital max %.2f chacun", s.max_capital)
     notes = make_notes(s)
     if notes:
         logging.getLogger("tradingbot").addHandler(ObsidianHandler(notes))
-    Bot(make_broker(s), s, StateStore(state_path), journal_path, notes).run_forever()
+    bots = []
+    for bs in bot_settings(s):
+        state_path, journal_path = bot_paths(bs)
+        bots.append(Bot(make_broker(bs), bs, StateStore(state_path), journal_path, notes))
+    log.info("Tableau de bord : %s (s'ouvre dans le navigateur, se met à jour tout seul)", write_dashboard(s))
+    run_bots(bots, s.poll_seconds, after_cycle=lambda: write_dashboard(s))
+
+
+def cmd_dashboard(s: Settings, args: argparse.Namespace) -> None:
+    path = write_dashboard(s)
+    print(f"Tableau de bord : {path}")
+    if not args.no_open:
+        webbrowser.open(path.resolve().as_uri())
 
 
 def cmd_reset_guard(s: Settings, args: argparse.Namespace) -> None:
-    state_path, _ = state_paths(s)
-    store = StateStore(state_path)
-    state = store.load()
-    if not state.get("guard"):
-        print("Aucun garde-fou enregistré.")
-        return
-    state["guard"] = None
-    store.save(state)
-    print("Garde-fou réarmé : le bot pourra de nouveau ouvrir des positions.")
+    for bs in bot_settings(s):
+        state_path, _ = bot_paths(bs)
+        store = StateStore(state_path)
+        state = store.load()
+        if not state.get("guard"):
+            print(f"[{bs.symbol} {bs.timeframe}] aucun garde-fou enregistré.")
+            continue
+        state["guard"] = None
+        store.save(state)
+        print(f"[{bs.symbol} {bs.timeframe}] garde-fou réarmé : le bot pourra de nouveau ouvrir des positions.")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -155,12 +183,14 @@ def main(argv: list[str] | None = None) -> int:
     bt.add_argument("--csv", help="fichier CSV ts,open,high,low,close,volume au lieu de télécharger")
     rb = sub.add_parser("robustesse", help="tester la stratégie sur plusieurs marchés et périodes")
     rb.add_argument("--symbols", default="BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT")
-    rb.add_argument("--timeframes", default="15m,1h,4h")
+    rb.add_argument("--timeframes", default="15m,1h,4h,1d")
     rb.add_argument("--days", type=int, default=730)
     rb.add_argument("--periods", type=int, default=4, help="nombre de sous-périodes pour juger la régularité")
     sub.add_parser("check", help="vérifier la connexion et les soldes")
-    sub.add_parser("run", help="lancer le bot (selon MODE dans .env)")
-    sub.add_parser("reset-guard", help="réarmer le bot après un arrêt pour drawdown (bot arrêté)")
+    sub.add_parser("run", help="lancer le ou les bots (selon MODE et BOTS dans .env)")
+    tb = sub.add_parser("tableau", help="générer et ouvrir le tableau de bord")
+    tb.add_argument("--no-open", action="store_true", help="ne pas ouvrir le navigateur")
+    sub.add_parser("reset-guard", help="réarmer les bots après un arrêt pour drawdown (bots arrêtés)")
     args = parser.parse_args(argv)
 
     try:
@@ -174,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
         "robustesse": cmd_robustness,
         "check": cmd_check,
         "run": cmd_run,
+        "tableau": cmd_dashboard,
         "reset-guard": cmd_reset_guard,
     }
     try:

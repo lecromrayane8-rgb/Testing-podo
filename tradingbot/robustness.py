@@ -11,8 +11,10 @@ Trois garde-fous statistiques :
 """
 from __future__ import annotations
 
+import json
 import math
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -126,6 +128,20 @@ def format_robustness(rows: list[RobustnessRow], n_periods: int) -> str:
         "et la stratégie gagne dans au moins 3 sous-périodes sur 4.",
     ]
     return "\n".join(lines)
+
+
+def save_results(path: Path, rows: list[RobustnessRow], verdict: str, **meta) -> None:
+    """Dernier test de robustesse, relu par le tableau de bord."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {**meta, "verdict": verdict, "rows": [asdict(r) for r in rows]}
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def load_results(path: Path) -> dict | None:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def overall_verdict(rows: list[RobustnessRow]) -> str:

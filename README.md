@@ -80,6 +80,8 @@ Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit 
    (reconstruit automatiquement à chaque modification du code).
 2. Clic droit sur le ZIP → Propriétés → coche « Débloquer » → OK, puis clic droit → « Extraire tout ».
 3. Dans le dossier extrait, double-clique sur `1 - Tester la robustesse.bat`, puis suis `LISEZ-MOI.txt`.
+   `4 - Lancer le bot.bat` lance 3 bots en argent fictif (15 min, 1 h, 1 jour) et `5 - Tableau de bord.bat`
+   ouvre la page de suivi.
 
 Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires »
 puis « Exécuter quand même ». C'est normal pour un programme qui n'est pas signé.
@@ -108,12 +110,13 @@ Le détail des trades est écrit dans `data/backtest_trades.csv`.
 python main.py robustesse
 ```
 
-Cette commande teste les mêmes réglages sur 5 paires (BTC, ETH, SOL, BNB, XRP) et 3 unités de temps (15 min,
-1 h, 4 h), sur deux ans. Elle répond à la seule question qui compte : **l'avantage est-il réel, ou dû à la chance ?**
+Cette commande teste les mêmes réglages sur 5 paires (BTC, ETH, SOL, BNB, XRP) et 4 unités de temps (15 min,
+1 h, 4 h et 1 jour pour le long terme), sur deux ans, et environ 7 ans pour les bougies d'un jour, qui donnent moins
+de trades. Elle répond à la seule question qui compte : **l'avantage est-il réel, ou dû à la chance ?**
 
 - **Fourchette de confiance à 95 %** sur le gain moyen par trade : si elle contient 0, le gain peut venir du hasard.
 - **Régularité** : l'historique est coupé en 4 périodes, la stratégie doit gagner dans au moins 3 d'entre elles.
-- **Seuil durci selon le nombre de marchés testés** : en tester 15 et garder le meilleur fait toujours
+- **Seuil durci selon le nombre de marchés testés** : en tester 20 et garder le meilleur fait toujours
   « trouver » un gagnant par hasard.
 
 Seuls les marchés marqués **« robuste »** méritent un essai en testnet. Pour les petits mouvements :
@@ -129,6 +132,31 @@ toujours en réel. Si tu modifies un réglage, relance `robustesse` : un vrai pr
 python main.py check   # vérifie l'accès aux prix
 python main.py run     # Ctrl+C pour arrêter, la position est reprise au redémarrage
 ```
+
+### Plusieurs bots en même temps (15 min, 1 h, long terme)
+
+`BOTS` lance plusieurs bots dans la même fenêtre, au format `PAIRE@UNITE` :
+
+```
+BOTS=BTC/USDT@15m,BTC/USDT@1h,BTC/USDT@1d
+```
+
+- En mode paper, chaque bot a son propre compte fictif de `PAPER_START_BALANCE` : leurs résultats se comparent
+  sans se mélanger.
+- Sur un vrai compte (testnet, demo, live), `MAX_CAPITAL` est obligatoire : c'est le montant confié à **chaque** bot.
+- Une erreur réseau sur un bot n'arrête pas les autres. Un bot qui plante 5 fois de suite est mis à l'écart avec
+  une alerte dans le journal.
+
+### Le tableau de bord
+
+```bash
+python main.py tableau   # ou double-clic sur « 5 - Tableau de bord.bat »
+```
+
+Une page s'ouvre dans ton navigateur : résultat total, carte de chaque bot (valeur, résultat, trades, position et
+stop), courbe du rendement cumulé, derniers trades et dernier test de robustesse. Pendant `run`, le bot la réécrit à
+chaque tour et elle se recharge toute seule chaque minute. Un bot qui ne donne plus de nouvelles depuis 10 minutes
+y apparaît en rouge : ses stops ne sont plus surveillés. La page fonctionne hors ligne (`data/tableau-de-bord.html`).
 
 ## Étape 3 : connexion à un espace de trading de test (faux argent, vraie plateforme)
 
@@ -212,17 +240,19 @@ tail -f data/bot.log
 | Commande | Rôle |
 |---|---|
 | `python main.py backtest [--days N] [--capital X] [--csv fichier]` | tester la stratégie sur l'historique |
-| `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
-| `python main.py check` | vérifier la connexion, le prix et les soldes |
-| `python main.py run` | lancer le bot selon `MODE` |
-| `python main.py reset-guard` | réarmer le bot après un arrêt pour drawdown (à lancer bot arrêté) |
+| `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
+| `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
+| `python main.py run` | lancer les bots selon `MODE` et `BOTS` |
+| `python main.py tableau [--no-open]` | générer et ouvrir le tableau de bord |
+| `python main.py reset-guard` | réarmer les bots après un arrêt pour drawdown (à lancer bots arrêtés) |
 
 Fichiers produits dans `data/` : `bot.log` (journal), `state_*.json` (position en cours, reprise au redémarrage),
-`trades_*.csv` (historique des trades), `paper_wallet_*.json` (portefeuille simulé).
+`trades_*.csv` (historique des trades), `paper_wallet_*.json` (portefeuilles simulés), `robustesse.json`
+(dernier test) et `tableau-de-bord.html`.
 
 ## Limites connues
 
-- Une seule paire, achat seulement.
+- Achat seulement, une position à la fois par bot.
 - En mode limite, le backtest ne voit que les bougies : il ne sait pas si l'ordre aurait été servi dans la file
   d'attente à ton prix. Le testnet donne une idée plus réaliste du taux d'exécution.
 - Le stop n'existe que tant que le bot tourne : il n'y a pas d'ordre stop posé sur la plateforme.
