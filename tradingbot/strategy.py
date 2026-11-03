@@ -15,6 +15,11 @@ Suivre une tendance :
 
 Pour toutes : stop-loss à k × ATR sous le prix d'achat, stop temporel optionnel (0 = aucun),
 filtre de tendance optionnel (clôture au-dessus de la moyenne longue, 0 = aucun filtre).
+Filtres optionnels d'achat, surtout utiles en très court terme où les frais pèsent lourd :
+- volatilité : n'acheter que si l'ATR vaut au moins `min_atr_pct` du prix (les bougies bougent assez
+  pour qu'un trade puisse rapporter plus que ses frais) ;
+- volume : n'acheter que si le volume de la bougie atteint `volume_mult` fois sa moyenne (le mouvement
+  est suivi par beaucoup d'acheteurs).
 Les signaux d'une bougie n'utilisent que cette bougie et les précédentes.
 """
 from __future__ import annotations
@@ -53,6 +58,9 @@ class StrategyParams:
     atr_period: int = 14
     stop_atr_mult: float = 2.5
     max_bars_in_trade: int = 24  # 0 = pas de stop temporel
+    min_atr_pct: float = 0.0  # filtre de volatilité : ATR / prix minimum (0,003 = 0,3 %) ; 0 = sans filtre
+    volume_mult: float = 0.0  # filtre de volume : volume >= k × sa moyenne ; 0 = sans filtre
+    volume_period: int = 20
 
     def __post_init__(self):
         if self.strategy_type not in STRATEGY_TYPES:
@@ -67,6 +75,8 @@ class StrategyParams:
             raise ValueError("STOP_ATR_MULT, BB_STD et ST_MULT doivent être positifs")
         if self.trend_period < 0 or self.max_bars_in_trade < 0:
             raise ValueError("TREND_PERIOD et MAX_BARS_IN_TRADE doivent être >= 0")
+        if self.min_atr_pct < 0 or self.volume_mult < 0 or self.volume_period < 1:
+            raise ValueError("MIN_ATR_PCT et VOLUME_MULT doivent être >= 0, VOLUME_PERIOD >= 1")
 
     @property
     def warmup_bars(self) -> int:
@@ -80,7 +90,8 @@ class StrategyParams:
             "momentum": [self.momentum_period + 2],
             "supertrend": [self.st_period + 2],
         }[self.strategy_type]
-        return max([self.atr_period, self.trend_period, *periods]) + 1
+        volume = [self.volume_period] if self.volume_mult else []
+        return max([self.atr_period, self.trend_period, *volume, *periods]) + 1
 
     @property
     def exit_label(self) -> str:
@@ -130,6 +141,10 @@ def compute_signals(df: pd.DataFrame, p: StrategyParams) -> pd.DataFrame:
         entry = _crossing_up(up)
         exit_ = ~up
     valid = out["atr"].notna() & (out["atr"] > 0)
+    if p.min_atr_pct:
+        valid &= out["atr"] / close >= p.min_atr_pct
+    if p.volume_mult:
+        valid &= out["volume"] >= p.volume_mult * sma(out["volume"], p.volume_period)
     out["entry"] = (entry & trend_ok & valid).fillna(False).astype(bool)
     out["exit"] = exit_.fillna(False).astype(bool)
     return out

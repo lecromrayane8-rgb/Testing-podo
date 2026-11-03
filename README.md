@@ -182,7 +182,7 @@ argent fictif. Le labo peut **tester** des actions ; le bot ne peut pas encore e
 
 ```bash
 python main.py labo --symbols BTC/USDT,ETH/USDT,SOL/USDT --timeframes 1m,5m --scanner 8 --memecoins \
-    --resultats laboratoire-court-terme.json
+    --combinaisons --resultats laboratoire-court-terme.json
 ```
 
 `--scanner 8` ajoute les 8 cryptos les plus agitées des dernières 24 h, `--memecoins` les memecoins cotés sur
@@ -195,6 +195,18 @@ ses résultats à part (`data/laboratoire-court-terme.json`) pour ne pas effacer
 
 Premier essai sur de vraies données (novembre 2026) : en 1 et 5 minutes, le labo n'a trouvé que des stratégies
 perdantes après frais. Un aller-retour coûte plus que ce que ces stratégies captent sur de si petits mouvements.
+
+`--combinaisons` ajoute 12 variantes pensées pour ce problème : les mêmes techniques, mais qui n'achètent que
+quand les bougies bougent assez (filtre de volatilité : ATR d'au moins 0,3 % du prix, le coût d'un aller-retour)
+ou quand le volume double (filtre de volume : le mouvement a des acheteurs derrière lui). Ces seuils sont fixés
+d'avance, pas ajustés sur les données, et les 36 variantes passent par la même validation et le même seuil durci.
+Les filtres existent aussi dans `.env` (`MIN_ATR_PCT`, `VOLUME_MULT`, `VOLUME_PERIOD`) et le bot en direct les
+applique exactement comme le backtest (tests de parité).
+
+Le tableau du labo affiche deux gains par trade : **avant frais** (ce que la stratégie capte sur le prix du
+graphique) et **après frais** (l'espérance). L'écart est le coût d'un aller-retour. Le verdict en tire la leçon :
+si même avant frais rien ne gagne, aucune plateforme moins chère n'y changera rien ; si c'est positif avant frais
+mais négatif après, ce sont les frais qui font perdre.
 
 ## Étape 2 : paper trading (prix réels, ordres simulés, sans clé)
 

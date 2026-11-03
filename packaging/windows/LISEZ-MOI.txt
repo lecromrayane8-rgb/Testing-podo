@@ -17,10 +17,12 @@ LES FICHIERS À DOUBLE-CLIQUER
     mobiles, MACD, momentum, Supertrend), sur cryptos, or et euro (et tes actions, voir le
     dossier « actions »), en 15 min, 1 h, 4 h et 1 jour. Dit quelle structure tient vraiment sur
     des données qu'elle n'a pas vues. Compter 10 à 20 minutes.
-7 - Labo court terme : les mêmes 24 variantes en bougies de 1 et 5 minutes, sur BTC, ETH, SOL, les
-    8 cryptos les plus agitées du moment et les memecoins cotés sur Binance (DOGE, SHIB, PEPE,
-    FLOKI, BONK, WIF) quand ils sont assez échangés. Compter 20 à 40 minutes. Ses résultats ont
-    leur propre fichier : ils n'effacent plus ceux du labo 6.
+7 - Labo court terme : les mêmes 24 variantes plus 12 combinaisons (filtres de volatilité et de
+    volume), en bougies de 1 et 5 minutes, sur BTC, ETH, SOL, les 8 cryptos les plus agitées du
+    moment et les memecoins cotés sur Binance (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) quand ils sont
+    assez échangés. Compter 30 à 50 minutes. La colonne « Avant frais » montre ce que chaque
+    stratégie capte sur le prix avant frais : elle dit si ce sont les frais qui la font perdre.
+    Ses résultats ont leur propre fichier : ils n'effacent plus ceux du labo 6.
 8 - Tournoi en 1 minute : les stratégies « à surveiller » du labo court terme (7) s'affrontent en
     argent fictif, en bougies d'1 minute (dossier data\tournoi-court-terme). S'il n'en a retenu
     aucune, le tournoi refuse de démarrer et le dit.
@@ -38,8 +40,9 @@ DANS L'ORDRE
 3. Regarde le « Classement » et le tableau « Par stratégie » : une stratégie y est marquée
    « candidate au testnet » seulement après 30 trades nettement positifs, frais compris, avec un
    seuil d'autant plus dur qu'il y a de bots en compétition (sinon la chance en ferait gagner).
-4. Le court terme (7 puis 8) : seulement pour revérifier de temps en temps. Sur tes premiers
-   essais réels, il perdait partout après frais.
+4. Le court terme : relance « 7 - Labo court terme » (avec les nouvelles combinaisons) et envoie
+   le tableau et le VERDICT à Claude. Si une stratégie y sort « à surveiller », « 8 - Tournoi en
+   1 minute » la fera tourner en argent fictif. Sur tes premiers essais, tout perdait après frais.
 
 LE GARDIEN (correction automatique)
 Après 20 trades, une stratégie qui perd nettement (même en comptant la malchance) est éliminée :

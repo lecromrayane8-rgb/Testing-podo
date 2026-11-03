@@ -129,3 +129,34 @@ def test_new_parameters_are_validated():
         StrategyParams(strategy_type="macd", macd_fast=30, macd_slow=26)
     with pytest.raises(ValueError, match="BB_STD"):
         StrategyParams(strategy_type="bollinger", bb_std=0)
+
+
+def breakout_frame(volume_spike_at=None):
+    closes = list(np.full(60, 100.0)) + [101.0, 102.0, 103.0]  # sort de son range de 60 bougies
+    df = frame_from_closes(closes, spread=0.001)
+    if volume_spike_at is not None:
+        df.loc[df.index[volume_spike_at], "volume"] = 5.0
+    return df
+
+
+def test_volatility_filter_waits_for_candles_that_move_enough():
+    base = StrategyParams(strategy_type="cassure", breakout_period=20, breakout_exit_period=10, trend_period=0)
+    df = breakout_frame()
+    assert compute_signals(df, base)["entry"].iloc[60]  # sans filtre : la cassure est prise
+    calm = compute_signals(df, StrategyParams(**{**base.__dict__, "min_atr_pct": 0.05}))
+    assert not calm["entry"].any()  # bougies d'environ 0,3 % : sous les 5 % exigés
+
+
+def test_volume_filter_needs_a_crowd_behind_the_move():
+    p = StrategyParams(strategy_type="cassure", breakout_period=20, breakout_exit_period=10, trend_period=0,
+                       volume_mult=2.0)
+    assert not compute_signals(breakout_frame(), p)["entry"].any()  # volume constant : jamais deux fois la moyenne
+    spiked = compute_signals(breakout_frame(volume_spike_at=60), p)
+    assert spiked["entry"].iloc[60] and spiked["entry"].sum() == 1
+    assert p.warmup_bars >= p.volume_period + 1
+
+
+@pytest.mark.parametrize("kwargs", [{"min_atr_pct": -0.1}, {"volume_mult": -1.0}, {"volume_period": 0}])
+def test_filter_settings_are_validated(kwargs):
+    with pytest.raises(ValueError, match="MIN_ATR_PCT"):
+        StrategyParams(**kwargs)

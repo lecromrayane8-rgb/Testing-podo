@@ -65,6 +65,34 @@ VARIANTS: dict[str, StrategyParams] = {
     "Supertrend 20/3": StrategyParams(strategy_type="supertrend", st_period=20, st_mult=3.0, trend_period=0, **TREND),
 }
 
+# Combinaisons pour le très court terme, où un aller-retour coûte environ 0,3 % (frais + glissement).
+# Seuils fixés d'avance, pas ajustés sur les données : n'acheter que quand une bougie bouge en moyenne d'au
+# moins ce coût (ATR >= 0,3 % du prix), ou quand le volume double (le mouvement a des acheteurs derrière lui).
+VOLATILE = {"min_atr_pct": 0.003}
+CROWD = {"volume_mult": 2.0}
+COMBOS: dict[str, StrategyParams] = {
+    "Cassure 20/10 + volatilité": StrategyParams(breakout_period=20, breakout_exit_period=10, trend_period=0,
+                                                 **TURTLE, **VOLATILE),
+    "Cassure 20/10 + volume x2": StrategyParams(breakout_period=20, breakout_exit_period=10, trend_period=0,
+                                                **TURTLE, **CROWD),
+    "Cassure 55/20 + volatilité + volume": StrategyParams(breakout_period=55, breakout_exit_period=20,
+                                                          trend_period=0, **TURTLE, **VOLATILE, **CROWD),
+    "Bollinger cassure 20/2 + volatilité": StrategyParams(strategy_type="bollinger_cassure", trend_period=0,
+                                                          **TREND, **VOLATILE),
+    "Bollinger cassure 20/2 + volume x2": StrategyParams(strategy_type="bollinger_cassure", trend_period=0,
+                                                         **TREND, **CROWD),
+    "Supertrend 10/3 + volatilité": StrategyParams(strategy_type="supertrend", trend_period=0, **TREND, **VOLATILE),
+    "Supertrend 10/3 + volume x2": StrategyParams(strategy_type="supertrend", trend_period=0, **TREND, **CROWD),
+    "Momentum 50 + volume x2": StrategyParams(strategy_type="momentum", momentum_period=50, trend_period=0,
+                                              **TREND, **CROWD),
+    "MACD 12/26/9 + MM200 + volume x2": StrategyParams(strategy_type="macd", **TREND, **CROWD),
+    "Croisement MM 20/100 + volatilité": StrategyParams(strategy_type="croisement", fast_period=20, slow_period=100,
+                                                        trend_period=0, **TREND, **VOLATILE),
+    "Repli RSI(2) < 5 + MM200 + volatilité": StrategyParams(rsi_entry=5.0, **VOLATILE),
+    "Bollinger rebond 20/2,5 + volatilité": StrategyParams(strategy_type="bollinger", bb_std=2.5, **VOLATILE),
+}
+ALL_VARIANTS: dict[str, StrategyParams] = {**VARIANTS, **COMBOS}  # pour retrouver une variante par son nom
+
 
 @dataclass(frozen=True)
 class LabRow:
@@ -83,6 +111,7 @@ class LabRow:
     strategy_return: float  # rendement moyen par marché
     buy_hold_return: float  # achat-conservation moyen, pour comparer
     verdict: str
+    gross_expectancy_pct: float = math.nan  # ce que la stratégie capte sur le prix, avant frais et glissement
 
 
 def lab_verdict(trades: int, study_exp: float, exp: float, ci_low_adjusted: float, positive: int, judged: int) -> str:
@@ -110,7 +139,7 @@ def evaluate_variant(
     risk: RiskParams,
     n_tests: int,
 ) -> LabRow:
-    study, valid, strategy_returns, buy_hold, per_market = [], [], [], [], []
+    study, valid, gross, strategy_returns, buy_hold, per_market = [], [], [], [], [], []
     for df in datasets.values():
         if len(df) < params.warmup_bars + 50:
             continue
@@ -120,6 +149,7 @@ def evaluate_variant(
         market_valid = [100 * t.return_pct for t in result.trades if t.entry_time >= cutoff]
         study += [100 * t.return_pct for t in result.trades if t.entry_time < cutoff]
         valid += market_valid
+        gross += [100 * t.gross_return for t in result.trades if t.entry_time >= cutoff]
         equity = result.equity[index >= cutoff]
         closes = df["close"][df.index >= cutoff]
         if len(equity) > 1:
@@ -150,6 +180,7 @@ def evaluate_variant(
         strategy_return=_mean(strategy_returns),
         buy_hold_return=_mean(buy_hold),
         verdict=lab_verdict(len(valid), study_exp, exp, ci_adj, positive, len(per_market)),
+        gross_expectancy_pct=_mean(gross),
     )
 
 
@@ -172,23 +203,27 @@ def format_lab(rows: list[LabRow]) -> str:
     def pct(x: float, fmt: str) -> str:
         return "n/a" if math.isnan(x) else format(x, fmt)
 
+    width = max([34, *(len(r.variant) + 1 for r in rows)])
     header = (
-        f"{'Variante':<34}{'Unité':>6}{'Trades':>8}{'Réussite':>10}{'Espérance':>11}  {'IC 95 %':<20}"
-        f"{'Marchés +':>10}{'Rendement':>11}{'Buy&hold':>10}  Verdict"
+        f"{'Variante':<{width}}{'Unité':>6}{'Trades':>8}{'Réussite':>10}{'Avant frais':>13}{'Espérance':>11}  "
+        f"{'IC 95 %':<20}{'Marchés +':>10}{'Rendement':>11}{'Buy&hold':>10}  Verdict"
     )
     lines = [header, "-" * (len(header) + 16)]
     for r in rows:
         ci = "n/a" if math.isnan(r.ci_low) else f"[{r.ci_low:+.3f} ; {r.ci_high:+.3f}]"
         markets = f"{r.markets_positive}/{r.markets_judged}" if r.markets_judged else "n/a"
         lines.append(
-            f"{r.variant:<34}{r.timeframe:>6}{r.trades:>8}{pct(100 * r.win_rate, '.1f') + ' %':>10}"
-            f"{pct(r.expectancy_pct, '+.3f') + ' %':>11}  {ci:<20}{markets:>10}"
+            f"{r.variant:<{width}}{r.timeframe:>6}{r.trades:>8}{pct(100 * r.win_rate, '.1f') + ' %':>10}"
+            f"{pct(r.gross_expectancy_pct, '+.3f') + ' %':>13}{pct(r.expectancy_pct, '+.3f') + ' %':>11}  "
+            f"{ci:<20}{markets:>10}"
             f"{pct(100 * r.strategy_return, '+.1f') + ' %':>11}{pct(100 * r.buy_hold_return, '+.1f') + ' %':>10}  {r.verdict}"
         )
     lines += [
         "",
         f"Tout est mesuré sur la validation : les {100 - int(100 * STUDY_SHARE)} % les plus récents de chaque historique.",
         "Espérance : gain moyen par trade, frais inclus, tous marchés réunis. Marchés + : marchés où elle est positive.",
+        "Avant frais : ce que la stratégie capte sur le prix, sans frais ni glissement. L'écart entre les deux,",
+        "c'est ce que coûte un aller-retour.",
         "Rendement / Buy&hold : moyenne par marché de la stratégie et du simple achat-conservation sur la même période.",
         f"« {PROMISING} » : gagnant sur l'étude ET la validation, fourchette au-dessus de 0 avec un seuil durci",
         f"pour les {len(rows)} essais, et positif sur au moins 60 % des marchés.",
@@ -209,8 +244,25 @@ def overall_lab_verdict(rows: list[LabRow]) -> str:
     hint = f"\nLa plus proche : {watch[0].variant} en {watch[0].timeframe} (à surveiller)." if watch else ""
     return (
         f"VERDICT : aucune des {len(rows)} combinaisons testées ne tient hors échantillon.\n"
-        "Ne mets pas d'argent réel, et encore moins de levier, sur ces stratégies." + hint
+        "Ne mets pas d'argent réel, et encore moins de levier, sur ces stratégies." + hint + cost_diagnosis(rows)
     )
+
+
+def cost_diagnosis(rows: list[LabRow]) -> str:
+    """Les frais sont-ils le problème ? Compare le meilleur gain avant frais au coût d'un aller-retour."""
+    judged = [r for r in rows if r.trades >= MIN_TRADES and not math.isnan(r.gross_expectancy_pct)]
+    if not judged:
+        return ""
+    best = max(judged, key=lambda r: r.gross_expectancy_pct)
+    cost = best.gross_expectancy_pct - best.expectancy_pct
+    line = (f"\nAvant frais, la meilleure capte {best.gross_expectancy_pct:+.3f} % par trade ({best.variant} en "
+            f"{best.timeframe}) ; un aller-retour lui coûte {cost:.3f} %.")
+    if best.gross_expectancy_pct <= 0:
+        return line + "\nMême sans aucun frais, rien ne gagne : changer de plateforme n'y changerait rien."
+    if best.expectancy_pct <= 0:
+        return line + (f"\nCe sont les frais qui la font perdre. Attention : c'est la meilleure de {len(rows)} essais, "
+                       "son gain avant frais peut aussi venir du hasard.")
+    return line
 
 
 def env_lines(params: StrategyParams) -> str:

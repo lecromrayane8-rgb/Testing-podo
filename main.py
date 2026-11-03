@@ -20,7 +20,8 @@ from tradingbot.config import ConfigError, Settings, load_dotenv
 from tradingbot.dashboard import ROBUSTNESS_FILE, write_dashboard
 from tradingbot.data import load_csv, load_or_fetch, make_exchange, timeframe_to_ms
 from tradingbot.lab import (
-    LAB_FILE, PROMISING, VARIANTS, env_lines, format_lab, load_lab, overall_lab_verdict, run_lab, save_lab,
+    ALL_VARIANTS, COMBOS, LAB_FILE, PROMISING, VARIANTS, env_lines, format_lab, load_lab, overall_lab_verdict, run_lab,
+    save_lab,
 )
 from tradingbot.live import Bot, StateStore, bot_paths, px, run_bots, slug
 from tradingbot.obsidian import JOURNAL, ObsidianHandler, ObsidianJournal
@@ -175,8 +176,9 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
     if not datasets:
         raise ValueError("Aucune donnée récupérée : vérifie ta connexion internet.")
     markets = sorted({m for group in datasets.values() for m in group})
-    log.info("Laboratoire : %d variantes × %d unités de temps sur %d marchés", len(VARIANTS), len(datasets), len(markets))
-    rows = run_lab(datasets, s.execution, s.risk)
+    variants = {**VARIANTS, **COMBOS} if args.combinaisons else VARIANTS
+    log.info("Laboratoire : %d variantes × %d unités de temps sur %d marchés", len(variants), len(datasets), len(markets))
+    rows = run_lab(datasets, s.execution, s.risk, variants)
     table, verdict = format_lab(rows), overall_lab_verdict(rows)
     print(f"\n=== Laboratoire de stratégies : {', '.join(markets)} ===")
     print(table)
@@ -186,7 +188,7 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
     if best:
         tradable = [m for m in datasets.get(best.timeframe, {}) if "/" in m]
         print("\nPour l'essayer en argent fictif, mets ces lignes dans .env (« Modifier les reglages ») :")
-        print(env_lines(VARIANTS[best.variant]))
+        print(env_lines(ALL_VARIANTS[best.variant]))
         print(f"BOTS={','.join(f'{m}@{best.timeframe}' for m in tradable)}")
     save_lab(
         s.data_dir / Path(args.resultats).name, rows, verdict,
@@ -263,7 +265,7 @@ def tournament_picks(lab: dict, unite: str | None, limit: int) -> list[tuple[str
     """(variante, unité, ligne du labo) des stratégies « prometteur » ou « à surveiller », les meilleures d'abord."""
     picks, seen = [], set()
     for row in lab.get("rows", []):  # le labo les trie déjà de la meilleure espérance à la moins bonne
-        if row.get("verdict") not in (PROMISING, WATCH) or row.get("variant") not in VARIANTS:
+        if row.get("verdict") not in (PROMISING, WATCH) or row.get("variant") not in ALL_VARIANTS:
             continue
         key = (row["variant"], unite or row["timeframe"])
         if key not in seen:
@@ -351,7 +353,7 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
     bots = []
     for variant, tf, _ in picks:
         for symbol, market_data in data.items():
-            bs = replace(base, symbol=symbol, timeframe=tf, strategy=VARIANTS[variant], bot_label=variant)
+            bs = replace(base, symbol=symbol, timeframe=tf, strategy=ALL_VARIANTS[variant], bot_label=variant)
             state_path, journal_path = bot_paths(bs)
             bots.append(Bot(make_broker(bs, market_data), bs, StateStore(state_path), journal_path))
     registry_path = base.data_dir / "tournoi.json"
@@ -438,6 +440,8 @@ def main(argv: list[str] | None = None) -> int:
     lb.add_argument("--csv-dir", help="dossier de CSV quotidiens (actions, ETF...) ajoutés aux tests en 1 jour")
     lb.add_argument("--scanner", type=int, default=0, help="ajouter les N cryptos les plus agitées du moment")
     lb.add_argument("--memecoins", action="store_true", help="ajouter les memecoins cotés et assez échangés")
+    lb.add_argument("--combinaisons", action="store_true",
+                    help="ajouter les combinaisons court terme (filtres de volatilité et de volume)")
     lb.add_argument("--resultats", default=LAB_FILE,
                     help="fichier des résultats dans data (le court terme a le sien pour ne pas écraser le long terme)")
     tn = sub.add_parser("tournoi", help="faire s'affronter en argent fictif les stratégies retenues par le labo")

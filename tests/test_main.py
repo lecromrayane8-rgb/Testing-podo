@@ -260,3 +260,19 @@ def test_tournament_rejects_an_unknown_unit_clearly(tmp_path, monkeypatch, caplo
     lab_file(tmp_path / "data" / "laboratoire.json", ("Supertrend 10/3", "4h", "à surveiller", 0.5))
     assert main.main(["tournoi", "--unite", "1x"]) == 1
     assert "Unité de temps inconnue : '1x'" in caplog.text
+
+
+def test_short_term_lab_can_add_the_combos_and_the_tournament_runs_them(tmp_path, monkeypatch):
+    from tradingbot.lab import COMBOS, VARIANTS
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    walk = frame_from_closes(100 * np.exp(np.cumsum(np.random.default_rng(4).normal(0.0, 0.01, 1500))))
+    monkeypatch.setattr(main, "load_or_fetch", lambda *args, **kwargs: walk)
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: None)
+    assert main.main(["labo", "--symbols", "BTC/USDT", "--timeframes", "1h", "--combinaisons",
+                      "--resultats", "laboratoire-court-terme.json"]) == 0
+    saved = json.loads((tmp_path / "data" / "laboratoire-court-terme.json").read_text(encoding="utf-8"))
+    assert len(saved["rows"]) == len(VARIANTS) + len(COMBOS)
+    assert all("gross_expectancy_pct" in r for r in saved["rows"])
+    combo = {"rows": [{"variant": "Cassure 20/10 + volume x2", "timeframe": "5m", "verdict": "à surveiller"}]}
+    assert main.tournament_picks(combo, "1m", 6)[0][:2] == ("Cassure 20/10 + volume x2", "1m")

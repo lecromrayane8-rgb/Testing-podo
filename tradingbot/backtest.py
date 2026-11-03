@@ -26,6 +26,8 @@ class Trade:
     cost: float
     proceeds: float
     reason: str
+    entry_mark: float = math.nan  # prix du graphique, avant glissement et frais
+    exit_mark: float = math.nan
 
     @property
     def pnl(self) -> float:
@@ -34,6 +36,11 @@ class Trade:
     @property
     def return_pct(self) -> float:
         return self.pnl / self.cost
+
+    @property
+    def gross_return(self) -> float:
+        """Ce que la stratégie a capté sur le prix, avant frais et glissement."""
+        return self.exit_mark / self.entry_mark - 1
 
 
 @dataclass
@@ -68,6 +75,7 @@ class _Position:
     qty: float
     cost: float
     stop: float
+    entry_mark: float = math.nan
 
 
 @dataclass
@@ -113,7 +121,7 @@ def run_backtest(
     stats = TradeStats()
     eliminated: str | None = None
 
-    def open_position(i: int, entry_index: int, price: float, atr_value: float, fee: float) -> None:
+    def open_position(i: int, entry_index: int, price: float, atr_value: float, fee: float, mark: float) -> None:
         nonlocal cash, pos, fees_paid
         stop = initial_stop(price, atr_value, strategy)
         qty = min(position_size(cash, price, stop, risk), cash / (price * (1 + fee)))
@@ -121,29 +129,30 @@ def run_backtest(
             cost = qty * price * (1 + fee)
             fees_paid += qty * price * fee
             cash -= cost
-            pos = _Position(entry_index, index[i], price, qty, cost, stop)
+            pos = _Position(entry_index, index[i], price, qty, cost, stop, mark)
 
-    def close_position(i: int, price: float, reason: str, fee: float) -> None:
+    def close_position(i: int, price: float, reason: str, fee: float, mark: float) -> None:
         nonlocal cash, pos, fees_paid, eliminated
         proceeds = pos.qty * price * (1 - fee)
         fees_paid += pos.qty * price * fee
         cash += proceeds
-        trades.append(
-            Trade(pos.entry_time, index[i], pos.entry_price, price, pos.qty, pos.cost, proceeds, reason)
-        )
+        trades.append(Trade(
+            pos.entry_time, index[i], pos.entry_price, price, pos.qty, pos.cost, proceeds, reason, pos.entry_mark, mark,
+        ))
         stats.add((proceeds - pos.cost) / pos.cost)
         eliminated = eliminated or elimination_reason(stats, risk.eliminate_after_trades)
         pos = None
 
     def market_buy(i: int, entry_index: int, atr_value: float) -> None:
-        open_position(i, entry_index, o[i] * (1 + ex.slippage), atr_value, ex.fee_rate)
+        open_position(i, entry_index, o[i] * (1 + ex.slippage), atr_value, ex.fee_rate, o[i])
 
     def market_sell(i: int, reason: str) -> None:
-        close_position(i, o[i] * (1 - ex.slippage), reason, ex.fee_rate)
+        close_position(i, o[i] * (1 - ex.slippage), reason, ex.fee_rate, o[i])
 
     def check_stop(i: int) -> bool:
         if pos and l[i] <= pos.stop:
-            close_position(i, min(o[i], pos.stop) * (1 - ex.slippage), "stop", ex.fee_rate)
+            mark = min(o[i], pos.stop)
+            close_position(i, mark * (1 - ex.slippage), "stop", ex.fee_rate, mark)
             return True
         return False
 
@@ -174,10 +183,10 @@ def run_backtest(
         if check_stop(i) and order and order.side == "sell":
             order = None
         if order and order.side == "sell" and h[i] > order.price:
-            close_position(i, order.price, order.reason, ex.maker_fee_rate)
+            close_position(i, order.price, order.reason, ex.maker_fee_rate, order.price)
             order = None
         elif order and order.side == "buy" and l[i] < order.price:
-            open_position(i, order.placed_index, order.price, order.atr, ex.maker_fee_rate)
+            open_position(i, order.placed_index, order.price, order.atr, ex.maker_fee_rate, order.price)
             order = None
             check_stop(i)
 
@@ -197,7 +206,7 @@ def run_backtest(
             pending_entry_atr = atr_[i]
 
     if pos:
-        close_position(n - 1, c[-1] * (1 - ex.slippage), "fin du test", ex.fee_rate)
+        close_position(n - 1, c[-1] * (1 - ex.slippage), "fin du test", ex.fee_rate, c[-1])
         equity[-1] = cash
 
     equity_series = pd.Series(equity, index=index, name="equity")

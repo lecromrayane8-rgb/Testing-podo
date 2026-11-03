@@ -105,3 +105,22 @@ def test_limit_entry_not_filled_if_price_never_trades_below():
 def test_invalid_order_type_is_rejected():
     with pytest.raises(ValueError, match="ORDER_TYPE"):
         ExecutionParams(order_type="limite")
+
+
+def test_trades_record_what_the_strategy_caught_before_costs(random_walk):
+    strat = StrategyParams(strategy_type="cassure", breakout_period=20, breakout_exit_period=10, trend_period=0,
+                           max_bars_in_trade=0)
+    costly = ExecutionParams(fee_rate=0.001, slippage=0.0005)
+    trades = run_backtest(random_walk, strat, RiskParams(), execution=costly).trades
+    free = run_backtest(random_walk, strat, RiskParams(),
+                        execution=ExecutionParams(fee_rate=0.0, maker_fee_rate=0.0, slippage=0.0)).trades
+    assert len(trades) > 10
+    for t in trades:
+        assert t.return_pct < t.gross_return  # les frais et le glissement ne font que retirer
+        assert t.gross_return == pytest.approx(t.exit_mark / t.entry_mark - 1)
+    # Mêmes signaux avec ou sans frais : avant frais, on retrouve le résultat d'un test sans frais. Seuls les stops
+    # diffèrent un peu, placés sous le prix réellement payé (glissement compris), comme le fait le bot en direct.
+    assert len(trades) == len(free)
+    pairs = [(t, f) for t, f in zip(trades, free) if t.reason != "stop" and f.reason != "stop"]
+    assert len(pairs) > 10
+    assert [t.gross_return for t, _ in pairs] == pytest.approx([f.return_pct for _, f in pairs])

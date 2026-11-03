@@ -129,3 +129,33 @@ def test_lab_command_tests_cryptos_and_stock_csvs(tmp_path, monkeypatch):
     assert len(saved["rows"]) == len(VARIANTS) * 2
     page = (tmp_path / "data" / "tableau-de-bord.html").read_text(encoding="utf-8")
     assert "Laboratoire de stratégies" in page and "Cassure 55/20" in page
+
+
+def test_short_term_combos_are_named_variants_with_filters():
+    from tradingbot.lab import ALL_VARIANTS, COMBOS
+    assert len(COMBOS) == 12 and not set(COMBOS) & set(VARIANTS)
+    assert all(p.min_atr_pct > 0 or p.volume_mult > 0 for p in COMBOS.values())
+    assert ALL_VARIANTS == {**VARIANTS, **COMBOS}
+    assert "MIN_ATR_PCT=0.003" in env_lines(COMBOS["Cassure 20/10 + volatilité"])
+
+
+def lab_row(name, gross, net, trades=200, verdict="perd de l'argent"):
+    return lab.LabRow(name, "1m", trades, net, trades, 0.5, net, net - 0.1, net + 0.1, net - 0.2, 0, 3, -0.1, 0.0,
+                      verdict, gross)
+
+
+def test_cost_diagnosis_says_whether_fees_are_the_problem():
+    from tradingbot.lab import cost_diagnosis
+    nothing = cost_diagnosis([lab_row("A", -0.02, -0.32), lab_row("B", -0.05, -0.35)])
+    assert "-0.020 %" in nothing and "0.300 %" in nothing and "Même sans aucun frais, rien ne gagne" in nothing
+    fees = cost_diagnosis([lab_row("A", 0.12, -0.18), lab_row("B", -0.05, -0.35)])
+    assert "Ce sont les frais qui la font perdre" in fees and "meilleure de 2 essais" in fees
+    assert cost_diagnosis([lab_row("A", 0.5, 0.2, trades=3)]) == ""  # trop peu de trades pour juger
+
+
+def test_lab_shows_results_before_and_after_costs():
+    rows = run_lab({"1h": {"A": walk(1), "B": walk(2)}}, ExecutionParams(fee_rate=0.001, slippage=0.0005),
+                   RiskParams(), {"Cassure rapide": FAST})
+    row = rows[0]
+    assert row.gross_expectancy_pct - row.expectancy_pct == pytest.approx(0.3, abs=0.02)  # aller-retour ~0,3 %
+    assert "Avant frais" in format_lab(rows)
