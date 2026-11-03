@@ -39,7 +39,11 @@ def make_broker(s: Settings):
     if s.mode == "paper":
         data = CcxtBroker(s.exchange, s.symbol)
         # Un compte fictif par bot : deux bots sur la même paire ne se partagent jamais leurs fonds.
-        wallet = s.data_dir / f"paper_wallet_{s.exchange}_{s.symbol.replace('/', '-')}_{s.timeframe}.json"
+        pair = s.symbol.replace("/", "-")
+        wallet = s.data_dir / f"paper_wallet_{s.exchange}_{pair}_{s.timeframe}.json"
+        legacy = s.data_dir / f"paper_wallet_{s.exchange}_{pair}.json"  # nom des versions précédentes
+        if legacy.exists() and not wallet.exists() and s.timeframe == s.markets[0][1]:
+            legacy.rename(wallet)
         return PaperBroker(data, wallet, s.paper_start_balance, s.execution)
     venue = {"testnet": "testnet", "demo": "demo", "live": "real"}[s.mode]
     return CcxtBroker(s.exchange, s.symbol, s.api_key, s.api_secret, s.api_password, venue=venue)
@@ -93,6 +97,9 @@ def cmd_robustness(s: Settings, args: argparse.Namespace) -> None:
         except ccxt.BadSymbol:
             log.warning("%s introuvable sur %s : ignoré", symbol, s.exchange)
             continue
+        except ccxt.NetworkError as exc:
+            log.warning("%s %s ignoré (réseau) : %s", symbol, tf, exc)
+            continue
         result = run_backtest(df, s.strategy, s.risk, 10_000.0, s.execution)
         rows.append(evaluate(f"{symbol} {tf}", result, n_tests=len(markets), n_periods=args.periods))
     table = format_robustness(rows, args.periods)
@@ -124,7 +131,10 @@ def cmd_check(s: Settings, args: argparse.Namespace) -> None:
         print(f"Prix {bs.symbol} : {price:.2f}")
         print(f"Soldes disponibles : {balances.base:.8f} {base} | {balances.quote:.2f} {quote}")
         print(f"Dernière bougie {bs.timeframe} : {candles.index[-1]}")
-    fees = broker.trading_fees()
+        print_fees(bs, broker.trading_fees())
+
+
+def print_fees(s: Settings, fees: tuple[float, float] | None) -> None:
     if fees is None:
         print("Frais du compte : non fournis par la plateforme (vérifie-les sur son site)")
         return
@@ -138,6 +148,20 @@ def cmd_check(s: Settings, args: argparse.Namespace) -> None:
         print(f"  -> Mets MAKER_FEE_RATE={maker} et FEE_RATE={taker} dans .env pour des backtests réalistes.")
 
 
+def check_capital_allocation(bots: list[Bot]) -> None:
+    """Sur un vrai compte, les bots qui démarrent doivent tous pouvoir recevoir leur MAX_CAPITAL."""
+    starting = [b for b in bots if b.state.get("capital") is None]
+    if bots[0].s.mode == "paper" or len(bots) < 2 or not starting:
+        return
+    quote = bots[0].broker.balances().quote
+    needed = len(starting) * bots[0].s.max_capital
+    if quote < needed:
+        raise ConfigError(
+            f"{len(starting)} bots à {bots[0].s.max_capital:.2f} chacun demandent {needed:.2f}, "
+            f"mais le compte n'a que {quote:.2f} disponibles. Baisse MAX_CAPITAL ou le nombre de bots."
+        )
+
+
 def cmd_run(s: Settings, args: argparse.Namespace) -> None:
     s.validate_for_trading()
     if s.mode == "live":
@@ -149,7 +173,11 @@ def cmd_run(s: Settings, args: argparse.Namespace) -> None:
     for bs in bot_settings(s):
         state_path, journal_path = bot_paths(bs)
         bots.append(Bot(make_broker(bs), bs, StateStore(state_path), journal_path, notes))
-    log.info("Tableau de bord : %s (s'ouvre dans le navigateur, se met à jour tout seul)", write_dashboard(s))
+    check_capital_allocation(bots)
+    try:
+        log.info("Tableau de bord : %s (se met à jour tout seul pendant que les bots tournent)", write_dashboard(s))
+    except Exception as exc:  # le tableau de bord ne doit jamais empêcher de trader
+        log.warning("Tableau de bord non écrit : %s", exc)
     run_bots(bots, s.poll_seconds, after_cycle=lambda: write_dashboard(s))
 
 

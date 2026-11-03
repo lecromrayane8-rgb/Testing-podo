@@ -12,6 +12,7 @@ from tradingbot.dashboard import (
     fmt, fmt_qty, fmt_signed, load_views, nice_ticks, render, tick_decimals, write_dashboard,
 )
 from tradingbot.live import Bot, StateStore, bot_paths
+from tradingbot.risk import RiskParams
 from tradingbot.robustness import ROBUST, RobustnessRow, save_results
 
 NOW = datetime(2026, 11, 3, 18, 0, tzinfo=timezone.utc)
@@ -138,3 +139,19 @@ def test_dashboard_reflects_a_real_bot_run(tmp_path):
     page = path.read_text(encoding="utf-8")
     assert path.name == "tableau-de-bord.html" and page.endswith("</html>")
     assert "rebond" in page and 'class="line"' in page
+
+
+def test_stale_alert_follows_the_poll_interval(three_bots):
+    slow = replace(three_bots, poll_seconds=3600)  # un tour par heure : 3 h sans nouvelle = 3 tours manqués
+    assert "Arrêté ?" not in render(load_views(slow, NOW), slow, None, NOW)
+    assert "Arrêté ?" in render(load_views(three_bots, NOW), three_bots, None, NOW)
+
+
+def test_yesterdays_daily_loss_limit_is_not_shown_as_blocking(tmp_path):
+    s = settings(tmp_path, risk=RiskParams())  # limite journalière par défaut : 3 %
+    guard = {"peak_equity": 10_000.0, "day": "2026-11-02", "day_start_equity": 10_000.0,
+             "last_equity": 9_600.0, "halted": None}
+    write_bot(s, "BTC/USDT", "1h", {"capital": 9_600.0, "initial_capital": 10_000.0, "equity": 9_600.0,
+                                    "updated_at": NOW.isoformat(), "guard": guard})
+    assert load_views(s, NOW)[0].blocked is None
+    assert load_views(s, datetime(2026, 11, 2, 20, 0, tzinfo=timezone.utc))[0].blocked

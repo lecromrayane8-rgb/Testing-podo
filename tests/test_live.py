@@ -273,3 +273,16 @@ def test_state_records_what_the_dashboard_needs(tmp_path):
     assert state["initial_capital"] == 10_000.0
     assert state["equity"] == pytest.approx(bot.equity(broker.price))
     assert state["last_price"] == broker.price and state["updated_at"]
+
+
+def test_trade_journal_from_an_older_version_keeps_its_columns(tmp_path):
+    """Un journal sans colonne « cout » ne doit pas voir ses nouvelles lignes décalées."""
+    import csv as _csv
+    old = tmp_path / "trades.csv"
+    old.write_text("entree,sortie,prix_entree,prix_sortie,quantite,pnl,raison\n", encoding="utf-8")
+    df = dip_scenario([156.0, 159.0, 161.0, 162.0])
+    bot, broker = make_bot(tmp_path, df)
+    for i in range(95, 106):
+        bot.step(broker.at_open(i))
+    rows = list(_csv.DictReader(old.open(encoding="utf-8")))
+    assert len(rows) == 1 and rows[0]["raison"] == "rebond" and float(rows[0]["pnl"]) > 0

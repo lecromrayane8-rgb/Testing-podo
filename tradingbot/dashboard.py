@@ -108,7 +108,8 @@ def read_trades(path: Path) -> list[dict]:
     return sorted(trades, key=lambda t: t["sortie"])
 
 
-def load_views(settings: Settings) -> list[BotView]:
+def load_views(settings: Settings, now: datetime | None = None) -> list[BotView]:
+    now = now or datetime.now(timezone.utc)
     views = []
     for slot, (symbol, timeframe) in enumerate(settings.markets, start=1):
         state_path, journal_path = bot_paths(replace(settings, symbol=symbol, timeframe=timeframe))
@@ -121,16 +122,20 @@ def load_views(settings: Settings) -> list[BotView]:
         initial = num(state.get("initial_capital"))
         if initial is None and capital is not None:
             initial = capital - sum(t["pnl"] for t in trades)
-        guard = state.get("guard")
+        guard = RiskGuard.from_dict(settings.risk, state.get("guard")) if state.get("guard") else None
+        equity = num(state.get("equity"), capital)
+        if guard and equity is not None:
+            # Copie locale (rien n'est sauvegardé) : la limite journalière d'un jour passé expire, comme dans le bot.
+            guard.update(equity, now.astimezone(timezone.utc).strftime("%Y-%m-%d"))
         views.append(BotView(
             name=f"{symbol} {timeframe}",
             slot=slot,
             initial=initial,
-            equity=num(state.get("equity"), capital),
+            equity=equity,
             trades=trades,
             position=state.get("position"),
             order=state.get("order"),
-            blocked=RiskGuard.from_dict(settings.risk, guard).blocked_reason() if guard else None,
+            blocked=guard.blocked_reason() if guard else None,
             updated_at=parse_time(state.get("updated_at")),
         ))
     return views
@@ -193,11 +198,11 @@ def delta(x: float, decimals: int = 2, unit: str = "") -> str:
     return f'<span class="{cls}" aria-hidden="true">{arrow}</span> {fmt_signed(x, decimals, unit)}'
 
 
-def status(view: BotView, now: datetime) -> tuple[str, str, str]:
+def status(view: BotView, now: datetime, stale_after_s: float = STALE_AFTER_S) -> tuple[str, str, str]:
     """(style, icône, libellé) de l'état d'un bot."""
     if not view.started:
         return "muted", "○", "Pas encore lancé"
-    if view.updated_at and (now - view.updated_at).total_seconds() > STALE_AFTER_S:
+    if view.updated_at and (now - view.updated_at).total_seconds() > stale_after_s:
         return "critical", "✕", f"Arrêté ? Aucune nouvelle depuis {duration((now - view.updated_at).total_seconds())}"
     if view.blocked:
         return "warning", "!", f"Achats bloqués : {view.blocked}"
@@ -318,8 +323,8 @@ def chart(views: list[BotView]) -> str:
 
 
 # --- sections ------------------------------------------------------------------------------
-def bot_card(view: BotView, quote: str, now: datetime) -> str:
-    style, icon, label = status(view, now)
+def bot_card(view: BotView, quote: str, now: datetime, stale_after_s: float) -> str:
+    style, icon, label = status(view, now, stale_after_s)
     stats = []
     if view.started:
         stats.append(("Valeur", f"{fmt(view.equity)} {esc(quote)}"))
@@ -418,7 +423,8 @@ def render(views: list[BotView], settings: Settings, robustness: dict | None, no
         f'{len(views)} bot{"s" if len(views) > 1 else ""} · {n_trades} trade{"s" if n_trades > 1 else ""}</p>'
         if started else '<p class="empty">Aucun bot n\'a encore tourné. Lance « 4 - Lancer le bot ».</p>'
     )
-    cards = "".join(bot_card(v, quote, now) for v in views)
+    stale_after_s = max(STALE_AFTER_S, 3 * settings.poll_seconds)  # trois tours manqués
+    cards = "".join(bot_card(v, quote, now, stale_after_s) for v in views)
     return (
         '<!doctype html><html lang="fr"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -440,7 +446,7 @@ def render(views: list[BotView], settings: Settings, robustness: dict | None, no
 def write_dashboard(settings: Settings, now: datetime | None = None) -> Path:
     now = now or datetime.now(timezone.utc)
     path = settings.data_dir / FILENAME
-    page = render(load_views(settings), settings, load_results(settings.data_dir / ROBUSTNESS_FILE), now)
+    page = render(load_views(settings, now), settings, load_results(settings.data_dir / ROBUSTNESS_FILE), now)
     atomic_write(path, page)
     return path
 

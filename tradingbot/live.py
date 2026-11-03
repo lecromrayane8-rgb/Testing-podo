@@ -358,13 +358,18 @@ class Bot:
                 self.log.warning("Note Obsidian non écrite : %s", exc)
         if not self.journal_path:
             return
-        new = not self.journal_path.exists()
         self.journal_path.parent.mkdir(parents=True, exist_ok=True)
+        header = list(record)
+        if self.journal_path.exists():
+            # Journal d'une version précédente : on garde ses colonnes pour ne pas décaler les lignes.
+            with self.journal_path.open(newline="", encoding="utf-8") as f:
+                header = next(csv.reader(f), header)
+        new = not self.journal_path.exists()
         with self.journal_path.open("a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
+            writer = csv.DictWriter(f, fieldnames=header, extrasaction="ignore")
             if new:
-                writer.writerow(list(record))
-            writer.writerow(list(record.values()))
+                writer.writeheader()
+            writer.writerow(record)
 
 
 MAX_CONSECUTIVE_FAILURES = 5
