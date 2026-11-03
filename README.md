@@ -105,7 +105,7 @@ Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit 
 3. Dans le dossier extrait, double-clique sur `1 - Tester la robustesse.bat`, puis suis `LISEZ-MOI.txt`.
    `4 - Lancer le bot.bat` lance 3 bots en argent fictif (15 min, 1 h, 1 jour) et `5 - Tableau de bord.bat`
    ouvre la page de suivi. `9 - Tournoi long terme.bat` fait s'affronter en argent fictif les stratégies retenues
-   par le labo ; `7 - Labo court terme.bat` puis `8 - Tournoi en 1 minute.bat` font de même en très court terme
+   par le labo ; `7 - Labo court terme.bat` puis `8 - Tournoi court terme.bat` font de même en très court terme
    (voir « Le tournoi » plus bas).
 
 Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires »
@@ -181,8 +181,8 @@ argent fictif. Le labo peut **tester** des actions ; le bot ne peut pas encore e
 **Le très court terme** (`7 - Labo court terme.bat`) :
 
 ```bash
-python main.py labo --symbols BTC/USDT,ETH/USDT,SOL/USDT --timeframes 1m,5m --scanner 8 --memecoins \
-    --combinaisons --resultats laboratoire-court-terme.json
+python main.py labo --symbols BTC/USDT,ETH/USDT,SOL/USDT --timeframes 1m,5m,15m --scanner 8 --memecoins \
+    --combinaisons --resultats laboratoire-court-terme.json          # ajouter --ordres-limites : lanceur 10
 ```
 
 `--scanner 8` ajoute les 8 cryptos les plus agitées des dernières 24 h, `--memecoins` les memecoins cotés sur
@@ -193,8 +193,15 @@ jours (environ 86 000 bougies) pour que le labo reste rapide. Les frais pèsent 
 (environ 0,3 % par aller-retour avec l'écart et le glissement) : c'est ce que ce labo vérifie. `--resultats` range
 ses résultats à part (`data/laboratoire-court-terme.json`) pour ne pas effacer ceux du labo long terme.
 
-Premier essai sur de vraies données (novembre 2026) : en 1 et 5 minutes, le labo n'a trouvé que des stratégies
-perdantes après frais. Un aller-retour coûte plus que ce que ces stratégies captent sur de si petits mouvements.
+Premier essai sur de vraies données (novembre 2026, 24 variantes, 13 cryptos) : en 1 et 5 minutes, toutes les
+stratégies perdent après frais, de −0,18 % à −0,32 % par trade, alors qu'un aller-retour coûte 0,30 % avec les
+réglages par défaut. Avant frais, elles ne captaient donc presque rien : environ 0 à +0,04 % par trade en
+1 minute, jusqu'à +0,12 % en 5 minutes pour les meilleures. Plus la bougie est longue, plus chaque trade capte de
+mouvement, alors que les frais restent les mêmes : c'est pourquoi le labo court terme teste aussi le 15 minutes.
+
+`--ordres-limites` simule des ordres limites (le bot attend son prix : frais maker, ni écart ni glissement à
+l'entrée), pour savoir si une exécution moins chère suffirait. Le labo enregistre ses ordres et ses frais avec
+ses résultats, et le tournoi qui reprend ses stratégies les applique à l'identique.
 
 `--combinaisons` ajoute 12 variantes pensées pour ce problème : les mêmes techniques, mais qui n'achètent que
 quand les bougies bougent assez (filtre de volatilité : ATR d'au moins 0,3 % du prix, le coût d'un aller-retour)
@@ -247,7 +254,7 @@ sont plus surveillés. La page fonctionne hors ligne (`data/tableau-de-bord.html
 
 ```bash
 python main.py tournoi --avec-marches-du-labo                             # « 9 - Tournoi long terme.bat »
-python main.py tournoi --labo laboratoire-court-terme.json --unite 1m     # « 8 - Tournoi en 1 minute.bat »
+python main.py tournoi --labo laboratoire-court-terme.json              # « 8 - Tournoi court terme.bat »
 ```
 
 Le tournoi reprend les stratégies **« à surveiller » ou « prometteur » d'un labo** (`--labo`, par défaut
@@ -360,7 +367,7 @@ tail -f data/bot.log
 |---|---|
 | `python main.py backtest [--days N] [--capital X] [--csv fichier]` | tester la stratégie sur l'historique |
 | `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
-| `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins] [--resultats fichier]` | comparer les stratégies, validées hors échantillon |
+| `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins] [--combinaisons] [--ordres-limites] [--resultats fichier]` | comparer les stratégies, validées hors échantillon |
 | `python main.py tournoi [--labo fichier] [--unite 1m] [--avec-marches-du-labo] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X]` | faire s'affronter en argent fictif les stratégies retenues par un labo |
 | `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
 | `python main.py run` | lancer les bots selon `MODE` et `BOTS` |

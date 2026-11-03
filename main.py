@@ -18,6 +18,7 @@ from tradingbot.backtest import format_comparison, format_report, run_backtest
 from tradingbot.broker import CcxtBroker, PaperBroker, atomic_write
 from tradingbot.config import ConfigError, Settings, load_dotenv
 from tradingbot.dashboard import ROBUSTNESS_FILE, write_dashboard
+from tradingbot.execution import ExecutionParams
 from tradingbot.data import load_csv, load_or_fetch, make_exchange, timeframe_to_ms
 from tradingbot.lab import (
     ALL_VARIANTS, COMBOS, LAB_FILE, PROMISING, VARIANTS, env_lines, format_lab, load_lab, overall_lab_verdict, run_lab,
@@ -177,8 +178,11 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
         raise ValueError("Aucune donnée récupérée : vérifie ta connexion internet.")
     markets = sorted({m for group in datasets.values() for m in group})
     variants = {**VARIANTS, **COMBOS} if args.combinaisons else VARIANTS
-    log.info("Laboratoire : %d variantes × %d unités de temps sur %d marchés", len(variants), len(datasets), len(markets))
-    rows = run_lab(datasets, s.execution, s.risk, variants)
+    # Ordres limites : on attend son prix au lieu de payer l'écart et le glissement (frais maker du .env).
+    execution = replace(s.execution, order_type="limit") if args.ordres_limites else s.execution
+    log.info("Laboratoire : %d variantes × %d unités de temps sur %d marchés, %s", len(variants), len(datasets),
+             len(markets), describe_execution(execution))
+    rows = run_lab(datasets, execution, s.risk, variants)
     table, verdict = format_lab(rows), overall_lab_verdict(rows)
     print(f"\n=== Laboratoire de stratégies : {', '.join(markets)} ===")
     print(table)
@@ -193,10 +197,17 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
     save_lab(
         s.data_dir / Path(args.resultats).name, rows, verdict,
         date=datetime.now(timezone.utc).isoformat(timespec="seconds"), jours=args.days, marches=markets,
+        execution=asdict(execution),  # le tournoi reprendra exactement ces ordres et ces frais
     )
     refresh_dashboard(s)
     if notes := make_notes(s):
         print(f"Note Obsidian : {notes.lab(s, rows, table, verdict, args.days)}")
+
+
+def describe_execution(ex: ExecutionParams) -> str:
+    if ex.order_type == "limit":
+        return f"ordres limites (frais maker {100 * ex.maker_fee_rate:.3f} %)"
+    return f"ordres au marché (frais {100 * ex.fee_rate:.3f} %, glissement {100 * ex.slippage:.3f} %)"
 
 
 def cmd_check(s: Settings, args: argparse.Namespace) -> None:
@@ -340,6 +351,11 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
     # Toujours en argent fictif, chaque bot avec son propre compte de `--capital` (MAX_CAPITAL vise le vrai compte).
     base = replace(s, mode="paper", data_dir=s.data_dir / tournament_dir(lab_file), paper_start_balance=args.capital,
                    max_capital=args.capital, bots=())
+    try:  # mêmes ordres et mêmes frais que dans le labo qui a retenu ces stratégies
+        if lab.get("execution"):
+            base = replace(base, execution=ExecutionParams(**lab["execution"]))
+    except (TypeError, ValueError) as exc:
+        log.warning("Ordres du labo illisibles, réglages du .env utilisés : %s", exc)
     # Pas de notes Obsidian : des dizaines de bots en 1 minute y écriraient des milliers de notes par jour.
     data, chosen = {}, []
     for m in markets:
@@ -377,8 +393,8 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
     }
     atomic_write(registry_path, json.dumps(registry, ensure_ascii=False, indent=2))
     log.info(
-        "Tournoi : %d stratégies × %d cryptos = %d bots, %.0f USDT fictifs chacun",
-        len(picks), len(data), len(bots), args.capital, extra=JOURNAL,
+        "Tournoi : %d stratégies × %d cryptos = %d bots, %.0f USDT fictifs chacun, %s",
+        len(picks), len(data), len(bots), args.capital, describe_execution(base.execution), extra=JOURNAL,
     )
     bot_list = [b.s for b in bots]
     last_summary = [-math.inf]
@@ -440,6 +456,8 @@ def main(argv: list[str] | None = None) -> int:
     lb.add_argument("--csv-dir", help="dossier de CSV quotidiens (actions, ETF...) ajoutés aux tests en 1 jour")
     lb.add_argument("--scanner", type=int, default=0, help="ajouter les N cryptos les plus agitées du moment")
     lb.add_argument("--memecoins", action="store_true", help="ajouter les memecoins cotés et assez échangés")
+    lb.add_argument("--ordres-limites", action="store_true",
+                    help="simuler des ordres limites (frais maker, sans écart ni glissement à l'entrée)")
     lb.add_argument("--combinaisons", action="store_true",
                     help="ajouter les combinaisons court terme (filtres de volatilité et de volume)")
     lb.add_argument("--resultats", default=LAB_FILE,

@@ -83,8 +83,11 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - Résultat réel rapporté par l'utilisateur : le labo court terme (1m/5m) perd partout après frais ; le labo long
   terme a des stratégies « à surveiller ». Recommandation : abandonner le 1 minute, tournoi long terme (lanceur 9,
   `tournoi --avec-marches-du-labo`) sur beaucoup de cryptos pour accumuler des trades plus vite.
-- L'utilisateur tient au court terme : le labo 7 teste maintenant aussi les 12 combinaisons et affiche le gain
-  avant frais. En attente : photo du tableau et du VERDICT du nouveau labo 7, et du labo 6 ; plusieurs semaines de
-  tournoi long terme (9) en parallèle.
+- L'utilisateur tient au court terme. Labo court terme réel (ancienne version, 24 variantes × 1m/5m, 13 cryptos) :
+  tout perd de −0,18 % à −0,32 % par trade pour 0,30 % de coût d'aller-retour, donc ~0 avant frais en 1m et au
+  mieux ~+0,12 % en 5m (Bollinger rebond 20/2,5 + MM200, croisements MM 50/200 et 20/100). Le gain avant frais
+  grandit avec l'unité : le labo 7 teste maintenant 1m, 5m et 15m avec les 12 combinaisons ; le lanceur 10 refait
+  le même labo en ordres limites. Le labo enregistre `execution` ; le tournoi l'applique (lanceur 8 = tournoi court
+  terme, chaque stratégie dans son unité). En attente : photo du tableau et du VERDICT du nouveau labo 7.
 - L'utilisateur veut du levier et du court terme : on n'en parle qu'après une structure « prometteuse »
   confirmée en paper puis testnet. Le levier ne change pas le signe de l'espérance, il l'amplifie.
