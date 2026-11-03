@@ -78,5 +78,22 @@ def load_or_fetch(
 
 
 def load_csv(path: Path) -> pd.DataFrame:
+    """CSV du bot (ts en ms, open...) ou export classique « Date,Open,High,Low,Close[,Volume] » (actions, ETF...)."""
     raw = pd.read_csv(path)
-    return ohlcv_to_frame(raw[COLUMNS].values.tolist())
+    names = {str(c).strip().lower(): c for c in raw.columns}
+    if "ts" in names:
+        ts = pd.to_numeric(raw[names["ts"]], errors="coerce")
+    else:
+        date_col = next((names[k] for k in ("date", "datetime", "time", "timestamp") if k in names), None)
+        if date_col is None:
+            raise ValueError(f"{path} : colonne de date introuvable (attendu ts ou Date)")
+        dates = pd.to_datetime(raw[date_col], utc=True, errors="coerce")
+        ts = (dates - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(milliseconds=1)
+    missing = [c for c in COLUMNS[1:5] if c not in names]
+    if missing:
+        raise ValueError(f"{path} : colonnes manquantes {missing} (attendu Open, High, Low, Close)")
+    frame = pd.DataFrame({"ts": ts})
+    for col in COLUMNS[1:]:
+        frame[col] = pd.to_numeric(raw[names[col]], errors="coerce") if col in names else 0.0
+    frame = frame.dropna()
+    return ohlcv_to_frame(frame[COLUMNS].values.tolist())

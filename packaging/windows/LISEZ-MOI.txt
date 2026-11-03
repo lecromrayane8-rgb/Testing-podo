@@ -6,23 +6,26 @@ Sinon Windows affichera un avertissement à chaque lancement. S'il apparaît qua
 (« Windows a protégé votre ordinateur »), clique sur « Informations complémentaires » puis
 « Exécuter quand même » : c'est normal pour un programme qui n'est pas signé.
 
+LES FICHIERS À DOUBLE-CLIQUER
+1 - Tester la robustesse : la stratégie choisie, sur 5 cryptos et 4 unités de temps.
+2 - Backtest : la stratégie choisie, sur un seul marché, avec le détail.
+3 - Verifier la connexion : accès à la plateforme et soldes.
+4 - Lancer le bot : les bots en argent fictif (par défaut BTC/USDT en 15 min, 1 h et 1 jour).
+    Fermer la fenêtre les arrête ; les positions sont reprises au redémarrage.
+5 - Tableau de bord : la page de suivi dans ton navigateur (bots, trades, résultats des tests).
+6 - Laboratoire de strategies : 7 variantes de 3 techniques, sur cryptos, or et euro (et tes
+    actions, voir le dossier « actions »), en 15 min, 1 h, 4 h et 1 jour. Dit quelle structure
+    tient vraiment sur des données qu'elle n'a pas vues. Compter 5 à 15 minutes.
+Modifier les reglages : ouvre le fichier .env dans le Bloc-notes (stratégie, bots, mode, clés...).
+
 DANS L'ORDRE
-1. Double-clique sur « 1 - Tester la robustesse.bat ».
-   Le bot télécharge l'historique des prix (2 ans, 7 ans pour le long terme) et dit, pour
-   15 min, 1 h, 4 h et 1 jour, si la stratégie a un avantage réel ou si ses gains viennent
-   de la chance. Envoie le tableau et le VERDICT à Claude.
-2. « 4 - Lancer le bot.bat » lance 3 bots en argent fictif : BTC/USDT en 15 min, 1 h et 1 jour,
-   chacun avec son propre compte simulé de 10 000 USDT. Fermer la fenêtre les arrête ; les
-   positions sont reprises au redémarrage.
-3. « 5 - Tableau de bord.bat » ouvre la page de suivi dans ton navigateur : capital, résultat,
-   positions, courbe et derniers trades de chaque bot. Elle se met à jour toute seule tant que
-   le bot tourne.
-4. « Modifier les reglages.bat » ouvre les réglages (fichier .env) dans le Bloc-notes :
-   bots à lancer (BOTS), MODE, clés API du testnet, coffre Obsidian...
-5. « 3 - Verifier la connexion.bat » vérifie l'accès à la plateforme et affiche tes soldes.
+1. Lance « 6 - Laboratoire de strategies » et envoie le tableau et le VERDICT à Claude.
+2. Si une variante est « prometteur », le labo affiche les lignes à copier dans .env :
+   colle-les avec « Modifier les reglages », puis « 4 - Lancer le bot » (argent fictif).
+3. Suis les bots avec « 5 - Tableau de bord ».
 
 Si tu avais déjà un fichier .env d'une version précédente, ajoute-y cette ligne pour avoir
 les 3 bots : BOTS=BTC/USDT@15m,BTC/USDT@1h,BTC/USDT@1d
 
 Les résultats, le journal et le tableau de bord sont dans le dossier « data ».
-Ne mets jamais d'argent réel sans un verdict « robuste » ET plusieurs semaines de testnet.
+Ne mets jamais d'argent réel sans une structure « prometteuse » ET plusieurs semaines de testnet.

@@ -13,16 +13,26 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import numpy as np
 
 from .backtest import BacktestResult
+from .risk import RiskParams
 
 MIN_TRADES = 30
 MIN_TRADES_PER_PERIOD = 5
 ROBUST = "robuste"
+
+
+def research_risk(risk: RiskParams) -> RiskParams:
+    """Sans les garde-fous du direct : une étude juge la stratégie sur toute la période.
+
+    En direct, l'arrêt après -15 % protège l'argent. En étude, il couperait les trades dès qu'une
+    stratégie perd, et ne laisserait juger qu'un bout de l'historique.
+    """
+    return replace(risk, daily_loss_limit=1.0, max_drawdown=1.0)
 
 
 def bootstrap_means(values: np.ndarray, n_resamples: int = 20_000, seed: int = 0, chunk: int = 1_000) -> np.ndarray:

@@ -51,7 +51,7 @@ jobs:
           $out = "tradingbot-windows"
           New-Item -ItemType Directory $out | Out-Null
           Move-Item dist\tradingbot "$out\tradingbot"
-          Copy-Item packaging\windows\* $out
+          Copy-Item packaging\windows\* $out -Recurse
           Copy-Item .env.example $out
           Compress-Archive -Path $out -DestinationPath tradingbot-windows.zip
 

@@ -15,6 +15,7 @@ from dataclasses import fields
 from datetime import datetime
 from pathlib import Path
 
+from .lab import PROMISING
 from .robustness import ROBUST, RobustnessRow
 
 ROOT = "Trading bot"
@@ -65,6 +66,15 @@ SORT date DESC
 TABLE WITHOUT ID file.link AS "Test", marches_testes AS "Marchés testés", robustes AS "Robustes",
   marches_robustes AS "Lesquels"
 FROM "Trading bot/Robustesse"
+SORT date DESC
+```
+
+## Laboratoire de stratégies
+
+```dataview
+TABLE WITHOUT ID file.link AS "Test", essais AS "Essais", prometteurs AS "Prometteurs",
+  structures_prometteuses AS "Lesquelles"
+FROM "Trading bot/Laboratoire"
 SORT date DESC
 ```
 
@@ -183,6 +193,26 @@ class ObsidianJournal:
             "## Mes observations\n\n- \n"
         )
         return self._new_note("Robustesse", f"{now:%Y-%m-%d %Hh%M} robustesse", frontmatter(values) + body)
+
+    def lab(self, settings, rows: list, table: str, verdict: str, days: int) -> Path:
+        now = self.clock()
+        promising = [f"{r.variant} {r.timeframe}" for r in rows if r.verdict == PROMISING]
+        values = {
+            "type": "labo",
+            "date": now.isoformat(timespec="seconds"),
+            "plateforme": settings.exchange,
+            "jours": days,
+            "essais": len(rows),
+            "prometteurs": len(promising),
+            "structures_prometteuses": promising,
+            "tags": ["labo"],
+        }
+        quoted = "> " + verdict.replace("\n", "\n> ")
+        body = (
+            f"# Laboratoire du {now:%d/%m/%Y}\n\n```text\n{table}\n```\n\n{quoted}\n\n"
+            "## Mes observations\n\n- \n"
+        )
+        return self._new_note("Laboratoire", f"{now:%Y-%m-%d %Hh%M} laboratoire", frontmatter(values) + body)
 
     def trade(self, mode: str, symbol: str, timeframe: str, record: dict, cost: float) -> Path:
         exit_time = datetime.fromisoformat(record["sortie"]).astimezone()

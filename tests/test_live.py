@@ -286,3 +286,22 @@ def test_trade_journal_from_an_older_version_keeps_its_columns(tmp_path):
         bot.step(broker.at_open(i))
     rows = list(_csv.DictReader(old.open(encoding="utf-8")))
     assert len(rows) == 1 and rows[0]["raison"] == "rebond" and float(rows[0]["pnl"]) > 0
+
+
+@pytest.mark.parametrize("strat", [
+    StrategyParams(strategy_type="cassure", breakout_period=20, breakout_exit_period=10, trend_period=0,
+                   atr_period=5, stop_atr_mult=100, max_bars_in_trade=0),
+    StrategyParams(strategy_type="croisement", fast_period=10, slow_period=40, trend_period=50,
+                   atr_period=5, stop_atr_mult=100, max_bars_in_trade=0),
+], ids=["cassure", "croisement"])
+def test_trend_strategies_trade_live_exactly_like_the_backtest(tmp_path, random_walk, strat):
+    df = random_walk.iloc[:1500]
+    expected = [t for t in run_backtest(df, strat, RISK, execution=FREE).trades if t.reason != "fin du test"]
+    bot, broker = make_bot(tmp_path, df, strategy=strat)
+    for i in range(1, len(df)):
+        bot.step(broker.at_open(i))
+    sells = [o for o in broker.orders if o[0] == "sell"]
+    buys = [o for o in broker.orders if o[0] == "buy"]
+    assert len(expected) > 5 and len(sells) == len(expected)
+    for trade, buy, sell in zip(expected, buys, sells):
+        assert buy[2] == pytest.approx(trade.entry_price) and sell[2] == pytest.approx(trade.exit_price)

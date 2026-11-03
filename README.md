@@ -10,7 +10,18 @@ Bot de trading automatique en Python, connecté aux plateformes d'échange via [
 > franchement si les réglages perdent de l'argent. Commence par le backtest, puis le paper trading, puis le testnet.
 > Passe à l'argent réel seulement avec une somme que tu acceptes de perdre entièrement.
 
-## La stratégie
+## Les stratégies
+
+Le bot connaît trois familles de règles, choisies avec `STRATEGY_TYPE` dans `.env` :
+
+| Famille | `STRATEGY_TYPE` | Achète quand… | Revend quand… | Profil |
+|---|---|---|---|---|
+| Retour à la moyenne (défaut) | `retour_moyenne` | le prix vient de chuter (RSI court survendu) dans une tendance haussière | le rebond a eu lieu | beaucoup de petits gains, pertes plus grosses |
+| Cassure (suivi de tendance) | `cassure` | la clôture dépasse le plus haut des N dernières bougies | elle passe sous le plus bas des M dernières | peu de gagnants, mais de gros gains dans les tendances |
+| Croisement de moyennes | `croisement` | la moyenne rapide croise la lente par le haut | elle la recroise par le bas | suit les grandes tendances, en retard au départ |
+
+Toutes ont un stop-loss à k × ATR sous le prix d'achat. Les signaux sont identiques en backtest et en direct
+(`compute_signals`), et des tests le vérifient pour chaque famille. Le détail de la famille par défaut :
 
 « Acheter les replis dans une tendance haussière », un classique de retour à la moyenne (famille RSI(2) de Larry Connors) :
 
@@ -124,6 +135,32 @@ Seuls les marchés marqués **« robuste »** méritent un essai en testnet. Pou
 
 **Méfie-toi de la sur-optimisation** : des réglages ajustés jusqu'à ce que le backtest soit beau échouent presque
 toujours en réel. Si tu modifies un réglage, relance `robustesse` : un vrai progrès doit tenir sur la plupart des marchés.
+
+Les études (`robustesse`, `labo`) tournent **sans les garde-fous du direct** (perte journalière, drawdown max) :
+sinon une stratégie perdante cesserait de trader en cours de route et ne serait jugée que sur un bout d'historique.
+
+### Le laboratoire : comparer les techniques
+
+```bash
+python main.py labo                       # ou « 6 - Laboratoire de strategies.bat »
+python main.py labo --csv-dir actions     # + des actions : CSV quotidiens Date,Open,High,Low,Close
+```
+
+Le laboratoire essaie 7 variantes des trois familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
+l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour). Pour ne pas se
+laisser tromper par la chance :
+
+1. **Étude puis validation** : chaque historique est coupé dans le temps. Les 60 % les plus anciens servent
+   d'étude, les 40 % les plus récents de validation, et seule la validation décide.
+2. **Tous les marchés à la fois** : une structure qui marche doit marcher un peu partout, pas sur un seul
+   marché choisi après coup.
+3. **Seuil durci par le nombre d'essais** : 28 combinaisons testées, donc un seuil 28 fois plus exigeant.
+4. **Comparaison au buy & hold** : la stratégie doit faire mieux, ou risquer bien moins, que garder l'actif.
+
+Verdicts : **prometteur** (tout est réuni), **à surveiller** (positif, mais le hasard peut l'expliquer),
+**instable** (gagne sur la validation mais perdait sur l'étude), **perd de l'argent**, **trop peu de trades**.
+Pour une variante prometteuse, le labo affiche les lignes exactes à copier dans `.env` pour l'essayer en
+argent fictif. Le labo peut **tester** des actions ; le bot ne peut pas encore en **acheter**.
 
 ## Étape 2 : paper trading (prix réels, ordres simulés, sans clé)
 
@@ -241,6 +278,7 @@ tail -f data/bot.log
 |---|---|
 | `python main.py backtest [--days N] [--capital X] [--csv fichier]` | tester la stratégie sur l'historique |
 | `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
+| `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier]` | comparer les stratégies, validées hors échantillon |
 | `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
 | `python main.py run` | lancer les bots selon `MODE` et `BOTS` |
 | `python main.py tableau [--no-open]` | générer et ouvrir le tableau de bord |

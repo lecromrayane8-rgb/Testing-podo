@@ -15,7 +15,7 @@ from .config import Settings
 from .data import timeframe_to_ms
 from .obsidian import JOURNAL, ObsidianJournal
 from .risk import RiskGuard, position_size
-from .strategy import compute_indicators, entry_signal, exit_reason, initial_stop
+from .strategy import compute_signals, exit_reason, initial_stop
 
 log = logging.getLogger(__name__)
 
@@ -142,20 +142,20 @@ class Bot:
             return
         self.state["last_candle_ts"] = last_ts
 
-        row = compute_indicators(closed, self.s.strategy).iloc[-1]
+        row = compute_signals(closed, self.s.strategy).iloc[-1]
         self.log.info(
-            "Bougie %s clôture=%.2f RSI=%.1f MM_tendance=%.2f MM_sortie=%.2f equity=%.2f",
-            _iso(last_ts), row.close, row.rsi, row.trend_ma, row.exit_ma, self.equity(row.close),
+            "Bougie %s clôture=%.2f signal_achat=%s signal_sortie=%s equity=%.2f",
+            _iso(last_ts), row.close, bool(row.entry), bool(row.exit), self.equity(row.close),
         )
         if self.state["order"]:
             return  # un ordre limite est déjà en cours
         pos = self.state["position"]
         if pos:
             bars_held = (last_ts - pos["entry_bar_ts"]) // self.tf_ms + 1
-            reason = exit_reason(row.close, row.exit_ma, bars_held, self.s.strategy)
+            reason = exit_reason(bool(row.exit), bars_held, self.s.strategy)
             if reason:
                 self._exit(reason, last_ts, now_ms)
-        elif entry_signal(row.close, row.trend_ma, row.rsi, row.atr, self.s.strategy):
+        elif row.entry:
             blocked = self.guard.blocked_reason()
             if blocked:
                 self.log.warning("Signal d'achat ignoré : %s", blocked)

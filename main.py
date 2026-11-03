@@ -16,14 +16,22 @@ from tradingbot.broker import CcxtBroker, PaperBroker
 from tradingbot.config import ConfigError, Settings, load_dotenv
 from tradingbot.dashboard import ROBUSTNESS_FILE, write_dashboard
 from tradingbot.data import load_csv, load_or_fetch, make_exchange, timeframe_to_ms
+from tradingbot.lab import (
+    LAB_FILE, PROMISING, VARIANTS, env_lines, format_lab, overall_lab_verdict, run_lab, save_lab,
+)
 from tradingbot.live import Bot, StateStore, bot_paths, run_bots
 from tradingbot.obsidian import ObsidianHandler, ObsidianJournal
-from tradingbot.robustness import evaluate, format_robustness, overall_verdict, save_results
+from tradingbot.robustness import evaluate, format_robustness, overall_verdict, research_risk, save_results
 
 log = logging.getLogger("tradingbot")
 
 DAY_MS = 86_400_000
 LONG_TERM_DAYS = 2500  # bougies d'un jour : ~7 ans d'historique pour avoir assez de trades
+LAB_SYMBOLS = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT,PAXG/USDT,EUR/USDT"  # PAXG = or, EUR = euro/dollar
+
+
+def history_days(timeframe: str, days: int) -> int:
+    return max(days, LONG_TERM_DAYS) if timeframe_to_ms(timeframe) >= DAY_MS else days
 
 
 def setup_logging(data_dir: Path) -> None:
@@ -91,16 +99,15 @@ def cmd_robustness(s: Settings, args: argparse.Namespace) -> None:
     exchange = make_exchange(s.exchange)
     rows = []
     for symbol, tf in markets:
-        days = max(args.days, LONG_TERM_DAYS) if timeframe_to_ms(tf) >= DAY_MS else args.days
         try:
-            df = load_or_fetch(s.exchange, symbol, tf, days, s.data_dir / "cache", exchange)
+            df = load_or_fetch(s.exchange, symbol, tf, history_days(tf, args.days), s.data_dir / "cache", exchange)
         except ccxt.BadSymbol:
             log.warning("%s introuvable sur %s : ignoré", symbol, s.exchange)
             continue
         except ccxt.NetworkError as exc:
             log.warning("%s %s ignoré (réseau) : %s", symbol, tf, exc)
             continue
-        result = run_backtest(df, s.strategy, s.risk, 10_000.0, s.execution)
+        result = run_backtest(df, s.strategy, research_risk(s.risk), 10_000.0, s.execution)
         rows.append(evaluate(f"{symbol} {tf}", result, n_tests=len(markets), n_periods=args.periods))
     table = format_robustness(rows, args.periods)
     verdict = overall_verdict(rows)
@@ -117,6 +124,50 @@ def cmd_robustness(s: Settings, args: argparse.Namespace) -> None:
     print(f"\nTableau de bord mis à jour : {write_dashboard(s)}")
     if notes := make_notes(s):
         print(f"Note Obsidian : {notes.robustness(s, rows, table, verdict, args.days)}")
+
+
+def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
+    symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
+    timeframes = [x.strip() for x in args.timeframes.split(",") if x.strip()]
+    exchange = make_exchange(s.exchange)
+    datasets: dict[str, dict] = {}
+    for tf in timeframes:
+        for symbol in symbols:
+            try:
+                df = load_or_fetch(s.exchange, symbol, tf, history_days(tf, args.days), s.data_dir / "cache", exchange)
+            except (ccxt.BadSymbol, ccxt.NetworkError) as exc:
+                log.warning("%s %s ignoré : %s", symbol, tf, exc)
+                continue
+            datasets.setdefault(tf, {})[symbol] = df
+    if args.csv_dir:
+        for path in sorted(Path(args.csv_dir).glob("*.csv")):
+            try:
+                datasets.setdefault("1d", {})[path.stem] = load_csv(path)  # exports quotidiens (actions, ETF...)
+            except ValueError as exc:
+                log.warning("%s ignoré : %s", path.name, exc)
+    if not datasets:
+        raise ValueError("Aucune donnée récupérée : vérifie ta connexion internet.")
+    markets = sorted({m for group in datasets.values() for m in group})
+    log.info("Laboratoire : %d variantes × %d unités de temps sur %d marchés", len(VARIANTS), len(datasets), len(markets))
+    rows = run_lab(datasets, s.execution, s.risk)
+    table, verdict = format_lab(rows), overall_lab_verdict(rows)
+    print(f"\n=== Laboratoire de stratégies : {', '.join(markets)} ===")
+    print(table)
+    print()
+    print(verdict)
+    best = next((r for r in rows if r.verdict == PROMISING), None)
+    if best:
+        tradable = [m for m in datasets.get(best.timeframe, {}) if "/" in m]
+        print("\nPour l'essayer en argent fictif, mets ces lignes dans .env (« Modifier les reglages ») :")
+        print(env_lines(VARIANTS[best.variant]))
+        print(f"BOTS={','.join(f'{m}@{best.timeframe}' for m in tradable)}")
+    save_lab(
+        s.data_dir / LAB_FILE, rows, verdict,
+        date=datetime.now(timezone.utc).isoformat(timespec="seconds"), jours=args.days, marches=markets,
+    )
+    print(f"\nTableau de bord mis à jour : {write_dashboard(s)}")
+    if notes := make_notes(s):
+        print(f"Note Obsidian : {notes.lab(s, rows, table, verdict, args.days)}")
 
 
 def cmd_check(s: Settings, args: argparse.Namespace) -> None:
@@ -214,6 +265,11 @@ def main(argv: list[str] | None = None) -> int:
     rb.add_argument("--timeframes", default="15m,1h,4h,1d")
     rb.add_argument("--days", type=int, default=730)
     rb.add_argument("--periods", type=int, default=4, help="nombre de sous-périodes pour juger la régularité")
+    lb = sub.add_parser("labo", help="comparer plusieurs stratégies sur plusieurs marchés, validées hors échantillon")
+    lb.add_argument("--symbols", default=LAB_SYMBOLS)
+    lb.add_argument("--timeframes", default="15m,1h,4h,1d")
+    lb.add_argument("--days", type=int, default=730)
+    lb.add_argument("--csv-dir", help="dossier de CSV quotidiens (actions, ETF...) ajoutés aux tests en 1 jour")
     sub.add_parser("check", help="vérifier la connexion et les soldes")
     sub.add_parser("run", help="lancer le ou les bots (selon MODE et BOTS dans .env)")
     tb = sub.add_parser("tableau", help="générer et ouvrir le tableau de bord")
@@ -230,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     commands = {
         "backtest": cmd_backtest,
         "robustesse": cmd_robustness,
+        "labo": cmd_lab,
         "check": cmd_check,
         "run": cmd_run,
         "tableau": cmd_dashboard,

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from .broker import atomic_write
 from .config import Settings
+from .lab import LAB_FILE, PROMISING, load_lab
 from .live import bot_paths
 from .risk import RiskGuard
 from .robustness import ROBUST, load_results
@@ -34,8 +35,11 @@ MODE_LABELS = {
 }
 VERDICT_STYLE = {
     ROBUST: ("good", "✓"),
+    PROMISING: ("good", "✓"),
     "perd de l'argent": ("critical", "✕"),
     "positif, peut-être de la chance": ("warning", "!"),
+    "à surveiller": ("warning", "!"),
+    "instable": ("warning", "!"),
 }
 
 
@@ -402,7 +406,48 @@ def robustness_section(results: dict | None) -> str:
     )
 
 
-def render(views: list[BotView], settings: Settings, robustness: dict | None, now: datetime) -> str:
+def lab_section(results: dict | None) -> str:
+    if not results or not results.get("rows"):
+        return '<p class="empty">Lance le laboratoire pour comparer les stratégies sur plusieurs marchés.</p>'
+    when = parse_time(results.get("date"))
+    meta = f"Test du {local(when, '%d/%m/%Y à %H:%M')}" if when else "Dernier test"
+    markets = ", ".join(results.get("marches", []))
+    rows = []
+    for r in results["rows"]:
+        low, high = num(r.get("ci_low")), num(r.get("ci_high"))
+        exp, win = num(r.get("expectancy_pct")), num(r.get("win_rate"))
+        ret, bh = num(r.get("strategy_return")), num(r.get("buy_hold_return"))
+        judged, positive = int(num(r.get("markets_judged"), 0)), int(num(r.get("markets_positive"), 0))
+        ci = f"{fmt_signed(low, 3)} à {fmt_signed(high, 3)} %" if low is not None and high is not None else "—"
+        markets_label = f"{positive}/{judged}" if judged else "—"
+        style, icon = VERDICT_STYLE.get(r.get("verdict"), ("muted", "○"))
+        rows.append(
+            "<tr>"
+            f"<td>{esc(r.get('variant', ''))}</td>"
+            f"<td>{esc(r.get('timeframe', ''))}</td>"
+            f"<td class=\"n\">{int(num(r.get('trades'), 0))}</td>"
+            f"<td class=\"n\">{fmt(100 * win, 1) + ' %' if win is not None else '—'}</td>"
+            f"<td class=\"n\">{fmt_signed(exp, 3, ' %') if exp is not None else '—'}</td>"
+            f"<td class=\"n\">{ci}</td>"
+            f"<td class=\"n\">{markets_label}</td>"
+            f"<td class=\"n\">{fmt_signed(100 * ret, 1, ' %') if ret is not None else '—'}</td>"
+            f"<td class=\"n\">{fmt_signed(100 * bh, 1, ' %') if bh is not None else '—'}</td>"
+            f"<td>{chip(style, icon, r.get('verdict', ''))}</td>"
+            "</tr>"
+        )
+    verdict = esc(results.get("verdict", "")).replace("\n", "<br>")
+    return (
+        f'<p class="meta">{esc(meta)} · marchés : {esc(markets)} · mesuré sur les 40 % les plus récents de chaque historique</p>'
+        f'<p class="verdict">{verdict}</p>'
+        '<div class="table-wrap"><table><thead><tr><th>Variante</th><th>Unité</th><th class="n">Trades</th>'
+        '<th class="n">Réussite</th><th class="n">Espérance</th><th class="n">IC 95 %</th><th class="n">Marchés +</th>'
+        '<th class="n">Rendement</th><th class="n">Buy &amp; hold</th><th>Verdict</th></tr></thead>'
+        f"<tbody>{''.join(rows)}</tbody></table></div>"
+    )
+
+
+def render(views: list[BotView], settings: Settings, robustness: dict | None, now: datetime,
+           lab: dict | None = None) -> str:
     quotes = {name.split()[0].split("/")[-1] for name in (v.name for v in views)}
     quote = quotes.pop() if len(quotes) == 1 else ""
     started = [v for v in views if v.started]
@@ -436,6 +481,7 @@ def render(views: list[BotView], settings: Settings, robustness: dict | None, no
         f'<section><h2>Les bots</h2><div class="cards">{cards}</div></section>'
         f"<section><h2>Rendement cumulé depuis le départ</h2>{chart(views)}</section>"
         f"<section><h2>Derniers trades</h2>{trades_table(views)}</section>"
+        f"<section><h2>Laboratoire de stratégies</h2>{lab_section(lab)}</section>"
         f"<section><h2>Dernier test de robustesse</h2>{robustness_section(robustness)}</section>"
         '<footer><p class="note">Les performances passées ne garantissent rien. Un bot arrêté ne surveille plus '
         "ses stops : garde un œil sur le statut de chaque bot.</p></footer>"
@@ -446,7 +492,10 @@ def render(views: list[BotView], settings: Settings, robustness: dict | None, no
 def write_dashboard(settings: Settings, now: datetime | None = None) -> Path:
     now = now or datetime.now(timezone.utc)
     path = settings.data_dir / FILENAME
-    page = render(load_views(settings, now), settings, load_results(settings.data_dir / ROBUSTNESS_FILE), now)
+    page = render(
+        load_views(settings, now), settings, load_results(settings.data_dir / ROBUSTNESS_FILE), now,
+        load_lab(settings.data_dir / LAB_FILE),
+    )
     atomic_write(path, page)
     return path
 

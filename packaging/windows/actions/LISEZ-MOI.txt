@@ -1,0 +1,15 @@
+ACTIONS, ETF, INDICES : À TESTER DANS LE LABORATOIRE
+
+Dépose ici des fichiers CSV d'historique QUOTIDIEN, un fichier par action (ex. AAPL.csv, CW8.csv).
+Le nom du fichier devient le nom du marché dans les résultats.
+
+Format attendu (export classique des sites de cours de bourse) :
+Date,Open,High,Low,Close,Volume
+2024-01-02,187.15,188.44,183.89,185.64,82488700
+
+Les colonnes en plus (ex. « Adj Close ») sont ignorées, les lignes vides aussi.
+Puis double-clique sur « 6 - Laboratoire de strategies.bat ».
+
+Le laboratoire peut TESTER des actions ; le bot ne peut pas encore en ACHETER : il ne
+trade que sur des plateformes crypto. Si une stratégie tient sur les actions, on branchera
+un courtier adapté dans un second temps.

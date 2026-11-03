@@ -13,7 +13,7 @@ import pandas as pd
 
 from .execution import ExecutionParams
 from .risk import RiskGuard, RiskParams, position_size
-from .strategy import StrategyParams, compute_indicators, entry_signal, exit_reason, initial_stop
+from .strategy import StrategyParams, compute_signals, exit_reason, initial_stop
 
 
 @dataclass
@@ -92,10 +92,10 @@ def run_backtest(
     pendant leur durée de vie. Si une bougie touche à la fois le stop et la limite de sortie,
     on suppose le pire (le stop)."""
     ex = execution
-    data = compute_indicators(df, strategy)
+    data = compute_signals(df, strategy)
     index = data.index
-    o, h, l, c = (data[k].to_numpy(float) for k in ("open", "high", "low", "close"))
-    trend, rsi_, exit_ma, atr_ = (data[k].to_numpy(float) for k in ("trend_ma", "rsi", "exit_ma", "atr"))
+    o, h, l, c, atr_ = (data[k].to_numpy(float) for k in ("open", "high", "low", "close", "atr"))
+    entry_sig, exit_sig = data["entry"].to_numpy(bool), data["exit"].to_numpy(bool)
     n = len(data)
 
     cash = initial_capital
@@ -182,10 +182,10 @@ def run_backtest(
         # 3. À la clôture : signaux (aucun nouveau signal tant qu'un ordre limite est en attente).
         if pos:
             bars_in_market += 1
-            reason = exit_reason(c[i], exit_ma[i], i - pos.entry_index + 1, strategy) if order is None else None
+            reason = exit_reason(exit_sig[i], i - pos.entry_index + 1, strategy) if order is None else None
             if reason:
                 pending_exit = reason
-        elif order is None and guard.can_open() and entry_signal(c[i], trend[i], rsi_[i], atr_[i], strategy):
+        elif order is None and guard.can_open() and entry_sig[i]:
             pending_entry_atr = atr_[i]
 
     if pos:
