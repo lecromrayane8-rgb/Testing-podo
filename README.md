@@ -74,7 +74,17 @@ Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit 
 - **Capital confié** : `MAX_CAPITAL` limite l'argent que le bot utilise (obligatoire en réel). Le bot ne touche pas
   aux autres avoirs du compte : il ne vend que ce qu'il a lui-même acheté.
 
-## Installation
+## Windows sans Python (le plus simple)
+
+1. Télécharge [tradingbot-windows.zip](https://github.com/lecromrayane8-rgb/Testing-podo/releases/download/windows-dev/tradingbot-windows.zip)
+   (reconstruit automatiquement à chaque modification du code).
+2. Clic droit sur le ZIP → Propriétés → coche « Débloquer » → OK, puis clic droit → « Extraire tout ».
+3. Dans le dossier extrait, double-clique sur `1 - Tester la robustesse.bat`, puis suis `LISEZ-MOI.txt`.
+
+Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires »
+puis « Exécuter quand même ». C'est normal pour un programme qui n'est pas signé.
+
+## Installation avec Python
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate   # Windows : .venv\Scripts\activate

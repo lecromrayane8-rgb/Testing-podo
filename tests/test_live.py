@@ -72,7 +72,7 @@ def test_buys_on_signal_and_sells_on_rebound(tmp_path):
     assert [o[0] for o in broker.orders] == ["buy", "sell"]
     assert bot.state["position"] is None
     assert bot.state["capital"] > 10_000
-    assert (tmp_path / "trades.csv").read_text().count("rebond") == 1
+    assert (tmp_path / "trades.csv").read_text(encoding="utf-8").count("rebond") == 1
 
 
 def test_stop_triggers_on_live_price(tmp_path):
@@ -160,7 +160,7 @@ def test_stop_cancels_pending_limit_sell(tmp_path):
     assert broker.limits[order["id"]]["status"] == "canceled"
     assert broker.orders[-1] == ("sell", pytest.approx(order["qty"]), broker.price)
     assert bot.state["position"] is None and bot.state["order"] is None
-    assert "stop" in (tmp_path / "trades.csv").read_text()
+    assert "stop" in (tmp_path / "trades.csv").read_text(encoding="utf-8")
 
 
 def test_post_only_rejection_is_retried_at_new_price(tmp_path):

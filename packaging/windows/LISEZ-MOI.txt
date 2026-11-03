@@ -1,0 +1,21 @@
+BOT DE TRADING - VERSION WINDOWS (aucune installation de Python nécessaire)
+
+AVANT DE COMMENCER
+Avant d'extraire le ZIP : clic droit sur le fichier ZIP > Propriétés > cocher « Débloquer » > OK.
+Sinon Windows affichera un avertissement à chaque lancement. S'il apparaît quand même
+(« Windows a protégé votre ordinateur »), clique sur « Informations complémentaires » puis
+« Exécuter quand même » : c'est normal pour un programme qui n'est pas signé.
+
+DANS L'ORDRE
+1. Double-clique sur « 1 - Tester la robustesse.bat ».
+   Le bot télécharge 2 ans de prix et dit si la stratégie a un avantage réel ou si ses
+   gains viennent de la chance. Envoie le tableau et le VERDICT à Claude.
+2. Ne va plus loin que si le verdict trouve au moins un marché « robuste ».
+3. « Modifier les reglages.bat » ouvre les réglages (fichier .env) dans le Bloc-notes :
+   MODE, paire, clés API du testnet, coffre Obsidian...
+4. « 3 - Verifier la connexion.bat » vérifie l'accès à la plateforme et affiche tes soldes.
+5. « 4 - Lancer le bot.bat » lance le bot. Fermer la fenêtre l'arrête ; la position en cours
+   est reprise au redémarrage. Commence en MODE=paper (argent fictif), puis testnet.
+
+Les résultats et le journal sont dans le dossier « data ».
+Ne mets jamais d'argent réel sans un verdict « robuste » ET plusieurs semaines de testnet.

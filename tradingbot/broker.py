@@ -191,7 +191,7 @@ class PaperBroker:
         self.wallet_path = wallet_path
         self.execution = execution
         if wallet_path.exists():
-            self.wallet = json.loads(wallet_path.read_text())
+            self.wallet = json.loads(wallet_path.read_text(encoding="utf-8"))
         else:
             self.wallet = {"base": 0.0, "quote": float(start_balance)}
         self.wallet.setdefault("orders", {})

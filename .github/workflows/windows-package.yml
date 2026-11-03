@@ -1,0 +1,72 @@
+name: Version Windows
+
+# Construit un dossier prêt à l'emploi pour Windows (aucune installation de Python chez
+# l'utilisateur) et le publie en pré-version « windows-dev ».
+on:
+  push:
+    branches: [claude/trading-bot]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-package
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Installer les dépendances
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Tests
+        run: python -m pytest -q
+
+      - name: Construire l'exécutable
+        run: python -m PyInstaller --noconfirm --clean --name tradingbot main.py
+
+      - name: Vérifier l'exécutable (données synthétiques, sans réseau)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          python packaging/sample_data.py sample.csv
+          .\dist\tradingbot\tradingbot.exe --help
+          .\dist\tradingbot\tradingbot.exe backtest --csv sample.csv
+
+      - name: Assembler le dossier
+        run: |
+          $out = "tradingbot-windows"
+          New-Item -ItemType Directory $out | Out-Null
+          Move-Item dist\tradingbot "$out\tradingbot"
+          Copy-Item packaging\windows\* $out
+          Copy-Item .env.example $out
+          Compress-Archive -Path $out -DestinationPath tradingbot-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tradingbot-windows
+          path: tradingbot-windows
+
+      - name: Publier le ZIP
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete windows-dev --yes --cleanup-tag || true
+          gh release create windows-dev tradingbot-windows.zip \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Version Windows (sans Python)" \
+            --notes "Télécharge tradingbot-windows.zip, débloque-le (clic droit > Propriétés > Débloquer), extrais-le puis lis LISEZ-MOI.txt. Construit depuis ${GITHUB_SHA::7}."

@@ -33,17 +33,17 @@ def test_note_names_are_valid():
 def test_dashboard_is_created_once_and_never_overwritten(tmp_path):
     dashboard = tmp_path / "vault" / "Trading bot" / "Tableau de bord.md"
     ObsidianJournal(tmp_path / "vault")
-    assert "```dataview" in dashboard.read_text()
+    assert "```dataview" in dashboard.read_text(encoding="utf-8")
     dashboard.write_text("mes modifs")
     ObsidianJournal(tmp_path / "vault")
-    assert dashboard.read_text() == "mes modifs"
+    assert dashboard.read_text(encoding="utf-8") == "mes modifs"
 
 
 def test_events_are_appended_to_the_daily_note(journal):
     journal.event("ACHAT 0.1 BTC")
     journal.event("Erreur réseau", alert=True)
     note = journal.root / "Journal" / "2026-11-03.md"
-    lines = note.read_text().splitlines()
+    lines = note.read_text(encoding="utf-8").splitlines()
     assert lines[0] == "# Journal du 03/11/2026"
     assert lines[-2].endswith("ACHAT 0.1 BTC")
     assert lines[-1].endswith("**ALERTE** Erreur réseau")
@@ -57,7 +57,7 @@ def test_handler_copies_only_marked_logs_and_alerts(journal):
     logger.info("bougie ordinaire")
     logger.info("VENTE (rebond)", extra=JOURNAL)
     logger.warning("Signal d'achat ignoré")
-    text = (journal.root / "Journal" / "2026-11-03.md").read_text()
+    text = (journal.root / "Journal" / "2026-11-03.md").read_text(encoding="utf-8")
     assert "bougie ordinaire" not in text
     assert "VENTE (rebond)" in text and "**ALERTE** Signal d'achat ignoré" in text
 
@@ -67,7 +67,7 @@ def test_same_minute_notes_do_not_overwrite_each_other(journal):
     first = journal.trade("testnet", "BTC/USDT", record, cost=100.0)
     second = journal.trade("testnet", "BTC/USDT", record, cost=100.0)
     assert first != second and first.exists() and second.exists()
-    assert "rendement_pct: 5.0" in first.read_text()
+    assert "rendement_pct: 5.0" in first.read_text(encoding="utf-8")
 
 
 def test_bot_writes_a_note_for_each_closed_trade(tmp_path):
@@ -78,7 +78,7 @@ def test_bot_writes_a_note_for_each_closed_trade(tmp_path):
         bot.step(broker.at_open(i))
     notes = list((journal.root / "Trades").glob("*.md"))
     assert len(notes) == 1
-    text = notes[0].read_text()
+    text = notes[0].read_text(encoding="utf-8")
     assert 'mode: "paper"' in text and 'raison: "rebond"' in text and "Trade **gagnant**" in text
 
 
