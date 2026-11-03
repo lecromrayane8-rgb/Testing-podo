@@ -21,14 +21,16 @@ def settings(tmp_path: Path, **overrides) -> Settings:
     base = Settings(
         mode="paper", exchange="binance", symbol="BTC/USDT", timeframe="1h", api_key="", api_secret="",
         api_password="", poll_seconds=1, max_capital=0.0, paper_start_balance=10_000.0, data_dir=tmp_path,
-        live_confirmed=False, strategy=STRAT, risk=RISK, execution=FREE,
+        obsidian_vault=None, live_confirmed=False, strategy=STRAT, risk=RISK, execution=FREE,
     )
     return replace(base, **overrides)
 
 
-def make_bot(tmp_path, df, **overrides):
+def make_bot(tmp_path, df, notes=None, **overrides):
     broker = FakeBroker(df)
-    bot = Bot(broker, settings(tmp_path, **overrides), StateStore(tmp_path / "state.json"), tmp_path / "trades.csv")
+    bot = Bot(
+        broker, settings(tmp_path, **overrides), StateStore(tmp_path / "state.json"), tmp_path / "trades.csv", notes
+    )
     return bot, broker
 
 

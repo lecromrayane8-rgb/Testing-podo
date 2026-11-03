@@ -13,6 +13,7 @@ import ccxt
 from .broker import Fill, OrderStatus, atomic_write, combine_fills
 from .config import Settings
 from .data import timeframe_to_ms
+from .obsidian import JOURNAL, ObsidianJournal
 from .risk import RiskGuard, position_size
 from .strategy import compute_indicators, entry_signal, exit_reason, initial_stop
 
@@ -51,12 +52,20 @@ class Bot:
     toujours au marché.
     """
 
-    def __init__(self, broker, settings: Settings, store: StateStore, journal_path: Path | None = None):
+    def __init__(
+        self,
+        broker,
+        settings: Settings,
+        store: StateStore,
+        journal_path: Path | None = None,
+        notes: ObsidianJournal | None = None,
+    ):
         self.broker = broker
         self.s = settings
         self.ex = settings.execution
         self.store = store
         self.journal_path = journal_path
+        self.notes = notes
         self.tf_ms = timeframe_to_ms(settings.timeframe)
         self.lookback = min(settings.strategy.warmup_bars + 150, 1000)
         self.state = store.load()
@@ -75,7 +84,7 @@ class Bot:
         if capital <= 0:
             raise RuntimeError("Aucun solde disponible en devise de cotation pour trader.")
         self.state["capital"] = capital
-        log.info("Capital confié au bot : %.2f", capital)
+        log.info("Capital confié au bot : %.2f", capital, extra=JOURNAL)
 
     def equity(self, price: float) -> float:
         pos = self.state["position"]
@@ -162,7 +171,7 @@ class Bot:
             return
         order_id, price = placed
         self._track_order(order_id, "buy", qty, price, "entree", bar_ts, atr=atr_value)
-        log.info("Ordre limite d'ACHAT %.8f à %.2f (id %s)", qty, price, order_id)
+        log.info("Ordre limite d'ACHAT %.8f à %.2f (id %s)", qty, price, order_id, extra=JOURNAL)
 
     def _buy_market(self, atr_value: float, bar_ts: int, now_ms: int) -> None:
         price = self.broker.last_price()
@@ -185,6 +194,7 @@ class Bot:
         log.info(
             "ACHAT %.8f %s à %.2f (coût %.2f), stop %.2f",
             fill.qty, self.s.symbol, fill.price, fill.quote, self.state["position"]["stop"],
+            extra=JOURNAL,
         )
 
     # --- sorties --------------------------------------------------------------------
@@ -200,7 +210,7 @@ class Bot:
             return
         order_id, price = placed
         self._track_order(order_id, "sell", qty, price, reason, last_ts + self.tf_ms)
-        log.info("Ordre limite de VENTE (%s) %.8f à %.2f (id %s)", reason, qty, price, order_id)
+        log.info("Ordre limite de VENTE (%s) %.8f à %.2f (id %s)", reason, qty, price, order_id, extra=JOURNAL)
 
     def _sell_market(self, reason: str, price: float, now_ms: int, previous: Fill | None = None) -> None:
         """Vend au marché ce qui reste de la position (après un éventuel ordre limite partiel)."""
@@ -222,8 +232,9 @@ class Bot:
         log.info(
             "VENTE (%s) %.8f à %.2f : PnL %+.2f (%+.2f %%), capital %.2f",
             reason, fill.qty, fill.price, pnl, 100 * pnl / pos["cost"], self.state["capital"],
+            extra=JOURNAL,
         )
-        self._journal(pos, fill, pnl, reason, now_ms)
+        self._record_trade(pos, fill, pnl, reason, now_ms)
 
     def _forget_position(self) -> None:
         log.error(
@@ -272,7 +283,7 @@ class Bot:
 
     def _expire_order(self, now_ms: int) -> None:
         order = self.state["order"]
-        log.info("Ordre limite %s expiré : annulation", order["id"])
+        log.info("Ordre limite %s expiré : annulation", order["id"], extra=JOURNAL)
         self._finish_order(self.broker.cancel(order["id"]), order["reason"], now_ms)
 
     def _finish_order(self, status: OrderStatus, reason: str, now_ms: int) -> None:
@@ -301,7 +312,7 @@ class Bot:
                 if qty > 0:
                     fill = combine_fills(fill, self.broker.market_buy(qty))
             elif fill is None:
-                log.info("Achat limite non exécuté : trade abandonné (LIMIT_ENTRY_FALLBACK=skip)")
+                log.info("Achat limite non exécuté : trade abandonné (LIMIT_ENTRY_FALLBACK=skip)", extra=JOURNAL)
         if fill is None:
             return
         if self.broker.normalize_qty(fill.qty, fill.price) <= 0:
@@ -311,7 +322,21 @@ class Bot:
         self._open_position(fill, order["atr"], order["bar_ts"], now_ms)
 
     # --- journal et boucle infinie -------------------------------------------------
-    def _journal(self, pos: dict, fill: Fill, pnl: float, reason: str, now_ms: int) -> None:
+    def _record_trade(self, pos: dict, fill: Fill, pnl: float, reason: str, now_ms: int) -> None:
+        record = {
+            "entree": pos["entry_time"],
+            "sortie": _iso(now_ms),
+            "prix_entree": pos["entry_price"],
+            "prix_sortie": fill.price,
+            "quantite": fill.qty,
+            "pnl": round(pnl, 4),
+            "raison": reason,
+        }
+        if self.notes:
+            try:
+                self.notes.trade(self.s.mode, self.s.symbol, record, pos["cost"])
+            except OSError as exc:  # le journal ne doit jamais arrêter le bot (et ses stops)
+                log.warning("Note Obsidian non écrite : %s", exc)
         if not self.journal_path:
             return
         new = not self.journal_path.exists()
@@ -319,15 +344,14 @@ class Bot:
         with self.journal_path.open("a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             if new:
-                writer.writerow(["entree", "sortie", "prix_entree", "prix_sortie", "quantite", "pnl", "raison"])
-            writer.writerow(
-                [pos["entry_time"], _iso(now_ms), pos["entry_price"], fill.price, fill.qty, round(pnl, 4), reason]
-            )
+                writer.writerow(list(record))
+            writer.writerow(list(record.values()))
 
     def run_forever(self) -> None:
         log.info(
             "Démarrage du bot : mode=%s plateforme=%s paire=%s unité=%s ordres=%s",
             self.s.mode, self.s.exchange, self.s.symbol, self.s.timeframe, self.ex.order_type,
+            extra=JOURNAL,
         )
         while True:
             try:

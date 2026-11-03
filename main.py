@@ -1,4 +1,4 @@
-"""Point d'entrée : python main.py {backtest,check,run,reset-guard} --help"""
+"""Point d'entrée : python main.py {backtest,robustesse,check,run,reset-guard} --help"""
 from __future__ import annotations
 
 import argparse
@@ -12,8 +12,10 @@ import ccxt
 from tradingbot.backtest import format_comparison, format_report, run_backtest
 from tradingbot.broker import CcxtBroker, PaperBroker
 from tradingbot.config import ConfigError, Settings, load_dotenv
-from tradingbot.data import load_csv, load_or_fetch
+from tradingbot.data import load_csv, load_or_fetch, make_exchange
 from tradingbot.live import Bot, StateStore
+from tradingbot.obsidian import ObsidianHandler, ObsidianJournal
+from tradingbot.robustness import evaluate, format_robustness, overall_verdict
 
 log = logging.getLogger("tradingbot")
 
@@ -34,6 +36,10 @@ def make_broker(s: Settings):
         return PaperBroker(data, wallet, s.paper_start_balance, s.execution)
     venue = {"testnet": "testnet", "demo": "demo", "live": "real"}[s.mode]
     return CcxtBroker(s.exchange, s.symbol, s.api_key, s.api_secret, s.api_password, venue=venue)
+
+
+def make_notes(s: Settings) -> ObsidianJournal | None:
+    return ObsidianJournal(s.obsidian_vault) if s.obsidian_vault else None
 
 
 def state_paths(s: Settings) -> tuple[Path, Path]:
@@ -62,6 +68,33 @@ def cmd_backtest(s: Settings, args: argparse.Namespace) -> None:
     result.trades_frame().to_csv(out, index=False)
     result.equity.to_csv(s.data_dir / "backtest_equity.csv")
     print(f"\nDétail des trades : {out}")
+    if notes := make_notes(s):
+        note = notes.backtest(s, result.metrics, format_report(result.metrics), format_comparison(results))
+        print(f"Note Obsidian : {note}")
+
+
+def cmd_robustness(s: Settings, args: argparse.Namespace) -> None:
+    symbols = [x.strip() for x in args.symbols.split(",") if x.strip()]
+    timeframes = [x.strip() for x in args.timeframes.split(",") if x.strip()]
+    markets = [(symbol, tf) for symbol in symbols for tf in timeframes]
+    exchange = make_exchange(s.exchange)
+    rows = []
+    for symbol, tf in markets:
+        try:
+            df = load_or_fetch(s.exchange, symbol, tf, args.days, s.data_dir / "cache", exchange)
+        except ccxt.BadSymbol:
+            log.warning("%s introuvable sur %s : ignoré", symbol, s.exchange)
+            continue
+        result = run_backtest(df, s.strategy, s.risk, 10_000.0, s.execution)
+        rows.append(evaluate(f"{symbol} {tf}", result, n_tests=len(markets), n_periods=args.periods))
+    table = format_robustness(rows, args.periods)
+    verdict = overall_verdict(rows)
+    print(f"\n=== Robustesse sur {s.exchange}, {args.days} jours, ordres {s.execution.order_type} ===")
+    print(table)
+    print()
+    print(verdict)
+    if notes := make_notes(s):
+        print(f"\nNote Obsidian : {notes.robustness(s, rows, table, verdict, args.days)}")
 
 
 def cmd_check(s: Settings, args: argparse.Namespace) -> None:
@@ -94,7 +127,10 @@ def cmd_run(s: Settings, args: argparse.Namespace) -> None:
     if s.mode == "live":
         log.warning("MODE LIVE : le bot va passer de vrais ordres, capital max %.2f", s.max_capital)
     state_path, journal_path = state_paths(s)
-    Bot(make_broker(s), s, StateStore(state_path), journal_path).run_forever()
+    notes = make_notes(s)
+    if notes:
+        logging.getLogger("tradingbot").addHandler(ObsidianHandler(notes))
+    Bot(make_broker(s), s, StateStore(state_path), journal_path, notes).run_forever()
 
 
 def cmd_reset_guard(s: Settings, args: argparse.Namespace) -> None:
@@ -117,6 +153,11 @@ def main(argv: list[str] | None = None) -> int:
     bt.add_argument("--days", type=int, default=730, help="profondeur d'historique en jours")
     bt.add_argument("--capital", type=float, default=10_000.0)
     bt.add_argument("--csv", help="fichier CSV ts,open,high,low,close,volume au lieu de télécharger")
+    rb = sub.add_parser("robustesse", help="tester la stratégie sur plusieurs marchés et périodes")
+    rb.add_argument("--symbols", default="BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT")
+    rb.add_argument("--timeframes", default="15m,1h,4h")
+    rb.add_argument("--days", type=int, default=730)
+    rb.add_argument("--periods", type=int, default=4, help="nombre de sous-périodes pour juger la régularité")
     sub.add_parser("check", help="vérifier la connexion et les soldes")
     sub.add_parser("run", help="lancer le bot (selon MODE dans .env)")
     sub.add_parser("reset-guard", help="réarmer le bot après un arrêt pour drawdown (bot arrêté)")
@@ -128,7 +169,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Configuration invalide : {exc}", file=sys.stderr)
         return 2
     setup_logging(settings.data_dir)
-    commands = {"backtest": cmd_backtest, "check": cmd_check, "run": cmd_run, "reset-guard": cmd_reset_guard}
+    commands = {
+        "backtest": cmd_backtest,
+        "robustesse": cmd_robustness,
+        "check": cmd_check,
+        "run": cmd_run,
+        "reset-guard": cmd_reset_guard,
+    }
     try:
         commands[args.command](settings, args)
     except ConfigError as exc:

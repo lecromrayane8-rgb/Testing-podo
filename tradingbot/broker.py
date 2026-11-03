@@ -11,7 +11,7 @@ from pathlib import Path
 import ccxt
 import pandas as pd
 
-from .data import ohlcv_to_frame
+from .data import make_exchange, ohlcv_to_frame
 from .execution import ExecutionParams
 
 log = logging.getLogger(__name__)
@@ -56,15 +56,12 @@ class CcxtBroker:
         password: str = "",
         venue: str = "real",
     ):
-        klass = getattr(ccxt, exchange_id, None)
-        if klass is None:
-            raise ValueError(f"Plateforme inconnue de ccxt : {exchange_id}")
-        config: dict = {"enableRateLimit": True, "options": {"defaultType": "spot"}}
+        config: dict = {}
         if api_key:
             config.update(apiKey=api_key, secret=secret)
         if password:
             config["password"] = password
-        self.ex: ccxt.Exchange = klass(config)
+        self.ex: ccxt.Exchange = make_exchange(exchange_id, **config)
         if venue == "testnet":
             self.ex.set_sandbox_mode(True)
         elif venue == "demo":

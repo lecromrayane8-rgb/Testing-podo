@@ -58,6 +58,7 @@ class Settings:
     max_capital: float
     paper_start_balance: float
     data_dir: Path
+    obsidian_vault: Path | None
     live_confirmed: bool
     strategy: StrategyParams
     risk: RiskParams
@@ -77,6 +78,7 @@ class Settings:
             max_capital=float(_env("MAX_CAPITAL", "0")),
             paper_start_balance=float(_env("PAPER_START_BALANCE", "10000")),
             data_dir=Path(_env("DATA_DIR", "data")),
+            obsidian_vault=Path(_env("OBSIDIAN_VAULT")).expanduser() if _env("OBSIDIAN_VAULT") else None,
             live_confirmed=_env("CONFIRM_LIVE_TRADING") == LIVE_CONFIRMATION,
             strategy=_params_from_env(StrategyParams),
             risk=_params_from_env(RiskParams),

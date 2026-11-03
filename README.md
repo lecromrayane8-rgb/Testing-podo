@@ -92,9 +92,25 @@ Le bot télécharge deux ans de bougies publiques (sans clé), simule la straté
 le profit factor, l'espérance par trade, le drawdown max et la comparaison avec le simple achat-conservation.
 Le détail des trades est écrit dans `data/backtest_trades.csv`.
 
-Essaie d'autres paires et unités de temps (`SYMBOL=ETH/USDT`, `TIMEFRAME=4h` dans `.env`). **Méfie-toi de
-la sur-optimisation** : des réglages ajustés jusqu'à ce que le backtest soit beau échouent presque toujours
-en réel. Garde des réglages simples et vérifie qu'ils tiennent sur plusieurs périodes et plusieurs paires.
+### Le test qui compte : la robustesse
+
+```bash
+python main.py robustesse
+```
+
+Cette commande teste les mêmes réglages sur 5 paires (BTC, ETH, SOL, BNB, XRP) et 3 unités de temps (15 min,
+1 h, 4 h), sur deux ans. Elle répond à la seule question qui compte : **l'avantage est-il réel, ou dû à la chance ?**
+
+- **Fourchette de confiance à 95 %** sur le gain moyen par trade : si elle contient 0, le gain peut venir du hasard.
+- **Régularité** : l'historique est coupé en 4 périodes, la stratégie doit gagner dans au moins 3 d'entre elles.
+- **Seuil durci selon le nombre de marchés testés** : en tester 15 et garder le meilleur fait toujours
+  « trouver » un gagnant par hasard.
+
+Seuls les marchés marqués **« robuste »** méritent un essai en testnet. Pour les petits mouvements :
+`python main.py robustesse --timeframes 5m,15m`.
+
+**Méfie-toi de la sur-optimisation** : des réglages ajustés jusqu'à ce que le backtest soit beau échouent presque
+toujours en réel. Si tu modifies un réglage, relance `robustesse` : un vrai progrès doit tenir sur la plupart des marchés.
 
 ## Étape 2 : paper trading (prix réels, ordres simulés, sans clé)
 
@@ -145,6 +161,32 @@ Ne le fais que si le backtest **et** le testnet montrent une espérance positive
 Vérifie que la plateforme est autorisée dans ton pays (en France : registre de l'AMF / agrément MiCA) et
 renseigne-toi sur la fiscalité de tes plus-values.
 
+## Journal Obsidian (la mémoire du bot)
+
+[Obsidian](https://obsidian.md) est une application de notes gratuite. Un coffre Obsidian n'est qu'un dossier
+de fichiers texte : le bot y écrit tout seul, sans connecteur.
+
+1. Installe Obsidian et crée un coffre (ou utilise le tien).
+2. Dans `.env` : `OBSIDIAN_VAULT=` suivi du chemin du coffre, par exemple
+   `OBSIDIAN_VAULT=C:\Users\toi\Documents\MonCoffre` ou `OBSIDIAN_VAULT=~/Documents/MonCoffre`.
+3. Pour les tableaux du tableau de bord, installe l'extension communautaire **Dataview**
+   (Réglages → Extensions communautaires → Parcourir → « Dataview »).
+
+Le bot crée un dossier `Trading bot` dans le coffre :
+
+| Note | Écrite quand | Contenu |
+|---|---|---|
+| `Tableau de bord` | une seule fois | résumé des trades, backtests et tests de robustesse |
+| `Journal/AAAA-MM-JJ` | pendant `run` | achats, ventes, ordres et alertes de la journée |
+| `Trades/…` | à chaque trade clôturé | prix, PnL, raison de sortie, et une section « Ce que je retiens » |
+| `Backtests/…` | à chaque `backtest` | résultat complet, réglages utilisés, et « Mes observations » |
+| `Robustesse/…` | à chaque `robustesse` | tableau, verdict, réglages |
+
+**Ce que ce « cerveau » fait, et ne fait pas.** Il garde la mémoire de tout ce qui a été testé et tradé. Tu ne
+refais pas deux fois le même test, tu vois si le réel colle au backtest, et tu peux demander à Claude d'analyser
+le dossier. En revanche, il ne prend **aucune décision** à la place des règles du bot. Un bot qui modifie ses
+réglages tout seul d'après ses derniers résultats finit par suivre le bruit du marché, et perd de l'argent.
+
 ## Faire tourner le bot 24h/24
 
 Le stop-loss est surveillé par le bot (vérification toutes les `POLL_SECONDS` secondes) : **si le bot est arrêté,
@@ -160,6 +202,7 @@ tail -f data/bot.log
 | Commande | Rôle |
 |---|---|
 | `python main.py backtest [--days N] [--capital X] [--csv fichier]` | tester la stratégie sur l'historique |
+| `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
 | `python main.py check` | vérifier la connexion, le prix et les soldes |
 | `python main.py run` | lancer le bot selon `MODE` |
 | `python main.py reset-guard` | réarmer le bot après un arrêt pour drawdown (à lancer bot arrêté) |
