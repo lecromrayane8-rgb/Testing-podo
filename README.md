@@ -234,6 +234,17 @@ cryptos les plus agitées du moment (`--agitees 8`). Ce sont des données publiq
 Chaque plateforme est lue dans sa monnaie stable (USDT, sinon USDC, sinon dollars, marqués « $ »). Une plateforme
 injoignable n'arrête pas les autres.
 
+### Les alertes sur ton téléphone (Telegram, optionnel)
+
+1. Dans Telegram, écris à **@BotFather**, envoie `/newbot` et suis les étapes : il te donne un « token ».
+2. Mets-le dans `.env` : `TELEGRAM_TOKEN=...`, puis écris n'importe quel message à ton nouveau bot.
+3. Lance `python main.py telegram` (ou « 12 - Tester les alertes Telegram.bat ») : la commande affiche
+   l'identifiant de ta discussion à recopier dans `TELEGRAM_CHAT_ID`, et t'envoie un message de test.
+
+Ensuite, `run` t'envoie chaque achat, chaque vente, chaque stratégie éliminée et les erreurs graves (un bot qui
+s'arrête). Un tournoi, où des dizaines de bots tradent, n'envoie que son départ, les éliminations et un résumé par
+heure. Les messages partent d'un fil à part : une panne de Telegram ne ralentit jamais le bot.
+
 ## Étape 2 : paper trading (prix réels, ordres simulés, sans clé)
 
 ```bash
@@ -394,6 +405,7 @@ tail -f data/bot.log
 | `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
 | `python main.py run` | lancer les bots selon `MODE` et `BOTS` |
 | `python main.py prix [--cryptos A,B] [--plateformes binance,okx] [--secondes 10] [--une-fois]` | les vrais prix de plusieurs plateformes, en direct et sans compte |
+| `python main.py telegram` | relier les alertes à Telegram et envoyer un message de test |
 | `python main.py tableau [--no-open]` | générer et ouvrir le tableau de bord |
 | `python main.py reset-guard` | réarmer les bots après un arrêt pour drawdown (à lancer bots arrêtés) |
 

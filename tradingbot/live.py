@@ -15,11 +15,13 @@ import ccxt
 from .broker import Fill, OrderStatus, atomic_write, combine_fills
 from .config import Settings
 from .data import timeframe_to_ms
+from .notify import ALERT
 from .obsidian import JOURNAL, ObsidianJournal
 from .risk import RiskGuard, TradeStats, elimination_reason, position_size
 from .strategy import compute_signals, exit_reason, initial_stop
 
 log = logging.getLogger(__name__)
+ALERTED = {**JOURNAL, **ALERT}  # dans le journal du jour et sur le téléphone, même pendant un tournoi
 
 
 def _iso(ms: int) -> str:
@@ -302,7 +304,7 @@ class Bot:
             elimination = elimination_reason(stats, self.s.risk.eliminate_after_trades)
             if elimination:
                 self.state["eliminated"] = elimination
-                self.log.warning("Stratégie éliminée, plus aucun achat : %s", elimination)
+                self.log.warning("Stratégie éliminée, plus aucun achat : %s", elimination, extra=ALERTED)
         self._save()
         self.log.info(
             "VENTE (%s) %.8f à %s : PnL %+.2f (%+.2f %%), capital %.2f",

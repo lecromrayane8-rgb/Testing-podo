@@ -26,6 +26,7 @@ echo.
 echo   REGLAGES
 echo    11  Verifier la connexion a la plateforme
 echo    12  Modifier les reglages (fichier .env)
+echo    13  Alertes Telegram sur ton telephone : verifier le lien
 echo.
 echo     0  Quitter
 echo.
@@ -45,6 +46,7 @@ if "%choix%"=="9" goto choix9
 if "%choix%"=="10" goto choix10
 if "%choix%"=="11" goto choix11
 if "%choix%"=="12" goto choix12
+if "%choix%"=="13" goto choix13
 if "%choix%"=="0" exit /b
 goto menu
 :choix1
@@ -82,4 +84,7 @@ call "3 - Verifier la connexion.bat"
 goto menu
 :choix12
 call "Modifier les reglages.bat"
+goto menu
+:choix13
+call "12 - Tester les alertes Telegram.bat"
 goto menu

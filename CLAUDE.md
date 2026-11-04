@@ -39,7 +39,10 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   (`gross_expectancy_pct`) et `cost_diagnosis` dit si ce sont les frais qui font perdre.
 - `tradingbot/prices.py` + commande `prix` (lanceur 11) : prix publics de plusieurs plateformes côte à côte (USDT,
   sinon USDC, sinon USD), écart entre elles, cryptos agitées ; une plateforme en panne n'arrête pas les autres.
-- `packaging/windows/0 - Menu.bat` : menu unique qui explique et lance les 11 autres lanceurs.
+- `tradingbot/notify.py` + commande `telegram` (lanceur 12) : alertes Telegram optionnelles (TELEGRAM_TOKEN,
+  TELEGRAM_CHAT_ID), envoyées d'un fil à part ; `run` envoie les logs JOURNAL, ALERT et ERROR ; un tournoi
+  seulement ALERT (départ, éliminations, résumé horaire) et ERROR.
+- `packaging/windows/0 - Menu.bat` : menu unique qui explique et lance les 12 autres lanceurs.
 - `tradingbot/scanner.py` : cryptos spot USDT les plus agitées sur 24 h, volume ≥ 5 M$, sans stables ni tokens à
   levier ; `MEMECOINS` (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) gardés seulement s'ils sont assez échangés.
 - Commande `tournoi` (`main.py`) : stratégies « à surveiller »/« prometteur » d'un labo (`--labo`, défaut

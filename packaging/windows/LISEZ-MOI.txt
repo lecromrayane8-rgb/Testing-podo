@@ -41,6 +41,11 @@ CE QUE FAIT CHAQUE FICHIER
 11 - Prix en direct : les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte,
     l'écart entre plateformes et les cryptos les plus agitées du moment, mis à jour toutes les
     10 secondes. Aucun compte nécessaire.
+12 - Tester les alertes Telegram : relie le bot à ton téléphone (gratuit). Dans Telegram, écris à
+    @BotFather, envoie /newbot et colle le « token » donné dans TELEGRAM_TOKEN (Modifier les reglages) ;
+    écris un message à ton nouveau bot, puis lance ce fichier : il affiche le TELEGRAM_CHAT_ID à
+    recopier et t'envoie un test. Ensuite, tes bots t'envoient leurs achats, ventes et alertes ; un
+    tournoi envoie son départ, les éliminations et un résumé par heure.
 Modifier les reglages : ouvre le fichier .env dans le Bloc-notes (stratégie, bots, mode, clés...).
 
 Les labos utilisent tous les cœurs du processeur sauf un : bien plus rapides qu'avant, mais

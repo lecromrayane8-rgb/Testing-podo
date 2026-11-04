@@ -1,4 +1,4 @@
-"""Point d'entrée : python main.py {backtest,robustesse,labo,tournoi,prix,check,run,tableau,reset-guard} --help"""
+"""Point d'entrée : python main.py {backtest,robustesse,labo,tournoi,prix,telegram,check,run,tableau,reset-guard} --help"""
 from __future__ import annotations
 
 import argparse
@@ -29,6 +29,7 @@ from tradingbot.lab import (
 from tradingbot.live import Bot, StateStore, bot_paths, px, run_bots, slug
 from tradingbot.obsidian import JOURNAL, ObsidianHandler, ObsidianJournal
 from tradingbot.robustness import evaluate, format_robustness, overall_verdict, research_risk, save_results
+from tradingbot.notify import ALERT, attach as attach_telegram, call as telegram_call, latest_chat_id
 from tradingbot.prices import DEFAULT_PLATFORMS, connect, format_board, label, snapshot
 from tradingbot.scanner import ScanResult, pick_markets, scan_volatile
 
@@ -42,6 +43,7 @@ LAB_SYMBOLS = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT,PAXG/USDT,EUR/USDT" 
 TOURNAMENT_DIR = "tournoi"
 WATCH = "à surveiller"
 SUMMARY_SECONDS = 300  # résumé du tournoi dans la console toutes les 5 minutes
+PHONE_SUMMARY_SECONDS = 3600  # et sur le téléphone (Telegram) toutes les heures
 
 
 def history_days(timeframe: str, days: int) -> int:
@@ -263,6 +265,8 @@ def cmd_run(s: Settings, args: argparse.Namespace) -> None:
     notes = make_notes(s)
     if notes:
         logging.getLogger("tradingbot").addHandler(ObsidianHandler(notes))
+    if attach_telegram(s):
+        log.info("Alertes Telegram actives : achats, ventes et alertes partent sur ton téléphone")
     bots = []
     for bs in bot_settings(s):
         state_path, journal_path = bot_paths(bs)
@@ -395,18 +399,25 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
         "capital": args.capital,
     }
     atomic_write(registry_path, json.dumps(registry, ensure_ascii=False, indent=2))
+    # Sur le téléphone, seulement les résumés et les éliminations : des dizaines de bots y tradent.
+    attach_telegram(s, journal=False)
     log.info(
         "Tournoi : %d stratégies × %d cryptos = %d bots, %.0f USDT fictifs chacun, %s",
-        len(picks), len(data), len(bots), args.capital, describe_execution(base.execution), extra=JOURNAL,
+        len(picks), len(data), len(bots), args.capital, describe_execution(base.execution),
+        extra={**JOURNAL, **ALERT},
     )
     bot_list = [b.s for b in bots]
-    last_summary = [-math.inf]
+    last_summary = [-math.inf, -math.inf]  # console, téléphone
 
     def refresh() -> Path:
         path = write_dashboard(base, bots=bot_list, registry=registry)
-        if time.monotonic() - last_summary[0] >= SUMMARY_SECONDS:
-            last_summary[0] = time.monotonic()
-            log.info("%s", tournament_summary(bots))
+        now = time.monotonic()
+        if now - last_summary[0] >= SUMMARY_SECONDS:
+            last_summary[0] = now
+            phone = now - last_summary[1] >= PHONE_SUMMARY_SECONDS
+            if phone:
+                last_summary[1] = now
+            log.info("%s", tournament_summary(bots), extra=ALERT if phone else None)
         return path
 
     try:
@@ -445,6 +456,28 @@ def cmd_prices(s: Settings, args: argparse.Namespace) -> None:
         os.system("cls" if os.name == "nt" else "clear")
         print(text, flush=True)
         time.sleep(args.secondes)
+
+
+def cmd_telegram(s: Settings, args: argparse.Namespace) -> None:
+    """Vérifie les alertes Telegram : trouve l'identifiant de la discussion s'il manque, puis envoie un test."""
+    if not s.telegram_token:
+        raise ConfigError(
+            "Mets d'abord TELEGRAM_TOKEN dans les réglages : dans Telegram, écris à @BotFather, envoie /newbot "
+            "et copie le « token » qu'il te donne."
+        )
+    try:
+        chat = s.telegram_chat_id or latest_chat_id(s.telegram_token)
+        if not chat:
+            raise ValueError("Écris d'abord un message à ton bot dans Telegram, puis relance cette commande.")
+        if not s.telegram_chat_id:
+            print(f"Ton identifiant de discussion : {chat}")
+            print(f"Ajoute cette ligne dans les réglages (« Modifier les reglages ») : TELEGRAM_CHAT_ID={chat}")
+        telegram_call(s.telegram_token, "sendMessage",
+                      {"chat_id": chat, "text": "Le bot de trading est bien relié à Telegram. Tu recevras ici "
+                                                "ses achats, ses ventes et ses alertes."})
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"Telegram a refusé : {exc}. Vérifie TELEGRAM_TOKEN (et TELEGRAM_CHAT_ID).") from None
+    print("Message de test envoyé : regarde Telegram.")
 
 
 def cmd_dashboard(s: Settings, args: argparse.Namespace) -> None:
@@ -512,6 +545,7 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--secondes", type=float, default=10.0, help="délai entre deux mises à jour")
     pr.add_argument("--agitees", type=int, default=8, help="nombre de cryptos agitées à lister (0 = aucune)")
     pr.add_argument("--une-fois", action="store_true", help="afficher une seule fois, puis s'arrêter")
+    sub.add_parser("telegram", help="relier les alertes du bot à Telegram et envoyer un message de test")
     sub.add_parser("check", help="vérifier la connexion et les soldes")
     sub.add_parser("run", help="lancer le ou les bots (selon MODE et BOTS dans .env)")
     tb = sub.add_parser("tableau", help="générer et ouvrir le tableau de bord")
@@ -531,6 +565,7 @@ def main(argv: list[str] | None = None) -> int:
         "labo": cmd_lab,
         "tournoi": cmd_tournament,
         "prix": cmd_prices,
+        "telegram": cmd_telegram,
         "check": cmd_check,
         "run": cmd_run,
         "tableau": cmd_dashboard,

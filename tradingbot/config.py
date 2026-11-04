@@ -80,6 +80,8 @@ class Settings:
     execution: ExecutionParams
     bots: tuple[tuple[str, str], ...] = ()
     bot_label: str = ""  # nom de la stratégie d'un bot du tournoi (fichiers et affichage)
+    telegram_token: str = ""  # alertes sur le téléphone (optionnel, voir tradingbot/notify.py)
+    telegram_chat_id: str = ""
 
     @property
     def markets(self) -> tuple[tuple[str, str], ...]:
@@ -110,6 +112,8 @@ class Settings:
             risk=_params_from_env(RiskParams),
             execution=_params_from_env(ExecutionParams),
             bots=parse_bots(_env("BOTS")),
+            telegram_token=_env("TELEGRAM_TOKEN"),
+            telegram_chat_id=_env("TELEGRAM_CHAT_ID"),
         )
 
     def validate_for_trading(self) -> None:
