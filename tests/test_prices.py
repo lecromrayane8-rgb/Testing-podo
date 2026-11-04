@@ -101,3 +101,14 @@ def test_new_listings_are_the_pairs_that_appeared_since_the_last_visit(tmp_path)
     text = format_board(board, datetime(2026, 11, 4, 15, 0), listings=["NEWMEME/USDT"])
     assert "NOUVELLES COTATIONS sur Binance depuis ta dernière visite : NEWMEME/USDT" in text
     assert "aucune" in format_board(board, datetime(2026, 11, 4, 15, 0), listings=[])
+
+
+def test_a_refused_batch_request_falls_back_to_one_pair_at_a_time():
+    picky = Platform({"BTC/USDT": 68_000.0, "ETH/USDT": 3_500.0})
+
+    def refuse(symbols):
+        raise ccxt.BadSymbol("demande groupée refusée")
+
+    picky.fetch_tickers = refuse
+    board = snapshot({"coinbaseexchange": picky}, ["BTC", "ETH"])
+    assert board.prices[("ETH", "coinbaseexchange")][0] == 3_500.0 and not board.errors

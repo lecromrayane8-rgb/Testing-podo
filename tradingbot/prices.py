@@ -78,7 +78,7 @@ def snapshot(exchanges: dict[str, ccxt.Exchange], bases: list[str], errors: dict
         try:
             try:  # une seule requête pour toutes les paires, quand la plateforme le permet
                 tickers = ex.fetch_tickers(list(symbols.values()))
-            except (ccxt.NotSupported, ccxt.BadRequest, ccxt.ArgumentsRequired):
+            except ccxt.ExchangeError:  # demande groupée refusée (non prévue, mal acceptée...) : paire par paire
                 tickers = {s: ex.fetch_ticker(s) for s in symbols.values()}
         except ccxt.BaseError as exc:
             board.errors[platform] = short_error(exc)
