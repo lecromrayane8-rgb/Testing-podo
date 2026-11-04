@@ -15,7 +15,9 @@ from pathlib import Path
 
 from .broker import atomic_write
 from .config import Settings
+from .data import timeframe_to_ms
 from .lab import LAB_FILE, PROMISING, load_lab
+from .robustness import MIN_TRADES
 from .live import bot_name, bot_paths
 from .risk import RiskGuard, TradeStats, is_candidate
 from .robustness import ROBUST, load_results
@@ -620,6 +622,84 @@ def robustness_section(results: dict | None) -> str:
     )
 
 
+def timeframe_label(tf: str) -> str:
+    unit = {"m": "min", "h": "h", "d": "jour", "w": "semaine"}.get(tf[-1:], tf[-1:])
+    return f"{tf[:-1]} {unit}"
+
+
+def cost_chart(rows: list[dict]) -> str:
+    """Par unité de temps : la meilleure variante avant frais, face au coût d'un aller-retour (ligne verticale).
+    Une barre qui ne dépasse pas la ligne perd après frais."""
+    best: dict[str, tuple[float, float, str]] = {}
+    costs = []
+    for r in rows:
+        gross, net = num(r.get("gross_expectancy_pct")), num(r.get("expectancy_pct"))
+        if num(r.get("trades"), 0) < MIN_TRADES or gross is None or net is None:
+            continue
+        costs.append(gross - net)
+        tf = str(r.get("timeframe", ""))
+        if tf not in best or gross > best[tf][0]:
+            best[tf] = (gross, net, str(r.get("variant", "")))
+    if not best:
+        return ""
+    try:
+        order = sorted(best, key=timeframe_to_ms)
+    except Exception:  # unité inattendue (fichier d'une autre version) : ordre du fichier
+        order = list(best)
+    cost = sorted(costs)[len(costs) // 2]
+    values = [best[tf][0] for tf in order]
+    top = max(cost, *values)
+    ticks = nice_ticks(min(0.0, *values), top * 1.1 if top > 0 else 0.1)
+    lo, hi = ticks[0], ticks[-1]
+    w, ml, mr, mt, row = 960, 250, 96, 44, 50
+    h = mt + row * len(order) + 34
+    decimals = tick_decimals(ticks[1] - ticks[0])
+
+    def x(v: float) -> float:
+        return ml + (v - lo) / (hi - lo) * (w - ml - mr)
+
+    parts = []
+    for t in ticks:
+        cls = "zero" if abs(t) < 1e-12 else "grid"
+        parts.append(f'<line class="{cls}" x1="{x(t):.1f}" x2="{x(t):.1f}" y1="{mt - 8}" y2="{h - 30}"/>')
+        parts.append(f'<text class="tick" x="{x(t):.1f}" y="{h - 10}" text-anchor="middle">'
+                     f'{fmt_signed(t, decimals, " %")}</text>')
+    for i, tf in enumerate(order):
+        gross, net, variant = best[tf]
+        cy = mt + row * i + row / 2
+        left, right = min(x(0), x(gross)), max(x(0), x(gross))
+        r = min(4.0, (right - left) / 2)
+        if gross >= 0:  # bout arrondi côté valeur, carré côté zéro
+            d = (f"M{left:.1f} {cy - 10:.1f}H{right - r:.1f}Q{right:.1f} {cy - 10:.1f} {right:.1f} {cy - 10 + r:.1f}"
+                 f"V{cy + 10 - r:.1f}Q{right:.1f} {cy + 10:.1f} {right - r:.1f} {cy + 10:.1f}H{left:.1f}Z")
+        else:
+            d = (f"M{right:.1f} {cy - 10:.1f}H{left + r:.1f}Q{left:.1f} {cy - 10:.1f} {left:.1f} {cy - 10 + r:.1f}"
+                 f"V{cy + 10 - r:.1f}Q{left:.1f} {cy + 10:.1f} {left + r:.1f} {cy + 10:.1f}H{right:.1f}Z")
+        parts.append(f'<path class="bar" d="{d}"/>')
+        tip_x, anchor = (right + 6, "start") if gross >= 0 else (left - 6, "end")
+        parts.append(f'<text class="bar-value" x="{tip_x:.1f}" y="{cy + 4:.1f}" text-anchor="{anchor}">'
+                     f'{fmt_signed(gross, 2, " %")}</text>')
+        parts.append(f'<text class="row-label" x="{ml - 14}" y="{cy - 3:.1f}" text-anchor="end">'
+                     f'{esc(timeframe_label(tf))}</text>')
+        parts.append(f'<text class="row-sub" x="{ml - 14}" y="{cy + 13:.1f}" text-anchor="end">'
+                     f'{esc(short(variant, 34))}</text>')
+        detail = (f"{timeframe_label(tf)} · {variant}|avant frais {fmt_signed(gross, 3, ' %')}|"
+                  f"après frais {fmt_signed(net, 3, ' %')}|aller-retour {fmt(gross - net, 3)} %")
+        parts.append(f'<rect class="bar-hit" x="{ml}" y="{cy - row / 2:.1f}" width="{w - ml - mr}" height="{row}" '
+                     f'tabindex="0" data-tip="{esc(detail)}"><title>{esc(detail.replace("|", " · "))}</title></rect>')
+    xc = x(cost)
+    parts.append(f'<line class="cost" x1="{xc:.1f}" x2="{xc:.1f}" y1="{mt - 10}" y2="{h - 30}"/>')
+    parts.append(f'<text class="cost-label" x="{xc:.1f}" y="{mt - 18}" text-anchor="middle">'
+                 f"coût d'un aller-retour : {fmt(cost, 2)} %</text>")
+    return (
+        '<h3 class="chart-title">Ce que la meilleure stratégie capte avant frais, par unité de temps</h3>'
+        "<p class=\"note\">Pour gagner après frais, une barre doit dépasser la ligne du coût d'un aller-retour.</p>"
+        f'<div class="chart-box"><svg id="cost-chart" viewBox="0 0 {w} {h}" role="img" '
+        "aria-label=\"Meilleur gain avant frais par unité de temps, comparé au coût d'un aller-retour\">"
+        f'{"".join(parts)}</svg><div id="cost-tip" class="tip" hidden></div></div>'
+    )
+
+
 def lab_section(results: dict | None) -> str:
     if not results or not results.get("rows"):
         return '<p class="empty">Lance le laboratoire pour comparer les stratégies sur plusieurs marchés.</p>'
@@ -655,7 +735,7 @@ def lab_section(results: dict | None) -> str:
     verdict = esc(results.get("verdict", "")).replace("\n", "<br>")
     return (
         f'<p class="meta">{esc(meta)} · marchés : {esc(markets)} · validation de 50 à 80 % de chaque historique, test final sur les 20 % les plus récents</p>'
-        f'<p class="verdict">{verdict}</p>'
+        f'<p class="verdict">{verdict}</p>{cost_chart(results["rows"])}'
         '<div class="table-wrap"><table><thead><tr><th>Variante</th><th>Unité</th><th class="n">Trades</th>'
         '<th class="n">Réussite</th><th class="n">Avant frais</th><th class="n">Espérance</th><th class="n">IC 95 %</th>'
         '<th class="n">Test final</th><th class="n">Marchés +</th>'
@@ -844,6 +924,15 @@ td.status { white-space: normal; min-width: 200px; }
 .end-value { fill: var(--text-secondary); }
 .crosshair { stroke: var(--axis); stroke-width: 1; visibility: hidden; }
 .hit { fill: transparent; cursor: crosshair; }
+.chart-title { font-size: 15px; margin: 20px 0 2px; }
+.chart-box + .table-wrap { margin-top: 16px; }
+.bar { fill: var(--series-1); }
+.bar-value, .row-label { fill: var(--text-primary); font-variant-numeric: tabular-nums; }
+.row-sub { fill: var(--text-secondary); font-size: 12px; }
+.cost { stroke: var(--text-secondary); stroke-width: 2; }
+.cost-label { fill: var(--text-secondary); font-size: 12px; }
+.bar-hit { fill: transparent; outline: none; }
+.bar-hit:focus-visible { stroke: var(--text-primary); stroke-width: 1; }
 .tip { position: absolute; min-width: 160px; padding: 8px 10px; border-radius: 8px; pointer-events: none;
   background: var(--surface-1); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   font-size: 13px; }
@@ -923,6 +1012,33 @@ JS = """
   svg.addEventListener('keydown', e => {
     if (e.key === 'ArrowLeft') { show(index - 1); e.preventDefault(); }
     if (e.key === 'ArrowRight') { show(index + 1); e.preventDefault(); }
+  });
+})();
+(() => {
+  const tip = document.getElementById('cost-tip');
+  const svg = document.getElementById('cost-chart');
+  if (!tip || !svg) return;
+  const host = svg.parentElement;
+  function show(hit) {
+    tip.replaceChildren();
+    hit.dataset.tip.split('|').forEach((line, i) => {
+      const row = document.createElement('div');
+      row.className = i ? 'tip-row' : 'tip-date';
+      row.textContent = line;
+      tip.append(row);
+    });
+    const box = hit.getBoundingClientRect(), frame = host.getBoundingClientRect();
+    tip.hidden = false;
+    // À droite du graphique, à hauteur de la ligne : la bulle ne cache pas les autres barres.
+    tip.style.left = host.scrollLeft + Math.max(8, frame.width - tip.offsetWidth - 12) + 'px';  // cadre qui défile
+    tip.style.top = Math.max(4, box.top - frame.top + (box.height - tip.offsetHeight) / 2) + 'px';
+  }
+  function hide() { tip.hidden = true; }
+  svg.querySelectorAll('.bar-hit').forEach(hit => {
+    hit.addEventListener('pointerenter', () => show(hit));
+    hit.addEventListener('pointerleave', hide);
+    hit.addEventListener('focus', () => show(hit));
+    hit.addEventListener('blur', hide);
   });
 })();
 (() => {

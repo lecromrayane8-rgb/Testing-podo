@@ -219,3 +219,23 @@ def test_tournament_dashboard_is_written_in_its_own_folder(tournament):
     s, bots, registry = tournament
     path = write_dashboard(s, NOW, bots=bots, registry=registry)
     assert path.parent == s.data_dir and "PEPE/USDT 1m" in path.read_text(encoding="utf-8")
+
+
+def test_lab_chart_compares_the_best_gain_before_costs_to_the_cost_of_a_round_trip():
+    from tradingbot.dashboard import cost_chart, lab_section
+
+    def row(variant, tf, gross, net, trades=500):
+        return {"variant": variant, "timeframe": tf, "trades": trades, "gross_expectancy_pct": gross,
+                "expectancy_pct": net, "verdict": "perd de l'argent"}
+
+    rows = [row("Cassure 20/10", "5m", 0.12, -0.18), row("Supertrend 10/3", "1m", 0.04, -0.26),
+            row("Momentum 50", "1m", 0.01, -0.29), row("Rare", "15m", 0.9, 0.6, trades=12),
+            row("<b>Piège</b>", "15m", 0.21, -0.09)]
+    chart = cost_chart(rows)
+    assert chart.count('class="bar"') == 3  # une barre par unité de temps : la meilleure de chacune
+    assert chart.index("1 min") < chart.index("5 min") < chart.index("15 min")  # de la plus courte à la plus longue
+    assert "coût d'un aller-retour : 0,30 %" in chart and "+0,12 %" in chart
+    assert "Rare" not in chart  # trop peu de trades pour compter
+    assert "&lt;b&gt;Piège" in chart and "<b>Piège" not in chart
+    assert cost_chart([row("Rare", "1m", 0.9, 0.6, trades=3)]) == ""
+    assert 'id="cost-chart"' in lab_section({"rows": rows, "verdict": "VERDICT", "marches": ["BTC/USDT"]})

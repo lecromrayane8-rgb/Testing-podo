@@ -1,12 +1,18 @@
 BOT DE TRADING - VERSION WINDOWS (aucune installation de Python nécessaire)
 
+LE PLUS SIMPLE : double-clique sur « 0 - Menu ». Il présente toutes les actions avec une phrase
+d'explication ; tape le numéro voulu puis Entrée. Les autres fichiers .bat restent utilisables seuls.
+
 AVANT DE COMMENCER
 Avant d'extraire le ZIP : clic droit sur le fichier ZIP > Propriétés > cocher « Débloquer » > OK.
 Sinon Windows affichera un avertissement à chaque lancement. S'il apparaît quand même
 (« Windows a protégé votre ordinateur »), clique sur « Informations complémentaires » puis
 « Exécuter quand même » : c'est normal pour un programme qui n'est pas signé.
+Si tu avais une version précédente : recopie ton fichier .env et ton dossier « data » dans le
+nouveau dossier (ils gardent tes réglages, tes bots et les résultats du labo).
 
-LES FICHIERS À DOUBLE-CLIQUER
+CE QUE FAIT CHAQUE FICHIER
+0 - Menu : toutes les actions ci-dessous, expliquées, dans une seule fenêtre.
 1 - Tester la robustesse : la stratégie choisie, sur 5 cryptos et 4 unités de temps.
 2 - Backtest : la stratégie choisie, sur un seul marché, avec le détail.
 3 - Verifier la connexion : accès à la plateforme et soldes.
@@ -15,39 +21,46 @@ LES FICHIERS À DOUBLE-CLIQUER
 5 - Tableau de bord : la page de suivi dans ton navigateur (bots, trades, résultats des tests).
 6 - Laboratoire de strategies : 24 variantes de 8 techniques (RSI, Bollinger, cassures, moyennes
     mobiles, MACD, momentum, Supertrend), sur cryptos, or et euro (et tes actions, voir le
-    dossier « actions »), en 15 min, 1 h, 4 h et 1 jour. Dit quelle structure tient vraiment sur
-    des données qu'elle n'a pas vues. Compter 10 à 20 minutes.
-7 - Labo court terme : les mêmes 24 variantes plus 12 combinaisons (filtres de volatilité et de
-    volume), en bougies de 1, 5 et 15 minutes, sur BTC, ETH, SOL, les 8 cryptos les plus agitées du
-    moment et les memecoins cotés sur Binance (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) quand ils sont
-    assez échangés. Compter environ 1 heure. La colonne « Avant frais » montre ce que chaque
-    stratégie capte sur le prix avant frais : elle dit si ce sont les frais qui la font perdre.
-    Ses résultats ont leur propre fichier : ils n'effacent plus ceux du labo 6.
+    dossier « actions »), en 15 min, 1 h, 4 h et 1 jour. Compter 10 à 20 minutes.
+7 - Labo court terme : les mêmes 24 variantes plus 17 combinaisons (filtres de volatilité, de
+    volume, d'heures actives et de compression), en bougies de 1, 5 et 15 minutes, sur BTC, ETH,
+    SOL, les 8 cryptos les plus agitées du moment et les memecoins cotés sur Binance (DOGE, SHIB,
+    PEPE, FLOKI, BONK, WIF) quand ils sont assez échangés. Compter environ 1 heure. Ses résultats ont
+    leur propre fichier : ils n'effacent pas ceux du labo 6.
 8 - Tournoi court terme : les stratégies « à surveiller » du labo court terme (7 ou 10) s'affrontent
     en argent fictif, chacune dans l'unité de temps où le labo l'a trouvée, avec les mêmes ordres et
     les mêmes frais (dossier data\tournoi-court-terme). S'il n'en a retenu aucune, le tournoi refuse
     de démarrer et le dit.
-10 - Labo court terme ordres limites : le même labo que le 7, mais avec des ordres limites (le bot
-    attend son prix au lieu de payer l'écart et le glissement). Ses résultats remplacent ceux du 7.
 9 - Tournoi long terme : les stratégies « à surveiller » ou « prometteur » du labo 6, chacune
     dans son unité de temps (4 h, 1 jour...), sur les marchés du labo, les cryptos agitées et les
     memecoins. Plus il y a de cryptos, plus les trades arrivent vite (dossier data\tournoi).
     Dans les tournois, chaque bot (une stratégie sur une crypto) a 1000 USDT fictifs, le tableau
     de bord s'ouvre tout seul et fermer la fenêtre arrête le tournoi.
+10 - Labo court terme ordres limites : le même labo que le 7, mais avec des ordres limites (le bot
+    attend son prix au lieu de payer l'écart et le glissement). Ses résultats remplacent ceux du 7.
+11 - Prix en direct : les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte,
+    l'écart entre plateformes et les cryptos les plus agitées du moment, mis à jour toutes les
+    10 secondes. Aucun compte nécessaire.
 Modifier les reglages : ouvre le fichier .env dans le Bloc-notes (stratégie, bots, mode, clés...).
 
+LIRE LE TABLEAU DU LABO
+- Avant frais : ce que la stratégie capte sur le prix. Après frais : ce qui reste, frais et
+  glissement compris. L'écart entre les deux est le coût d'un aller-retour (environ 0,3 %).
+- Test final : les 20 % les plus récents de l'historique, jamais regardés pour choisir. Une
+  stratégie n'est « prometteur » que si elle gagne aussi là ; si elle y perd, elle est « instable ».
+- Le tableau de bord montre le même résultat en image : une barre par unité de temps, et une
+  ligne pour le coût d'un aller-retour. Pour gagner, une barre doit dépasser la ligne.
+
 DANS L'ORDRE
-1. Lance « 6 - Laboratoire de strategies » (si tu as lancé le 7 après lui, ses résultats ont
-   été effacés par l'ancienne version : relance-le une fois).
-2. Lance « 9 - Tournoi long terme » et laisse-le tourner plusieurs semaines, PC allumé.
-3. Regarde le « Classement » et le tableau « Par stratégie » : une stratégie y est marquée
-   « candidate au testnet » seulement après 30 trades nettement positifs, frais compris, avec un
-   seuil d'autant plus dur qu'il y a de bots en compétition (sinon la chance en ferait gagner).
-4. Le court terme : relance « 7 - Labo court terme » (avec les combinaisons et le 15 minutes) et
-   envoie le tableau et le VERDICT à Claude. Si une stratégie y sort « à surveiller »,
-   « 8 - Tournoi court terme » la fera tourner en argent fictif. Si Claude te le conseille, essaie
-   ensuite « 10 - Labo court terme ordres limites ». Sur tes premiers essais, tout perdait après
-   frais : en 1 minute, les stratégies ne captaient presque rien avant frais.
+1. Lance « 7 - Labo court terme » (environ 1 heure) et envoie le haut du tableau et le VERDICT à
+   Claude.
+2. Si une stratégie y sort « à surveiller » ou « prometteur », lance « 8 - Tournoi court terme ».
+   Si Claude te le conseille, essaie aussi « 10 - Labo court terme ordres limites ».
+3. En parallèle, « 6 - Laboratoire de strategies » puis « 9 - Tournoi long terme », à laisser
+   tourner plusieurs semaines, PC allumé.
+4. Dans le tableau de bord, une stratégie n'est marquée « candidate au testnet » qu'après 30 trades
+   nettement positifs, frais compris, avec un seuil d'autant plus dur qu'il y a de bots en
+   compétition (sinon la chance en ferait gagner).
 
 LE GARDIEN (correction automatique)
 Après 20 trades, une stratégie qui perd nettement (même en comptant la malchance) est éliminée :
@@ -55,6 +68,11 @@ le bot n'ouvre plus de position, et le tableau de bord affiche « Éliminée » 
 Le gardien ne change JAMAIS les réglages d'une stratégie et ne passe jamais en argent réel :
 il coupe ce qui perd, c'est tout. Un tournoi reprend là où il s'était arrêté ; pour le
 recommencer de zéro, ferme-le et supprime son dossier (data\tournoi ou data\tournoi-court-terme).
+
+PLATEFORME
+En argent fictif, le bot lit seulement les prix publics : aucun compte n'est nécessaire. Pour un
+vrai compte plus tard, il faudra une plateforme agréée en France (liste blanche de l'AMF) : d'après
+la presse, Binance a arrêté le trading pour ses clients français le 1er juillet 2026.
 
 Si tu avais déjà un fichier .env d'une version précédente, ajoute-y cette ligne pour avoir
 les 3 bots : BOTS=BTC/USDT@15m,BTC/USDT@1h,BTC/USDT@1d

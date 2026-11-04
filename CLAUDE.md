@@ -25,15 +25,20 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - `tradingbot/strategy.py` : huit familles (`STRATEGY_TYPE`) : retour_moyenne (RSI, défaut), bollinger, cassure
   (Donchian), bollinger_cassure, croisement, macd, momentum, supertrend. `compute_signals` produit `entry`/`exit`
   pour le backtest ET le live (tests de parité par famille). Le backtest respecte le même temps de chauffe que le live.
-  Filtres d'achat optionnels pour toutes : volatilité (`min_atr_pct`) et volume (`volume_mult`, `volume_period`).
+  Filtres d'achat optionnels pour toutes : volatilité (`min_atr_pct`), volume (`volume_mult`, `volume_period`),
+  heures actives UTC (`active_hours`, « 13-21 ») et compression de Bollinger (`squeeze_quantile`, `squeeze_period`).
   Chaque trade du backtest garde le prix du graphique (`entry_mark`, `exit_mark`) : `gross_return` = avant frais.
-- `tradingbot/lab.py` : commande `labo`, 24 variantes × 7 marchés × 4 unités = 96 combinaisons, étude 60 % /
-  validation 40 %, Bonferroni (approximation normale) sur le nombre d'essais, comparaison au buy & hold.
+- `tradingbot/lab.py` : commande `labo`, 24 variantes × 7 marchés × 4 unités = 96 combinaisons, étude 50 % /
+  validation 30 % / test final 20 % (jamais regardé pour choisir : « prometteur » exige un test final positif,
+  sinon « instable »), Bonferroni (approximation normale) sur le nombre d'essais, comparaison au buy & hold.
   Études sans garde-fous live ni élimination (`research_risk`). Pas de levier dans le labo (choix de l'utilisateur,
   à revoir). `--scanner N` / `--memecoins` ajoutent des cryptos ; sous 15 min, historique plafonné (60 j en 1m).
-  `--combinaisons` ajoute `COMBOS` (12 variantes avec filtres de volatilité/volume, seuils fixés d'avance) ;
+  `--combinaisons` ajoute `COMBOS` (17 variantes avec filtres, seuils fixés d'avance) ;
   `ALL_VARIANTS` sert à retrouver une variante par son nom. Le labo affiche l'espérance avant frais
   (`gross_expectancy_pct`) et `cost_diagnosis` dit si ce sont les frais qui font perdre.
+- `tradingbot/prices.py` + commande `prix` (lanceur 11) : prix publics de plusieurs plateformes côte à côte (USDT,
+  sinon USDC, sinon USD), écart entre elles, cryptos agitées ; une plateforme en panne n'arrête pas les autres.
+- `packaging/windows/0 - Menu.bat` : menu unique qui explique et lance les 11 autres lanceurs.
 - `tradingbot/scanner.py` : cryptos spot USDT les plus agitées sur 24 h, volume ≥ 5 M$, sans stables ni tokens à
   levier ; `MEMECOINS` (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) gardés seulement s'ils sont assez échangés.
 - Commande `tournoi` (`main.py`) : stratégies « à surveiller »/« prometteur » d'un labo (`--labo`, défaut

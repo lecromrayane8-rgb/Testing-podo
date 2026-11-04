@@ -102,11 +102,11 @@ Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit 
 1. Télécharge [tradingbot-windows.zip](https://github.com/lecromrayane8-rgb/Testing-podo/releases/download/windows-dev/tradingbot-windows.zip)
    (reconstruit automatiquement à chaque modification du code).
 2. Clic droit sur le ZIP → Propriétés → coche « Débloquer » → OK, puis clic droit → « Extraire tout ».
-3. Dans le dossier extrait, double-clique sur `1 - Tester la robustesse.bat`, puis suis `LISEZ-MOI.txt`.
-   `4 - Lancer le bot.bat` lance 3 bots en argent fictif (15 min, 1 h, 1 jour) et `5 - Tableau de bord.bat`
-   ouvre la page de suivi. `9 - Tournoi long terme.bat` fait s'affronter en argent fictif les stratégies retenues
-   par le labo ; `7 - Labo court terme.bat` puis `8 - Tournoi court terme.bat` font de même en très court terme
-   (voir « Le tournoi » plus bas).
+3. Dans le dossier extrait, double-clique sur `0 - Menu.bat` : il présente toutes les actions, expliquées, et
+   lance celle dont tu tapes le numéro (`LISEZ-MOI.txt` détaille chaque fichier). Par exemple `11 - Prix en
+   direct.bat` affiche les vrais prix de plusieurs plateformes, `7 - Labo court terme.bat` puis
+   `8 - Tournoi court terme.bat` cherchent puis font tourner en argent fictif une stratégie de très court terme,
+   et `5 - Tableau de bord.bat` ouvre la page de suivi.
 
 Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires »
 puis « Exécuter quand même ». C'est normal pour un programme qui n'est pas signé.
@@ -164,8 +164,11 @@ Le laboratoire essaie 24 variantes des huit familles, sur 7 marchés (BTC, ETH, 
 l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour), soit 96
 combinaisons. Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la chance :
 
-1. **Étude puis validation** : chaque historique est coupé dans le temps. Les 60 % les plus anciens servent
-   d'étude, les 40 % les plus récents de validation, et seule la validation décide.
+1. **Étude, validation, puis test final** : chaque historique est coupé dans le temps. La première moitié sert
+   d'étude, la tranche de 50 à 80 % de validation (c'est elle qui classe les variantes), et les 20 % les plus
+   récents de test final, jamais regardés pour choisir. Une variante n'est « prometteur » que si elle gagne aussi
+   sur le test final ; si elle y perd, elle est « instable ». Sans cette dernière tranche, essayer idée après idée
+   sur les mêmes données finirait toujours par en trouver une qui a gagné par hasard.
 2. **Tous les marchés à la fois** : une structure qui marche doit marcher un peu partout, pas sur un seul
    marché choisi après coup.
 3. **Seuil durci par le nombre d'essais** : 96 combinaisons testées, donc un seuil 96 fois plus exigeant
@@ -174,7 +177,7 @@ combinaisons. Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la ch
 4. **Comparaison au buy & hold** : la stratégie doit faire mieux, ou risquer bien moins, que garder l'actif.
 
 Verdicts : **prometteur** (tout est réuni), **à surveiller** (positif, mais le hasard peut l'expliquer),
-**instable** (gagne sur la validation mais perdait sur l'étude), **perd de l'argent**, **trop peu de trades**.
+**instable** (gagne sur la validation mais perdait sur l'étude, ou perd sur le test final), **perd de l'argent**, **trop peu de trades**.
 Pour une variante prometteuse, le labo affiche les lignes exactes à copier dans `.env` pour l'essayer en
 argent fictif. Le labo peut **tester** des actions ; le bot ne peut pas encore en **acheter**.
 
@@ -203,17 +206,32 @@ mouvement, alors que les frais restent les mêmes : c'est pourquoi le labo court
 l'entrée), pour savoir si une exécution moins chère suffirait. Le labo enregistre ses ordres et ses frais avec
 ses résultats, et le tournoi qui reprend ses stratégies les applique à l'identique.
 
-`--combinaisons` ajoute 12 variantes pensées pour ce problème : les mêmes techniques, mais qui n'achètent que
-quand les bougies bougent assez (filtre de volatilité : ATR d'au moins 0,3 % du prix, le coût d'un aller-retour)
-ou quand le volume double (filtre de volume : le mouvement a des acheteurs derrière lui). Ces seuils sont fixés
-d'avance, pas ajustés sur les données, et les 36 variantes passent par la même validation et le même seuil durci.
-Les filtres existent aussi dans `.env` (`MIN_ATR_PCT`, `VOLUME_MULT`, `VOLUME_PERIOD`) et le bot en direct les
-applique exactement comme le backtest (tests de parité).
+`--combinaisons` ajoute 17 variantes pensées pour ce problème : les mêmes techniques, mais qui n'achètent que
+quand les bougies bougent assez (filtre de volatilité : ATR d'au moins 0,3 % du prix, le coût d'un aller-retour),
+quand le volume double (le mouvement a des acheteurs derrière lui), pendant les heures actives (de 13 h à 21 h
+UTC, quand l'Europe et les États-Unis échangent ensemble), ou après une compression (les bandes de Bollinger de la
+bougie précédente parmi les 20 % les plus serrées des 120 dernières : un marché calme qui se réveille). Ces seuils
+sont fixés d'avance, pas ajustés sur les données, et les 41 variantes passent par la même validation, le même
+seuil durci et le même test final. Les filtres existent aussi dans `.env` (`MIN_ATR_PCT`, `VOLUME_MULT`,
+`VOLUME_PERIOD`, `ACTIVE_HOURS`, `SQUEEZE_QUANTILE`, `SQUEEZE_PERIOD`) et le bot en direct les applique exactement
+comme le backtest (tests de parité).
 
 Le tableau du labo affiche deux gains par trade : **avant frais** (ce que la stratégie capte sur le prix du
 graphique) et **après frais** (l'espérance). L'écart est le coût d'un aller-retour. Le verdict en tire la leçon :
 si même avant frais rien ne gagne, aucune plateforme moins chère n'y changera rien ; si c'est positif avant frais
 mais négatif après, ce sont les frais qui font perdre.
+
+### Les prix en direct
+
+```bash
+python main.py prix          # ou « 11 - Prix en direct.bat » ; --cryptos BTC,PEPE --plateformes binance,okx
+```
+
+Les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte, mis à jour toutes les 10 secondes
+(`--secondes`), avec l'écart entre la plateforme la plus chère et la moins chère, la variation sur 24 h, et les
+cryptos les plus agitées du moment (`--agitees 8`). Ce sont des données publiques : aucun compte n'est nécessaire.
+Chaque plateforme est lue dans sa monnaie stable (USDT, sinon USDC, sinon dollars, marqués « $ »). Une plateforme
+injoignable n'arrête pas les autres.
 
 ## Étape 2 : paper trading (prix réels, ordres simulés, sans clé)
 
@@ -374,6 +392,7 @@ tail -f data/bot.log
 | `python main.py tournoi [--labo fichier] [--unite 1m] [--avec-marches-du-labo] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X]` | faire s'affronter en argent fictif les stratégies retenues par un labo |
 | `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
 | `python main.py run` | lancer les bots selon `MODE` et `BOTS` |
+| `python main.py prix [--cryptos A,B] [--plateformes binance,okx] [--secondes 10] [--une-fois]` | les vrais prix de plusieurs plateformes, en direct et sans compte |
 | `python main.py tableau [--no-open]` | générer et ouvrir le tableau de bord |
 | `python main.py reset-guard` | réarmer les bots après un arrêt pour drawdown (à lancer bots arrêtés) |
 
