@@ -102,5 +102,11 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   grandit avec l'unité : le labo 7 teste maintenant 1m, 5m et 15m avec les 12 combinaisons ; le lanceur 10 refait
   le même labo en ordres limites. Le labo enregistre `execution` ; le tournoi l'applique (lanceur 8 = tournoi court
   terme, chaque stratégie dans son unité). En attente : photo du tableau et du VERDICT du nouveau labo 7.
+- Session autonome du 04/11/2026 (3 h, sans accès au marché depuis le cloud : la politique réseau de
+  l'environnement bloque les plateformes ; l'utilisateur peut ajouter data.binance.vision et api.binance.com aux
+  domaines autorisés) : test final mis de côté dans le labo, 17 combinaisons (dont heures actives 13-21 UTC et
+  compression), labo sur tous les cœurs, graphique « avant frais vs coût », menu « 0 - Menu », prix en direct
+  multi-plateformes avec nouvelles cotations, alertes Telegram. Aucune stratégie rentable n'a pu être cherchée sur
+  de vraies données pendant cette session : tout dépend du prochain labo 7 lancé sur le PC de l'utilisateur.
 - L'utilisateur veut du levier et du court terme : on n'en parle qu'après une structure « prometteuse »
   confirmée en paper puis testnet. Le levier ne change pas le signe de l'espérance, il l'amplifie.

@@ -85,3 +85,19 @@ def test_prices_command_shows_one_board(tmp_path, monkeypatch, capsys):
     assert main.main(["prix", "--cryptos", "btc,ETH/USDT", "--plateformes", "binance,okx", "--une-fois"]) == 0
     out = capsys.readouterr().out
     assert "PRIX EN DIRECT" in out and "BTC" in out and "ETH" in out and "PEPE/USDT" in out and "OKX" in out
+
+
+def test_new_listings_are_the_pairs_that_appeared_since_the_last_visit(tmp_path):
+    from tradingbot.prices import new_listings
+    ex = Platform({"BTC/USDT": 68_000.0})
+    ex.markets = {"BTC/USDT": {"quote": "USDT", "spot": True}, "ETH/BTC": {"quote": "BTC", "spot": True}}
+    memory = tmp_path / "marches-connus-binance.json"
+    assert new_listings(ex, memory) is None  # toute première visite : rien à comparer
+    ex.markets["NEWMEME/USDT"] = {"quote": "USDT", "spot": True}
+    ex.markets["OLD/USDT"] = {"quote": "USDT", "spot": True, "active": False}
+    assert new_listings(ex, memory) == ["NEWMEME/USDT"]
+    assert new_listings(ex, memory) == []  # déjà vue à la visite précédente
+    board = snapshot({"binance": ex}, ["BTC"])
+    text = format_board(board, datetime(2026, 11, 4, 15, 0), listings=["NEWMEME/USDT"])
+    assert "NOUVELLES COTATIONS sur Binance depuis ta dernière visite : NEWMEME/USDT" in text
+    assert "aucune" in format_board(board, datetime(2026, 11, 4, 15, 0), listings=[])

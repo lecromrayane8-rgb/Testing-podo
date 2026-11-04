@@ -233,6 +233,9 @@ Les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte, mis à
 cryptos les plus agitées du moment (`--agitees 8`). Ce sont des données publiques : aucun compte n'est nécessaire.
 Chaque plateforme est lue dans sa monnaie stable (USDT, sinon USDC, sinon dollars, marqués « $ »). Une plateforme
 injoignable n'arrête pas les autres.
+À chaque lancement, l'écran liste aussi les **nouvelles cotations** : les paires apparues sur la première
+plateforme depuis ta visite précédente (une crypto qui vient d'arriver n'a pas d'historique : aucune stratégie
+testée ne peut la juger).
 
 ### Les alertes sur ton téléphone (Telegram, optionnel)
 

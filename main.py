@@ -30,7 +30,7 @@ from tradingbot.live import Bot, StateStore, bot_paths, px, run_bots, slug
 from tradingbot.obsidian import JOURNAL, ObsidianHandler, ObsidianJournal
 from tradingbot.robustness import evaluate, format_robustness, overall_verdict, research_risk, save_results
 from tradingbot.notify import ALERT, attach as attach_telegram, call as telegram_call, latest_chat_id
-from tradingbot.prices import DEFAULT_PLATFORMS, connect, format_board, label, snapshot
+from tradingbot.prices import DEFAULT_PLATFORMS, connect, format_board, label, new_listings, snapshot
 from tradingbot.scanner import ScanResult, pick_markets, scan_volatile
 
 log = logging.getLogger("tradingbot")
@@ -440,7 +440,12 @@ def cmd_prices(s: Settings, args: argparse.Namespace) -> None:
     if not exchanges:
         raise ValueError("Aucune plateforme joignable : vérifie ta connexion internet. " + "; ".join(
             f"{label(p)} : {e}" for p, e in errors.items()))
-    first = next(iter(exchanges.values()))
+    first_id, first = next(iter(exchanges.items()))
+    try:  # « le nouveau truc » : les paires apparues sur la première plateforme depuis la dernière visite
+        listings = new_listings(first, s.data_dir / f"marches-connus-{first_id}.json")
+    except OSError as exc:
+        log.warning("Nouvelles cotations non vérifiées : %s", exc)
+        listings = None
     hot, hot_at = None, -math.inf
     while True:
         board = snapshot(exchanges, bases, errors)
@@ -449,7 +454,7 @@ def cmd_prices(s: Settings, args: argparse.Namespace) -> None:
                 hot, hot_at = scan_volatile(first, top=args.agitees), time.monotonic()
             except ccxt.BaseError as exc:
                 log.warning("Liste des cryptos agitées indisponible : %s", exc)
-        text = format_board(board, datetime.now(), hot, None if args.une_fois else args.secondes)
+        text = format_board(board, datetime.now(), hot, None if args.une_fois else args.secondes, listings)
         if args.une_fois:
             print(text)
             return

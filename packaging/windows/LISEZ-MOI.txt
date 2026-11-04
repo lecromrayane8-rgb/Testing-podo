@@ -39,8 +39,8 @@ CE QUE FAIT CHAQUE FICHIER
 10 - Labo court terme ordres limites : le même labo que le 7, mais avec des ordres limites (le bot
     attend son prix au lieu de payer l'écart et le glissement). Ses résultats remplacent ceux du 7.
 11 - Prix en direct : les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte,
-    l'écart entre plateformes et les cryptos les plus agitées du moment, mis à jour toutes les
-    10 secondes. Aucun compte nécessaire.
+    l'écart entre plateformes, les cryptos les plus agitées du moment et les nouvelles cotations
+    depuis ta dernière visite, mis à jour toutes les 10 secondes. Aucun compte nécessaire.
 12 - Tester les alertes Telegram : relie le bot à ton téléphone (gratuit). Dans Telegram, écris à
     @BotFather, envoie /newbot et colle le « token » donné dans TELEGRAM_TOKEN (Modifier les reglages) ;
     écris un message à ton nouveau bot, puis lance ce fichier : il affiche le TELEGRAM_CHAT_ID à

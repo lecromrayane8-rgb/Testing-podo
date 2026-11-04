@@ -6,12 +6,15 @@ actif n'a jamais tout à fait le même prix partout ; il est en général bien p
 """
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 
 import ccxt
 
+from .broker import atomic_write
 from .live import px
 from .scanner import ScanResult
 
@@ -91,7 +94,20 @@ def snapshot(exchanges: dict[str, ccxt.Exchange], bases: list[str], errors: dict
     return board
 
 
-def format_board(board: Board, now: datetime, hot: list[ScanResult] | None = None, every: float | None = None) -> str:
+def new_listings(exchange: ccxt.Exchange, path: Path, quote: str = "USDT") -> list[str] | None:
+    """Les paires spot apparues depuis la dernière visite (None à la toute première : rien à comparer)."""
+    current = sorted(s for s, m in exchange.markets.items()
+                     if m.get("spot", True) and m.get("active") is not False and m.get("quote") == quote)
+    try:
+        known = set(json.loads(path.read_text(encoding="utf-8")))
+    except (OSError, ValueError, TypeError):
+        known = None
+    atomic_write(path, json.dumps(current))
+    return None if known is None else [s for s in current if s not in known]
+
+
+def format_board(board: Board, now: datetime, hot: list[ScanResult] | None = None, every: float | None = None,
+                 listings: list[str] | None = None) -> str:
     cell = 14
     header = f"{'Crypto':<8}" + "".join(f"{label(p):>{cell}}" for p in board.platforms) + f"{'Écart':>9}{'24 h':>9}"
     lines = [f"PRIX EN DIRECT · {now.strftime('%d/%m/%Y %H:%M:%S')}"
@@ -109,6 +125,13 @@ def format_board(board: Board, now: datetime, hot: list[ScanResult] | None = Non
               "« $ » = coté en dollars. Un écart de 0,1 % ne couvre même pas les frais d'un aller-retour (environ 0,3 %)."]
     for platform, problem in board.errors.items():
         lines.append(f"{label(platform)} indisponible : {problem}")
+    if listings is not None:
+        first = label(board.platforms[0])
+        lines += ["", f"NOUVELLES COTATIONS sur {first} depuis ta dernière visite : "
+                  + (", ".join(listings[:12]) + (" ..." if len(listings) > 12 else "") if listings else "aucune")]
+        if listings:
+            lines.append("  Une crypto qui vient d'arriver bouge beaucoup, mais sans historique aucune stratégie ne peut "
+                         "la juger : à regarder, pas à acheter sur un coup de tête.")
     if hot:
         lines += ["", f"LES PLUS AGITÉES EN CE MOMENT sur {label(board.platforms[0])} (amplitude sur 24 h, volume > 5 M$) :"]
         for r in hot:
