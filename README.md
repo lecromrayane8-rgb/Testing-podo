@@ -1,8 +1,14 @@
 # Testing-podo : bot de trading spot
 
 Bot de trading automatique en Python, connecté aux plateformes d'échange via [ccxt](https://github.com/ccxt/ccxt)
-(Binance par défaut, plus de 100 plateformes possibles). Il trade une seule paire (ex. `BTC/USDT`), uniquement
-à l'achat (spot, **sans levier**), avec une stratégie de retour à la moyenne et des garde-fous de risque.
+(Binance par défaut, plus de 100 plateformes possibles). Il trade uniquement à l'achat (spot, **sans levier**),
+avec huit familles de stratégies testées hors échantillon, des garde-fous de risque, un laboratoire qui cherche
+ce qui tient après frais, des tournois en argent fictif, un tableau de bord et des alertes sur le téléphone.
+
+**Démarrage rapide (Windows, sans Python)** : télécharge le
+[ZIP](https://github.com/lecromrayane8-rgb/Testing-podo/releases/download/windows-dev/tradingbot-windows.zip),
+extrais-le et double-clique sur `0 - Menu.bat`. Le soir, choisis « Recherche de nuit » : les trois labos tournent
+à la suite, et le tableau de bord montre le lendemain ce qui gagne, ou non, après frais.
 
 > **À lire avant tout.** Aucun bot ne garantit un profit régulier. Un **taux de réussite élevé ne veut pas
 > dire rentable** : une stratégie qui gagne 70 % du temps 0,5 % et perd 30 % du temps 2 % perd de l'argent.
