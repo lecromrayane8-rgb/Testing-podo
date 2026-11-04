@@ -35,6 +35,13 @@ from .strategy import StrategyParams
 log = logging.getLogger(__name__)
 
 LAB_FILE = "laboratoire.json"
+SHORT_LAB_FILE = "laboratoire-court-terme.json"
+LIMIT_LAB_FILE = "laboratoire-court-terme-limites.json"
+LAB_FILES = (  # (fichier, titre sur le tableau de bord)
+    (LAB_FILE, "Laboratoire long terme"),
+    (SHORT_LAB_FILE, "Laboratoire court terme"),
+    (LIMIT_LAB_FILE, "Laboratoire court terme, ordres limites"),
+)
 STUDY_SHARE = 0.5  # étude : la première moitié de chaque historique
 TEST_SHARE = 0.2  # test final : les 20 % les plus récents ; la validation est entre les deux
 MIN_MARKET_TRADES = 5

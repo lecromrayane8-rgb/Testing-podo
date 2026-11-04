@@ -80,3 +80,19 @@ def test_telegram_command_finds_the_chat_and_sends_a_test(tmp_path, monkeypatch,
     assert main.main(["telegram"]) == 0
     out = capsys.readouterr().out
     assert "TELEGRAM_CHAT_ID=123456789" in out and sent[0]["chat_id"] == "123456789"
+
+
+def test_the_computer_is_kept_awake_while_the_bot_works():
+    from tradingbot.awake import ES_CONTINUOUS, ES_SYSTEM_REQUIRED, keep_awake
+
+    class Kernel32:
+        def __init__(self):
+            self.flags = []
+
+        def SetThreadExecutionState(self, flags):
+            self.flags.append(flags)
+            return 1
+
+    kernel = Kernel32()
+    assert keep_awake(kernel) and kernel.flags == [ES_CONTINUOUS | ES_SYSTEM_REQUIRED]  # l'écran peut s'éteindre
+    assert keep_awake(SimpleNamespace()) is False  # appel indisponible : le bot continue sans

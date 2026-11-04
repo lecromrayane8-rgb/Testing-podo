@@ -135,7 +135,7 @@ def test_lab_command_tests_cryptos_and_stock_csvs(tmp_path, monkeypatch):
     assert saved["marches"] == ["AAPL", "BTC/USDT", "PAXG/USDT"]
     assert len(saved["rows"]) == len(VARIANTS) * 2
     page = (tmp_path / "data" / "tableau-de-bord.html").read_text(encoding="utf-8")
-    assert "Laboratoire de stratégies" in page and "Cassure 55/20" in page
+    assert "Laboratoire long terme" in page and "Cassure 55/20" in page
 
 
 def test_short_term_combos_are_named_variants_with_filters():

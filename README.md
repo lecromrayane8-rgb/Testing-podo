@@ -204,7 +204,11 @@ réglages par défaut. Avant frais, elles ne captaient donc presque rien : envir
 mouvement, alors que les frais restent les mêmes : c'est pourquoi le labo court terme teste aussi le 15 minutes.
 
 `--ordres-limites` simule des ordres limites (le bot attend son prix : frais maker, ni écart ni glissement à
-l'entrée), pour savoir si une exécution moins chère suffirait. Le labo enregistre ses ordres et ses frais avec
+l'entrée), pour savoir si une exécution moins chère suffirait ; le lanceur 10 range ces résultats dans
+`data/laboratoire-court-terme-limites.json`, et le tournoi court terme lit les deux labos.
+`13 - Recherche de nuit.bat` enchaîne les deux labos court terme puis le labo long terme, et ouvre le tableau de
+bord, qui montre une section (avec son graphique) par labo. Pendant un labo, un bot ou un tournoi, l'ordinateur ne
+se met pas en veille (appel Windows prévu pour cela, sans changer les réglages ; l'écran peut s'éteindre). Le labo enregistre ses ordres et ses frais avec
 ses résultats, et le tournoi qui reprend ses stratégies les applique à l'identique.
 
 `--combinaisons` ajoute 17 variantes pensées pour ce problème : les mêmes techniques, mais qui n'achètent que
@@ -287,7 +291,7 @@ sont plus surveillés. La page fonctionne hors ligne (`data/tableau-de-bord.html
 
 ```bash
 python main.py tournoi --avec-marches-du-labo                             # « 9 - Tournoi long terme.bat »
-python main.py tournoi --labo laboratoire-court-terme.json              # « 8 - Tournoi court terme.bat »
+python main.py tournoi --labo laboratoire-court-terme.json,laboratoire-court-terme-limites.json   # lanceur 8
 ```
 
 Le tournoi reprend les stratégies **« à surveiller » ou « prometteur » d'un labo** (`--labo`, par défaut

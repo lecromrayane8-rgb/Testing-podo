@@ -16,6 +16,7 @@ from pathlib import Path
 
 import ccxt
 
+from tradingbot.awake import keep_awake
 from tradingbot.backtest import format_comparison, format_report, run_backtest
 from tradingbot.broker import CcxtBroker, PaperBroker, atomic_write
 from tradingbot.config import ConfigError, Settings, load_dotenv
@@ -158,6 +159,8 @@ def cmd_robustness(s: Settings, args: argparse.Namespace) -> None:
 
 
 def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
+    keep_awake()  # un labo dure parfois une heure : l'ordinateur ne doit pas s'endormir en route
+    attach_telegram(s, journal=False)  # le verdict part sur le téléphone, si les alertes sont réglées
     symbols = [x.strip().upper() for x in args.symbols.split(",") if x.strip()]
     timeframes = [x.strip() for x in args.timeframes.split(",") if x.strip()]
     exchange = make_exchange(s.exchange)
@@ -207,6 +210,7 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
     refresh_dashboard(s)
     if notes := make_notes(s):
         print(f"Note Obsidian : {notes.lab(s, rows, table, verdict, args.days)}")
+    log.info("Labo terminé (%s, %s) :\n%s", ", ".join(datasets), describe_execution(execution), verdict, extra=ALERT)
 
 
 def describe_execution(ex: ExecutionParams) -> str:
@@ -260,6 +264,7 @@ def check_capital_allocation(bots: list[Bot]) -> None:
 
 def cmd_run(s: Settings, args: argparse.Namespace) -> None:
     s.validate_for_trading()
+    keep_awake()  # un ordinateur en veille ne surveille plus les stops
     if s.mode == "live":
         log.warning("MODE LIVE : les bots vont passer de vrais ordres, capital max %.2f chacun", s.max_capital)
     notes = make_notes(s)
@@ -290,6 +295,35 @@ def tournament_picks(lab: dict, unite: str | None, limit: int) -> list[tuple[str
             seen.add(key)
             picks.append((*key, row))
     return picks[:limit]
+
+
+def merge_picks(labs: list[tuple[str, dict]], unite: str | None, limit: int,
+                default: ExecutionParams) -> list[tuple[str, str, dict, ExecutionParams]]:
+    """Les meilleures stratégies retenues par un ou plusieurs labos, chacune avec les ordres de son labo."""
+    candidates = []
+    for name, lab in labs:
+        try:
+            execution = ExecutionParams(**lab["execution"]) if lab.get("execution") else default
+        except (TypeError, ValueError) as exc:
+            log.warning("Ordres du labo %s illisibles, réglages du .env utilisés : %s", name, exc)
+            execution = default
+        for variant, tf, row in tournament_picks(lab, unite, len(lab.get("rows", []))):
+            candidates.append((variant, tf, row, execution))
+    best = sorted(candidates, key=lambda c: -(num_or(c[2].get("expectancy_pct"), -math.inf)))
+    picks, seen = [], set()
+    for variant, tf, row, execution in best:  # une stratégie retenue par deux labos : la meilleure version
+        if (variant, tf) not in seen:
+            seen.add((variant, tf))
+            picks.append((variant, tf, row, execution))
+    return picks[:limit]
+
+
+def num_or(value, default: float) -> float:
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        return default
+    return x if math.isfinite(x) else default
 
 
 def tournament_summary(bots: list[Bot]) -> str:
@@ -324,22 +358,23 @@ def unmarked(symbol: str) -> ScanResult:
 
 
 def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
-    lab_file = Path(args.labo).name
-    lab = load_lab(s.data_dir / lab_file)
-    if not lab or not lab.get("rows"):
+    lab_files = [Path(x.strip()).name for x in args.labo.split(",") if x.strip()]
+    labs = [(name, lab) for name in lab_files if (lab := load_lab(s.data_dir / name)) and lab.get("rows")]
+    if not labs:
         raise ValueError(
-            f"Aucun résultat de labo dans data/{lab_file}. Lance d'abord le laboratoire correspondant "
+            f"Aucun résultat de labo dans data/ ({', '.join(lab_files)}). Lance d'abord le laboratoire correspondant "
             "(« 6 - Laboratoire de strategies » ou « 7 - Labo court terme ») : le tournoi reprend ses stratégies "
             "« à surveiller »."
         )
+    lab_file, lab = labs[0]  # le premier labo donne le dossier du tournoi et ses marchés
     if args.unite:
         try:  # unité invalide : erreur claire avant de démarrer
             timeframe_to_ms(args.unite)
         except (ValueError, ccxt.BaseError):
             raise ValueError(f"Unité de temps inconnue : {args.unite!r} (exemples : 1m, 5m, 1h, 4h, 1d)") from None
-    picks = tournament_picks(lab, args.unite, args.strategies)
+    picks = merge_picks(labs, args.unite, args.strategies, s.execution)
     if not picks:
-        timeframes = {r.get("timeframe", "?") for r in lab["rows"]}
+        timeframes = {r.get("timeframe", "?") for _, one in labs for r in one["rows"]}
         hint = (" Pour le long terme, relance d'abord « 6 - Laboratoire de strategies »."
                 if all(is_short_term(tf) for tf in timeframes) else "")
         raise ValueError(
@@ -358,11 +393,7 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
     # Toujours en argent fictif, chaque bot avec son propre compte de `--capital` (MAX_CAPITAL vise le vrai compte).
     base = replace(s, mode="paper", data_dir=s.data_dir / tournament_dir(lab_file), paper_start_balance=args.capital,
                    max_capital=args.capital, bots=())
-    try:  # mêmes ordres et mêmes frais que dans le labo qui a retenu ces stratégies
-        if lab.get("execution"):
-            base = replace(base, execution=ExecutionParams(**lab["execution"]))
-    except (TypeError, ValueError) as exc:
-        log.warning("Ordres du labo illisibles, réglages du .env utilisés : %s", exc)
+    executions = {describe_execution(ex) for *_, ex in picks}
     # Pas de notes Obsidian : des dizaines de bots en 1 minute y écriraient des milliers de notes par jour.
     data, chosen = {}, []
     for m in markets:
@@ -374,13 +405,14 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
     if not data:
         raise ValueError("Aucune crypto utilisable : vérifie ta connexion internet.")
     bots = []
-    for variant, tf, _ in picks:
+    for variant, tf, _, execution in picks:  # mêmes ordres et mêmes frais que le labo qui a retenu la stratégie
         for symbol, market_data in data.items():
-            bs = replace(base, symbol=symbol, timeframe=tf, strategy=ALL_VARIANTS[variant], bot_label=variant)
+            bs = replace(base, symbol=symbol, timeframe=tf, strategy=ALL_VARIANTS[variant], bot_label=variant,
+                         execution=execution)
             state_path, journal_path = bot_paths(bs)
             bots.append(Bot(make_broker(bs, market_data), bs, StateStore(state_path), journal_path))
     registry_path = base.data_dir / "tournoi.json"
-    lineup = sorted((v, tf) for v, tf, _ in picks)
+    lineup = sorted((v, tf) for v, tf, *_ in picks)
     try:  # le même tournoi relancé reprend ses bots et garde sa date de départ ; un autre repart de zéro
         previous = json.loads(registry_path.read_text(encoding="utf-8"))
         same = sorted((p["variant"], p["timeframe"]) for p in previous.get("strategies", [])) == lineup
@@ -389,12 +421,12 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
         started = None
     registry = {
         "started": started or datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "lab_file": lab_file,
+        "lab_file": ", ".join(name for name, _ in labs),
         "markets": [asdict(m) for m in chosen],
         "strategies": [
             {"variant": v, "timeframe": tf, "lab_timeframe": row["timeframe"], "lab_verdict": row["verdict"],
-             "lab_expectancy_pct": row.get("expectancy_pct")}
-            for v, tf, row in picks
+             "lab_expectancy_pct": row.get("expectancy_pct"), "order_type": ex.order_type}
+            for v, tf, row, ex in picks
         ],
         "capital": args.capital,
     }
@@ -403,7 +435,8 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
     attach_telegram(s, journal=False)
     log.info(
         "Tournoi : %d stratégies × %d cryptos = %d bots, %.0f USDT fictifs chacun, %s",
-        len(picks), len(data), len(bots), args.capital, describe_execution(base.execution),
+        len(picks), len(data), len(bots), args.capital,
+        executions.pop() if len(executions) == 1 else "ordres et frais repris de chaque labo",
         extra={**JOURNAL, **ALERT},
     )
     bot_list = [b.s for b in bots]
@@ -425,7 +458,8 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
     except Exception as exc:  # le tableau de bord ne doit jamais empêcher de trader
         log.warning("Tableau de bord du tournoi non écrit : %s", exc)
     # Bougies de moins de 15 min : un tour toutes les 15 s au plus ; au-delà, le rythme habituel suffit.
-    fast = any(is_short_term(tf) for _, tf, _ in picks)
+    fast = any(is_short_term(tf) for _, tf, *_ in picks)
+    keep_awake()  # plusieurs jours de tournoi : l'ordinateur ne doit pas s'endormir
     run_bots(bots, min(s.poll_seconds, 15) if fast else s.poll_seconds, after_cycle=refresh)
 
 

@@ -16,7 +16,7 @@ from pathlib import Path
 from .broker import atomic_write
 from .config import Settings
 from .data import timeframe_to_ms
-from .lab import LAB_FILE, PROMISING, load_lab
+from .lab import LAB_FILES, PROMISING, load_lab
 from .robustness import MIN_TRADES
 from .live import bot_name, bot_paths
 from .risk import RiskGuard, TradeStats, is_candidate
@@ -627,7 +627,7 @@ def timeframe_label(tf: str) -> str:
     return f"{tf[:-1]} {unit}"
 
 
-def cost_chart(rows: list[dict]) -> str:
+def cost_chart(rows: list[dict], key: str = "lab") -> str:
     """Par unité de temps : la meilleure variante avant frais, face au coût d'un aller-retour (ligne verticale).
     Une barre qui ne dépasse pas la ligne perd après frais."""
     best: dict[str, tuple[float, float, str]] = {}
@@ -694,13 +694,13 @@ def cost_chart(rows: list[dict]) -> str:
     return (
         '<h3 class="chart-title">Ce que la meilleure stratégie capte avant frais, par unité de temps</h3>'
         "<p class=\"note\">Pour gagner après frais, une barre doit dépasser la ligne du coût d'un aller-retour.</p>"
-        f'<div class="chart-box"><svg id="cost-chart" viewBox="0 0 {w} {h}" role="img" '
+        f'<div class="chart-box"><svg id="cost-chart-{key}" class="cost-chart" viewBox="0 0 {w} {h}" role="img" '
         "aria-label=\"Meilleur gain avant frais par unité de temps, comparé au coût d'un aller-retour\">"
-        f'{"".join(parts)}</svg><div id="cost-tip" class="tip" hidden></div></div>'
+        f'{"".join(parts)}</svg><div class="tip cost-tip" hidden></div></div>'
     )
 
 
-def lab_section(results: dict | None) -> str:
+def lab_section(results: dict | None, key: str = "lab") -> str:
     if not results or not results.get("rows"):
         return '<p class="empty">Lance le laboratoire pour comparer les stratégies sur plusieurs marchés.</p>'
     when = parse_time(results.get("date"))
@@ -735,7 +735,7 @@ def lab_section(results: dict | None) -> str:
     verdict = esc(results.get("verdict", "")).replace("\n", "<br>")
     return (
         f'<p class="meta">{esc(meta)} · marchés : {esc(markets)} · validation de 50 à 80 % de chaque historique, test final sur les 20 % les plus récents</p>'
-        f'<p class="verdict">{verdict}</p>{cost_chart(results["rows"])}'
+        f'<p class="verdict">{verdict}</p>{cost_chart(results["rows"], key)}'
         '<div class="table-wrap"><table><thead><tr><th>Variante</th><th>Unité</th><th class="n">Trades</th>'
         '<th class="n">Réussite</th><th class="n">Avant frais</th><th class="n">Espérance</th><th class="n">IC 95 %</th>'
         '<th class="n">Test final</th><th class="n">Marchés +</th>'
@@ -774,8 +774,11 @@ def render(views: list[BotView], settings: Settings, robustness: dict | None, no
         ("Journal en direct", feed(views)),
     ]
     if not tournament:
-        sections += [("Laboratoire de stratégies", lab_section(lab)),
-                     ("Dernier test de robustesse", robustness_section(robustness))]
+        # Un labo (dict) ou plusieurs [(titre, résultats)] : chacun sa section, le premier même encore vide.
+        labs = lab if isinstance(lab, list) else [("Laboratoire de stratégies", lab)]
+        sections += [(name, lab_section(results, f"lab{i}")) for i, (name, results) in enumerate(labs)
+                     if i == 0 or results]
+        sections.append(("Dernier test de robustesse", robustness_section(robustness)))
     body = "".join(f"<section>{f'<h2>{name}</h2>' if name else ''}{content}</section>" for name, content in sections)
     return (
         '<!doctype html><html lang="fr" data-theme="dark"><head><meta charset="utf-8">'
@@ -803,7 +806,8 @@ def write_dashboard(settings: Settings, now: datetime | None = None, bots: list[
     page = render(
         load_views(settings, now, bots), settings,
         None if tournament else load_results(settings.data_dir / ROBUSTNESS_FILE), now,
-        None if tournament else load_lab(settings.data_dir / LAB_FILE), registry,
+        None if tournament else [(title, load_lab(settings.data_dir / name)) for name, title in LAB_FILES],
+        registry,
     )
     path = settings.data_dir / FILENAME
     atomic_write(path, page)
@@ -1014,11 +1018,9 @@ JS = """
     if (e.key === 'ArrowRight') { show(index + 1); e.preventDefault(); }
   });
 })();
-(() => {
-  const tip = document.getElementById('cost-tip');
-  const svg = document.getElementById('cost-chart');
-  if (!tip || !svg) return;
+document.querySelectorAll('.cost-chart').forEach(svg => {
   const host = svg.parentElement;
+  const tip = host.querySelector('.cost-tip');
   function show(hit) {
     tip.replaceChildren();
     hit.dataset.tip.split('|').forEach((line, i) => {
@@ -1040,7 +1042,7 @@ JS = """
     hit.addEventListener('focus', () => show(hit));
     hit.addEventListener('blur', hide);
   });
-})();
+});
 (() => {
   const button = document.getElementById('theme-toggle');
   if (!button) return;

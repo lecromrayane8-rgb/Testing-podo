@@ -238,4 +238,17 @@ def test_lab_chart_compares_the_best_gain_before_costs_to_the_cost_of_a_round_tr
     assert "Rare" not in chart  # trop peu de trades pour compter
     assert "&lt;b&gt;Piège" in chart and "<b>Piège" not in chart
     assert cost_chart([row("Rare", "1m", 0.9, 0.6, trades=3)]) == ""
-    assert 'id="cost-chart"' in lab_section({"rows": rows, "verdict": "VERDICT", "marches": ["BTC/USDT"]})
+    assert 'id="cost-chart-court"' in lab_section({"rows": rows, "verdict": "VERDICT", "marches": ["BTC/USDT"]}, "court")
+
+
+def test_each_lab_has_its_own_section_and_chart(tmp_path):
+    from tradingbot.lab import LAB_FILES
+    s = settings(tmp_path)
+    row = {"variant": "Cassure 20/10", "timeframe": "5m", "trades": 500, "gross_expectancy_pct": 0.12,
+           "expectancy_pct": -0.18, "verdict": "perd de l'argent"}
+    for name, _ in LAB_FILES[1:]:  # les deux labos court terme, pas le long terme
+        (tmp_path / name).write_text(json.dumps({"rows": [row], "verdict": "VERDICT"}), encoding="utf-8")
+    page = write_dashboard(s, NOW).read_text(encoding="utf-8")
+    assert "<h2>Laboratoire long terme</h2>" in page and "Lance le laboratoire" in page  # pas encore lancé
+    assert "<h2>Laboratoire court terme</h2>" in page and "<h2>Laboratoire court terme, ordres limites</h2>" in page
+    assert page.count('class="cost-chart"') == 2 and 'id="cost-chart-lab1"' in page and 'id="cost-chart-lab2"' in page

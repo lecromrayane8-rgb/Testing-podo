@@ -42,7 +42,12 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - `tradingbot/notify.py` + commande `telegram` (lanceur 12) : alertes Telegram optionnelles (TELEGRAM_TOKEN,
   TELEGRAM_CHAT_ID), envoyées d'un fil à part ; `run` envoie les logs JOURNAL, ALERT et ERROR ; un tournoi
   seulement ALERT (départ, éliminations, résumé horaire) et ERROR.
-- `packaging/windows/0 - Menu.bat` : menu unique qui explique et lance les 12 autres lanceurs.
+- Labos (`lab.LAB_FILES`) : `laboratoire.json` (long terme), `laboratoire-court-terme.json` (lanceur 7),
+  `laboratoire-court-terme-limites.json` (lanceur 10) ; une section par labo sur le tableau de bord ; `tournoi --labo`
+  accepte plusieurs fichiers (`merge_picks` : meilleure version de chaque stratégie, avec les ordres de son labo).
+  Lanceur 13 « Recherche de nuit » : les trois labos à la suite. `awake.keep_awake()` empêche la veille Windows
+  pendant `labo`, `run` et `tournoi` ; le verdict d'un labo part en alerte Telegram.
+- `packaging/windows/0 - Menu.bat` : menu unique qui explique et lance les 13 autres lanceurs.
 - `tradingbot/scanner.py` : cryptos spot USDT les plus agitées sur 24 h, volume ≥ 5 M$, sans stables ni tokens à
   levier ; `MEMECOINS` (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) gardés seulement s'ils sont assez échangés.
 - Commande `tournoi` (`main.py`) : stratégies « à surveiller »/« prometteur » d'un labo (`--labo`, défaut

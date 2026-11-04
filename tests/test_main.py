@@ -309,3 +309,55 @@ def test_tournament_runs_with_the_orders_and_fees_of_its_lab(tmp_path, monkeypat
     (bot,) = runs["bots"]
     assert bot.name == "PEPE/USDT 15m · Supertrend 10/3" and bot.s.execution.order_type == "limit"
     assert bot.s.data_dir == data_dir / "tournoi-court-terme"
+
+
+def test_tournament_merges_both_short_term_labs_with_their_own_orders(tmp_path, monkeypatch):
+    from tradingbot.execution import ExecutionParams
+    from tradingbot.scanner import ScanResult
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    data_dir = tmp_path / "data"
+    market = lab_file(data_dir / "laboratoire-court-terme.json", ("Supertrend 10/3", "15m", "à surveiller", 0.10),
+                      ("Momentum 100", "5m", "à surveiller", 0.05))
+    market["execution"] = {"order_type": "market"}
+    limits = lab_file(data_dir / "laboratoire-court-terme-limites.json",
+                      ("Supertrend 10/3", "15m", "à surveiller", 0.20), ("Cassure 20/10", "15m", "perd de l'argent", -0.1))
+    limits["execution"] = {"order_type": "limit", "maker_fee_rate": 0.00075}
+    for name, payload in (("laboratoire-court-terme.json", market), ("laboratoire-court-terme-limites.json", limits)):
+        (data_dir / name).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    picks = main.merge_picks([("a", market), ("b", limits)], None, 6, ExecutionParams())
+    assert [(v, tf, ex.order_type) for v, tf, _, ex in picks] == [
+        ("Supertrend 10/3", "15m", "limit"), ("Momentum 100", "5m", "market")]  # la meilleure version gagne
+
+    class PublicData:
+        def __init__(self, exchange_id, symbol, exchange=None, cache_seconds=0.0):
+            self.symbol = symbol
+
+    runs = {}
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: None)
+    monkeypatch.setattr(main, "CcxtBroker", PublicData)
+    monkeypatch.setattr(main, "pick_markets", lambda *a, **k: [ScanResult("PEPE/USDT", 0.2, 3e7, 0.0)])
+    monkeypatch.setattr(main.webbrowser, "open", lambda uri: None)
+    monkeypatch.setattr(main, "run_bots", lambda bots, poll, after_cycle=None: runs.update(bots=bots))
+    monkeypatch.setattr(main, "keep_awake", lambda: True)
+    assert main.main(["tournoi", "--labo", "laboratoire-court-terme.json,laboratoire-court-terme-limites.json"]) == 0
+    orders = {b.name: (b.s.execution.order_type, b.s.execution.maker_fee_rate) for b in runs["bots"]}
+    assert orders == {"PEPE/USDT 15m · Supertrend 10/3": ("limit", 0.00075), "PEPE/USDT 5m · Momentum 100": ("market", 0.001)}
+    assert all(b.s.data_dir == data_dir / "tournoi-court-terme" for b in runs["bots"])
+
+
+def test_a_finished_lab_sends_its_verdict_as_an_alert(tmp_path, monkeypatch, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="tradingbot")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    walk = frame_from_closes(100 * np.exp(np.cumsum(np.random.default_rng(8).normal(0.0, 0.01, 1500))))
+    monkeypatch.setattr(main, "load_or_fetch", lambda *args, **kwargs: walk)
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: None)
+    awake = []
+    monkeypatch.setattr(main, "keep_awake", lambda: awake.append(True) or True)
+    assert main.main(["labo", "--symbols", "BTC/USDT", "--timeframes", "1h", "--coeurs", "1"]) == 0
+    done = [r for r in caplog.records if r.getMessage().startswith("Labo terminé")]
+    assert len(done) == 1 and getattr(done[0], "alert", False) and "VERDICT" in done[0].getMessage()
+    assert awake == [True]

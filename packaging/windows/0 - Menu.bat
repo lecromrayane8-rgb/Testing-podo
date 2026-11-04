@@ -17,6 +17,7 @@ echo     4  Labo court terme en ordres limites, pour moins de frais (environ 1 h
 echo     5  Labo long terme : 15 min a 1 jour, cryptos, or, euro (10 a 20 min)
 echo     6  Test de robustesse de la strategie choisie dans les reglages
 echo     7  Backtest detaille de la strategie choisie
+echo    14  Recherche de nuit : les 3 labos a la suite, puis le tableau de bord (1 a 3 h)
 echo.
 echo   FAIRE TOURNER EN ARGENT FICTIF (prix reels)
 echo     8  Tournoi court terme : les strategies retenues par le labo court terme
@@ -47,6 +48,7 @@ if "%choix%"=="10" goto choix10
 if "%choix%"=="11" goto choix11
 if "%choix%"=="12" goto choix12
 if "%choix%"=="13" goto choix13
+if "%choix%"=="14" goto choix14
 if "%choix%"=="0" exit /b
 goto menu
 :choix1
@@ -87,4 +89,7 @@ call "Modifier les reglages.bat"
 goto menu
 :choix13
 call "12 - Tester les alertes Telegram.bat"
+goto menu
+:choix14
+call "13 - Recherche de nuit.bat"
 goto menu
