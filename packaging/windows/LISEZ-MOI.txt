@@ -70,10 +70,10 @@ LIRE LE TABLEAU DU LABO
 DANS L'ORDRE
 1. Le soir, lance « 13 - Recherche de nuit ». Le lendemain, envoie à Claude une photo du tableau de
    bord (les sections « Laboratoire ») ou le haut des tableaux et les VERDICTS.
-2. Si une stratégie y sort « à surveiller » ou « prometteur », lance « 8 - Tournoi court terme ».
-   Si Claude te le conseille, essaie aussi « 10 - Labo court terme ordres limites ».
-3. En parallèle, « 6 - Laboratoire de strategies » puis « 9 - Tournoi long terme », à laisser
-   tourner plusieurs semaines, PC allumé.
+2. Si un labo court terme y retient une stratégie (« à surveiller » ou « prometteur »), lance
+   « 8 - Tournoi court terme ».
+3. En parallèle, « 9 - Tournoi long terme » fait tourner les stratégies retenues par le labo long
+   terme : à laisser tourner plusieurs semaines, PC allumé.
 4. Dans le tableau de bord, une stratégie n'est marquée « candidate au testnet » qu'après 30 trades
    nettement positifs, frais compris, avec un seuil d'autant plus dur qu'il y a de bots en
    compétition (sinon la chance en ferait gagner).
