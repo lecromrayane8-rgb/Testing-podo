@@ -160,3 +160,33 @@ def test_volume_filter_needs_a_crowd_behind_the_move():
 def test_filter_settings_are_validated(kwargs):
     with pytest.raises(ValueError, match="MIN_ATR_PCT"):
         StrategyParams(**kwargs)
+
+
+def test_active_hours_keep_only_entries_during_the_chosen_hours():
+    base = dict(strategy_type="cassure", breakout_period=20, breakout_exit_period=10, trend_period=0)
+    df = breakout_frame()
+    assert df.index[60].hour == 10  # la cassure arrive sur la bougie de 10 h UTC
+    assert not compute_signals(df, StrategyParams(**base, active_hours="13-21"))["entry"].any()
+    assert compute_signals(df, StrategyParams(**base, active_hours="8-12"))["entry"].iloc[60]
+    assert compute_signals(df, StrategyParams(**base, active_hours="22-11"))["entry"].iloc[60]  # passe minuit
+
+
+def test_squeeze_buys_a_breakout_only_after_a_calm_market():
+    rng = np.random.default_rng(3)
+    agitated = list(100 * (1 + 0.02 * np.sin(np.arange(150) / 2)))
+    calm = list(100 + 0.01 * rng.standard_normal(40))
+    busier = list(100 * (1 + 0.04 * np.sin(np.arange(150, 190) / 2)))  # de plus en plus agité
+    p = StrategyParams(strategy_type="cassure", breakout_period=20, breakout_exit_period=10, trend_period=0,
+                       squeeze_quantile=0.2, squeeze_period=100)
+    assert compute_signals(frame_from_closes(agitated + calm + [108.0]), p)["entry"].iloc[-1]
+    assert not compute_signals(frame_from_closes(agitated + busier + [108.0]), p)["entry"].iloc[-1]
+    assert p.warmup_bars >= p.bb_period + p.squeeze_period
+
+
+@pytest.mark.parametrize("kwargs, message", [
+    ({"active_hours": "13h-21h"}, "ACTIVE_HOURS"), ({"active_hours": "5-5"}, "ACTIVE_HOURS"),
+    ({"active_hours": "13-30"}, "ACTIVE_HOURS"), ({"squeeze_quantile": 1.5}, "SQUEEZE_QUANTILE"),
+])
+def test_new_filter_settings_are_validated(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        StrategyParams(**kwargs)

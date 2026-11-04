@@ -26,31 +26,37 @@ FAST = StrategyParams(strategy_type="cassure", breakout_period=10, breakout_exit
 
 
 @pytest.mark.parametrize("args, expected", [
-    ((10, 0.5, 0.5, 0.1, 3, 3), "trop peu de trades"),
-    ((200, 0.5, -0.1, -0.3, 0, 3), "perd de l'argent"),
-    ((200, -0.2, 0.3, 0.1, 3, 3), "instable"),
-    ((200, 0.2, 0.3, -0.05, 3, 3), "à surveiller"),
-    ((200, 0.2, 0.3, 0.05, 1, 3), "à surveiller"),  # positif sur trop peu de marchés
-    ((200, 0.2, 0.3, 0.05, 2, 3), PROMISING),
+    ((10, 0.5, 0.5, 0.1, 3, 3, 50, 0.2), "trop peu de trades"),
+    ((200, 0.5, -0.1, -0.3, 0, 3, 50, 0.2), "perd de l'argent"),
+    ((200, -0.2, 0.3, 0.1, 3, 3, 50, 0.2), "instable"),
+    ((200, 0.2, 0.3, 0.05, 2, 3, 50, -0.1), "instable"),  # tout était bon, sauf le test final
+    ((200, 0.2, 0.3, -0.05, 3, 3, 50, 0.2), "à surveiller"),
+    ((200, 0.2, 0.3, 0.05, 1, 3, 50, 0.2), "à surveiller"),  # positif sur trop peu de marchés
+    ((200, 0.2, 0.3, 0.05, 2, 3, 4, 0.2), "à surveiller"),  # test final trop court pour confirmer
+    ((200, 0.2, 0.3, 0.05, 2, 3, 50, 0.2), PROMISING),
 ])
 def test_lab_verdicts(args, expected):
     assert lab_verdict(*args) == expected
 
 
-def test_trades_are_split_between_study_and_validation():
+def test_trades_are_split_between_study_validation_and_final_test():
     datasets = {"A": walk(1), "B": walk(2)}
     row = evaluate_variant("Cassure 10 / 5", FAST, "1h", datasets, ExecutionParams(), RiskParams(), n_tests=1)
     total = sum(len(main.run_backtest(df, FAST, lab.research_risk(RiskParams()), 10_000.0,
                                       ExecutionParams()).trades) for df in datasets.values())
-    assert row.study_trades + row.trades == total
-    assert row.study_trades > row.trades > 0  # 60 % de l'historique pour l'étude, 40 % pour la validation
+    assert row.study_trades + row.trades + row.test_trades == total
+    assert row.study_trades > row.trades > row.test_trades > 0  # 50 %, puis 30 %, puis les 20 % les plus récents
+    assert not math.isnan(row.test_expectancy_pct)
     assert row.markets_judged == 2 and 0 <= row.markets_positive <= 2
-    df = datasets["A"]
-    cutoff = df.index[0] + (df.index[-1] - df.index[0]) * lab.STUDY_SHARE
-    closes = df["close"][df.index >= cutoff]
-    expected_bh = np.mean([d["close"][d.index >= cutoff].iloc[-1] / d["close"][d.index >= cutoff].iloc[0] - 1
-                           for d in datasets.values()])
-    assert closes.iloc[0] > 0 and row.buy_hold_return == pytest.approx(expected_bh)
+
+    def window(d):
+        start = d.index[0] + (d.index[-1] - d.index[0]) * lab.STUDY_SHARE
+        end = d.index[0] + (d.index[-1] - d.index[0]) * (1 - lab.TEST_SHARE)
+        closes = d["close"][(d.index >= start) & (d.index < end)]
+        return closes.iloc[-1] / closes.iloc[0] - 1
+
+    # buy & hold mesuré sur la validation seulement : le test final reste à part
+    assert row.buy_hold_return == pytest.approx(np.mean([window(d) for d in datasets.values()]))
 
 
 def test_studies_run_without_the_live_safety_stops(monkeypatch):
@@ -80,7 +86,8 @@ def test_run_lab_covers_every_variant_and_timeframe_sorted_by_expectancy():
     exps = [r.expectancy_pct for r in rows if not math.isnan(r.expectancy_pct)]
     assert exps == sorted(exps, reverse=True)
     text = format_lab(rows)
-    assert "Variante" in text and "Buy&hold" in text and "pour les 4 essais" in text
+    assert "Variante" in text and "Test final" in text and "pour les 4 essais" in text
+    assert "buy & hold) : 1h" in text  # comparaison au simple achat-conservation, par unité de temps
 
 
 def test_overall_verdict_and_env_lines():
@@ -133,8 +140,9 @@ def test_lab_command_tests_cryptos_and_stock_csvs(tmp_path, monkeypatch):
 
 def test_short_term_combos_are_named_variants_with_filters():
     from tradingbot.lab import ALL_VARIANTS, COMBOS
-    assert len(COMBOS) == 12 and not set(COMBOS) & set(VARIANTS)
-    assert all(p.min_atr_pct > 0 or p.volume_mult > 0 for p in COMBOS.values())
+    assert len(COMBOS) == 17 and not set(COMBOS) & set(VARIANTS)
+    assert all(p.min_atr_pct or p.volume_mult or p.active_hours or p.squeeze_quantile for p in COMBOS.values())
+    assert "ACTIVE_HOURS=13-21" in env_lines(COMBOS["Cassure 20/10 + heures actives"])
     assert ALL_VARIANTS == {**VARIANTS, **COMBOS}
     assert "MIN_ATR_PCT=0.003" in env_lines(COMBOS["Cassure 20/10 + volatilité"])
 

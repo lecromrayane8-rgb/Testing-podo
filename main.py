@@ -1,10 +1,11 @@
-"""Point d'entrée : python main.py {backtest,robustesse,labo,tournoi,check,run,tableau,reset-guard} --help"""
+"""Point d'entrée : python main.py {backtest,robustesse,labo,tournoi,prix,check,run,tableau,reset-guard} --help"""
 from __future__ import annotations
 
 import argparse
 import json
 import logging
 import math
+import os
 import sys
 import time
 import webbrowser
@@ -27,7 +28,8 @@ from tradingbot.lab import (
 from tradingbot.live import Bot, StateStore, bot_paths, px, run_bots, slug
 from tradingbot.obsidian import JOURNAL, ObsidianHandler, ObsidianJournal
 from tradingbot.robustness import evaluate, format_robustness, overall_verdict, research_risk, save_results
-from tradingbot.scanner import ScanResult, pick_markets
+from tradingbot.prices import DEFAULT_PLATFORMS, connect, format_board, label, snapshot
+from tradingbot.scanner import ScanResult, pick_markets, scan_volatile
 
 log = logging.getLogger("tradingbot")
 
@@ -415,6 +417,35 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
     run_bots(bots, min(s.poll_seconds, 15) if fast else s.poll_seconds, after_cycle=refresh)
 
 
+HOT_REFRESH_S = 60  # la liste des cryptos agitées demande tout le marché : une fois par minute suffit
+
+
+def cmd_prices(s: Settings, args: argparse.Namespace) -> None:
+    """Les vrais prix de plusieurs plateformes, côte à côte, rafraîchis en continu (données publiques)."""
+    bases = list(dict.fromkeys(x.strip().upper().split("/")[0] for x in args.cryptos.split(",") if x.strip()))
+    platforms = [x.strip().lower() for x in args.plateformes.split(",") if x.strip()]
+    exchanges, errors = connect(platforms, make_exchange)
+    if not exchanges:
+        raise ValueError("Aucune plateforme joignable : vérifie ta connexion internet. " + "; ".join(
+            f"{label(p)} : {e}" for p, e in errors.items()))
+    first = next(iter(exchanges.values()))
+    hot, hot_at = None, -math.inf
+    while True:
+        board = snapshot(exchanges, bases, errors)
+        if args.agitees and time.monotonic() - hot_at >= HOT_REFRESH_S:
+            try:
+                hot, hot_at = scan_volatile(first, top=args.agitees), time.monotonic()
+            except ccxt.BaseError as exc:
+                log.warning("Liste des cryptos agitées indisponible : %s", exc)
+        text = format_board(board, datetime.now(), hot, None if args.une_fois else args.secondes)
+        if args.une_fois:
+            print(text)
+            return
+        os.system("cls" if os.name == "nt" else "clear")
+        print(text, flush=True)
+        time.sleep(args.secondes)
+
+
 def cmd_dashboard(s: Settings, args: argparse.Namespace) -> None:
     path = write_dashboard(s)
     print(f"Tableau de bord : {path}")
@@ -472,6 +503,12 @@ def main(argv: list[str] | None = None) -> int:
                     help="ajouter les marchés sur lesquels le labo a testé ses stratégies")
     tn.add_argument("--strategies", type=int, default=6, help="nombre maximum de stratégies en compétition")
     tn.add_argument("--capital", type=float, default=1000.0, help="capital fictif de chaque bot")
+    pr = sub.add_parser("prix", help="les vrais prix de plusieurs plateformes, en direct et sans compte")
+    pr.add_argument("--cryptos", default="BTC,ETH,SOL,BNB,XRP,DOGE,PEPE,WIF")
+    pr.add_argument("--plateformes", default=",".join(DEFAULT_PLATFORMS))
+    pr.add_argument("--secondes", type=float, default=10.0, help="délai entre deux mises à jour")
+    pr.add_argument("--agitees", type=int, default=8, help="nombre de cryptos agitées à lister (0 = aucune)")
+    pr.add_argument("--une-fois", action="store_true", help="afficher une seule fois, puis s'arrêter")
     sub.add_parser("check", help="vérifier la connexion et les soldes")
     sub.add_parser("run", help="lancer le ou les bots (selon MODE et BOTS dans .env)")
     tb = sub.add_parser("tableau", help="générer et ouvrir le tableau de bord")
@@ -490,6 +527,7 @@ def main(argv: list[str] | None = None) -> int:
         "robustesse": cmd_robustness,
         "labo": cmd_lab,
         "tournoi": cmd_tournament,
+        "prix": cmd_prices,
         "check": cmd_check,
         "run": cmd_run,
         "tableau": cmd_dashboard,

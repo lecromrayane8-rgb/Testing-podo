@@ -19,7 +19,12 @@ Filtres optionnels d'achat, surtout utiles en très court terme où les frais p�
 - volatilité : n'acheter que si l'ATR vaut au moins `min_atr_pct` du prix (les bougies bougent assez
   pour qu'un trade puisse rapporter plus que ses frais) ;
 - volume : n'acheter que si le volume de la bougie atteint `volume_mult` fois sa moyenne (le mouvement
-  est suivi par beaucoup d'acheteurs).
+  est suivi par beaucoup d'acheteurs) ;
+- heures actives : n'acheter que pendant `active_hours` (heures UTC, « 13-21 » = de 13 h à 21 h), quand
+  le marché échange le plus ;
+- compression : n'acheter que si les bandes de Bollinger de la bougie précédente étaient parmi les plus
+  serrées des `squeeze_period` dernières (`squeeze_quantile` = 0,2 : les 20 % les plus serrées) ; un
+  marché calme qui se réveille donne souvent un mouvement plus grand qu'un marché déjà agité.
 Les signaux d'une bougie n'utilisent que cette bougie et les précédentes.
 """
 from __future__ import annotations
@@ -61,6 +66,9 @@ class StrategyParams:
     min_atr_pct: float = 0.0  # filtre de volatilité : ATR / prix minimum (0,003 = 0,3 %) ; 0 = sans filtre
     volume_mult: float = 0.0  # filtre de volume : volume >= k × sa moyenne ; 0 = sans filtre
     volume_period: int = 20
+    active_hours: str = ""  # heures UTC d'achat, « 13-21 » ; vide = toute la journée
+    squeeze_quantile: float = 0.0  # compression des bandes de Bollinger avant l'achat ; 0 = sans filtre
+    squeeze_period: int = 120
 
     def __post_init__(self):
         if self.strategy_type not in STRATEGY_TYPES:
@@ -77,6 +85,10 @@ class StrategyParams:
             raise ValueError("TREND_PERIOD et MAX_BARS_IN_TRADE doivent être >= 0")
         if self.min_atr_pct < 0 or self.volume_mult < 0 or self.volume_period < 1:
             raise ValueError("MIN_ATR_PCT et VOLUME_MULT doivent être >= 0, VOLUME_PERIOD >= 1")
+        if not 0 <= self.squeeze_quantile < 1 or self.squeeze_period < 2:
+            raise ValueError("SQUEEZE_QUANTILE doit être entre 0 et 1 (0,2 = 20 %), SQUEEZE_PERIOD >= 2")
+        if self.active_hours:
+            self.hours_window  # « 13-21 » mal écrit : erreur claire dès le chargement des réglages
 
     @property
     def warmup_bars(self) -> int:
@@ -91,7 +103,19 @@ class StrategyParams:
             "supertrend": [self.st_period + 2],
         }[self.strategy_type]
         volume = [self.volume_period] if self.volume_mult else []
-        return max([self.atr_period, self.trend_period, *volume, *periods]) + 1
+        squeeze = [self.bb_period + self.squeeze_period + 1] if self.squeeze_quantile else []
+        return max([self.atr_period, self.trend_period, *volume, *squeeze, *periods]) + 1
+
+    @property
+    def hours_window(self) -> tuple[int, int]:
+        """« 13-21 » -> (13, 21) : de 13 h (incluse) à 21 h (exclue), en UTC ; « 22-6 » passe minuit."""
+        try:
+            start, end = (int(x) for x in self.active_hours.split("-"))
+        except ValueError:
+            raise ValueError(f"ACTIVE_HOURS doit ressembler à 13-21 (reçu : {self.active_hours!r})") from None
+        if not (0 <= start <= 23 and 0 <= end <= 24) or start == end:
+            raise ValueError(f"ACTIVE_HOURS doit ressembler à 13-21 (reçu : {self.active_hours!r})")
+        return start, end
 
     @property
     def exit_label(self) -> str:
@@ -145,6 +169,16 @@ def compute_signals(df: pd.DataFrame, p: StrategyParams) -> pd.DataFrame:
         valid &= out["atr"] / close >= p.min_atr_pct
     if p.volume_mult:
         valid &= out["volume"] >= p.volume_mult * sma(out["volume"], p.volume_period)
+    if p.active_hours:
+        start, end = p.hours_window
+        hours = out.index.hour
+        inside = (hours >= start) & (hours < end) if start < end else (hours >= start) | (hours < end)
+        valid &= pd.Series(inside, index=out.index)
+    if p.squeeze_quantile:
+        mid, upper, lower = bollinger(close, p.bb_period, p.bb_std)
+        width = ((upper - lower) / mid).shift(1)  # la bougie d'avant : celle de l'achat peut déjà s'écarter
+        calm = width.rolling(p.squeeze_period, min_periods=p.squeeze_period).quantile(p.squeeze_quantile)
+        valid &= width <= calm
     out["entry"] = (entry & trend_ok & valid).fillna(False).astype(bool)
     out["exit"] = exit_.fillna(False).astype(bool)
     return out

@@ -366,14 +366,17 @@ def test_short_history_warning_is_given_once_per_candle(tmp_path, caplog):
     assert len(warnings) == 2 and "il en faut" in warnings[0]
 
 
-@pytest.mark.parametrize("filters", [{"min_atr_pct": 0.012}, {"volume_mult": 1.5}, {"min_atr_pct": 0.01, "volume_mult": 1.2}],
-                         ids=["volatilite", "volume", "les-deux"])
+@pytest.mark.parametrize("filters", [
+    {"min_atr_pct": 0.012}, {"volume_mult": 1.5}, {"min_atr_pct": 0.01, "volume_mult": 1.2},
+    {"active_hours": "13-21"}, {"squeeze_quantile": 0.3, "squeeze_period": 60},
+], ids=["volatilite", "volume", "les-deux", "heures", "compression"])
 def test_filtered_strategies_trade_live_exactly_like_the_backtest(tmp_path, random_walk, filters):
     df = random_walk.iloc[:1500].copy()
     df["volume"] = np.random.default_rng(5).lognormal(0.0, 0.6, len(df))  # volumes qui varient vraiment
     strat = StrategyParams(strategy_type="cassure", breakout_period=20, breakout_exit_period=10, trend_period=0,
                            atr_period=5, stop_atr_mult=100, max_bars_in_trade=0, **filters)
-    unfiltered = run_backtest(df, replace(strat, min_atr_pct=0.0, volume_mult=0.0), RISK, execution=FREE).trades
+    plain = replace(strat, min_atr_pct=0.0, volume_mult=0.0, active_hours="", squeeze_quantile=0.0)
+    unfiltered = run_backtest(df, plain, RISK, execution=FREE).trades
     expected = [t for t in run_backtest(df, strat, RISK, execution=FREE).trades if t.reason != "fin du test"]
     bot, broker = make_bot(tmp_path, df, strategy=strat)
     for i in range(1, len(df)):

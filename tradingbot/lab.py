@@ -1,8 +1,10 @@
 """Laboratoire : plusieurs familles de stratégies, testées sur plusieurs marchés, validées hors échantillon.
 
 Méthode, pour ne pas se laisser tromper par la chance :
-1. Chaque historique est coupé dans le temps : les 60 % les plus anciens servent d'« étude »,
-   les 40 % les plus récents de « validation ». Seule la validation décide du verdict.
+1. Chaque historique est coupé dans le temps : la première moitié sert d'« étude », la tranche suivante
+   (de 50 à 80 %) de « validation », et les 20 % les plus récents de « test final ». La validation classe
+   les variantes ; le test final, jamais regardé pour les choisir, doit confirmer : sans lui, essayer
+   idée après idée sur les mêmes données finirait par en trouver une qui a gagné par hasard.
 2. Une variante est jugée sur tous les marchés à la fois (trades mis en commun) : une structure
    qui marche doit marcher un peu partout, pas sur un seul marché choisi après coup.
 3. Le seuil est durci selon le nombre de variantes × unités de temps essayées (Bonferroni) :
@@ -26,8 +28,10 @@ from .robustness import MIN_TRADES, adjusted_lower_bound, bootstrap_means, resea
 from .strategy import StrategyParams
 
 LAB_FILE = "laboratoire.json"
-STUDY_SHARE = 0.6
+STUDY_SHARE = 0.5  # étude : la première moitié de chaque historique
+TEST_SHARE = 0.2  # test final : les 20 % les plus récents ; la validation est entre les deux
 MIN_MARKET_TRADES = 5
+MIN_TEST_TRADES = 10
 PROMISING = "prometteur"
 
 TREND = {"stop_atr_mult": 3.0, "max_bars_in_trade": 0}  # suivre une tendance : stop large, pas de stop temporel
@@ -70,6 +74,8 @@ VARIANTS: dict[str, StrategyParams] = {
 # moins ce coût (ATR >= 0,3 % du prix), ou quand le volume double (le mouvement a des acheteurs derrière lui).
 VOLATILE = {"min_atr_pct": 0.003}
 CROWD = {"volume_mult": 2.0}
+ACTIVE = {"active_hours": "13-21"}
+SQUEEZE = {"squeeze_quantile": 0.2, "squeeze_period": 120}
 COMBOS: dict[str, StrategyParams] = {
     "Cassure 20/10 + volatilité": StrategyParams(breakout_period=20, breakout_exit_period=10, trend_period=0,
                                                  **TURTLE, **VOLATILE),
@@ -90,6 +96,17 @@ COMBOS: dict[str, StrategyParams] = {
                                                         trend_period=0, **TREND, **VOLATILE),
     "Repli RSI(2) < 5 + MM200 + volatilité": StrategyParams(rsi_entry=5.0, **VOLATILE),
     "Bollinger rebond 20/2,5 + volatilité": StrategyParams(strategy_type="bollinger", bb_std=2.5, **VOLATILE),
+    # Heures actives : de 13 h à 21 h UTC, quand l'Europe et les États-Unis échangent en même temps.
+    # Compression : la bougie d'avant avait des bandes parmi les 20 % les plus serrées des 120 dernières.
+    "Cassure 20/10 + heures actives": StrategyParams(breakout_period=20, breakout_exit_period=10, trend_period=0,
+                                                     **TURTLE, **ACTIVE),
+    "Supertrend 10/3 + heures actives": StrategyParams(strategy_type="supertrend", trend_period=0, **TREND, **ACTIVE),
+    "Bollinger rebond 20/2,5 + MM200 + heures actives": StrategyParams(strategy_type="bollinger", bb_std=2.5,
+                                                                       **ACTIVE),
+    "Cassure 20/10 + compression": StrategyParams(breakout_period=20, breakout_exit_period=10, trend_period=0,
+                                                  **TURTLE, **SQUEEZE),
+    "Bollinger cassure 20/2 + compression": StrategyParams(strategy_type="bollinger_cassure", trend_period=0,
+                                                           **TREND, **SQUEEZE),
 }
 ALL_VARIANTS: dict[str, StrategyParams] = {**VARIANTS, **COMBOS}  # pour retrouver une variante par son nom
 
@@ -112,16 +129,22 @@ class LabRow:
     buy_hold_return: float  # achat-conservation moyen, pour comparer
     verdict: str
     gross_expectancy_pct: float = math.nan  # ce que la stratégie capte sur le prix, avant frais et glissement
+    test_trades: int = 0  # test final : les 20 % les plus récents, qui confirment ou non la validation
+    test_expectancy_pct: float = math.nan
 
 
-def lab_verdict(trades: int, study_exp: float, exp: float, ci_low_adjusted: float, positive: int, judged: int) -> str:
+def lab_verdict(trades: int, study_exp: float, exp: float, ci_low_adjusted: float, positive: int, judged: int,
+                test_trades: int = 0, test_exp: float = math.nan) -> str:
     if trades < MIN_TRADES:
         return "trop peu de trades"
     if not exp > 0:
         return "perd de l'argent"
     if not study_exp > 0:
         return "instable"  # gagne sur la validation mais perdait sur l'étude
-    if ci_low_adjusted > 0 and judged and positive >= 0.6 * judged:
+    confirmed = test_trades >= MIN_TEST_TRADES
+    if confirmed and not test_exp > 0:
+        return "instable"  # gagnait sur l'étude et la validation, mais perd sur le test final
+    if ci_low_adjusted > 0 and judged and positive >= 0.6 * judged and confirmed:
         return PROMISING
     return "à surveiller"
 
@@ -139,19 +162,23 @@ def evaluate_variant(
     risk: RiskParams,
     n_tests: int,
 ) -> LabRow:
-    study, valid, gross, strategy_returns, buy_hold, per_market = [], [], [], [], [], []
+    study, valid, test, gross, strategy_returns, buy_hold, per_market = [], [], [], [], [], [], []
     for df in datasets.values():
         if len(df) < params.warmup_bars + 50:
             continue
         result = run_backtest(df, params, research_risk(risk), 10_000.0, execution)
         index = result.equity.index
         cutoff = index[0] + (index[-1] - index[0]) * STUDY_SHARE
-        market_valid = [100 * t.return_pct for t in result.trades if t.entry_time >= cutoff]
+        test_start = index[0] + (index[-1] - index[0]) * (1 - TEST_SHARE)
+        in_valid = [t for t in result.trades if cutoff <= t.entry_time < test_start]
+        market_valid = [100 * t.return_pct for t in in_valid]
         study += [100 * t.return_pct for t in result.trades if t.entry_time < cutoff]
         valid += market_valid
-        gross += [100 * t.gross_return for t in result.trades if t.entry_time >= cutoff]
-        equity = result.equity[index >= cutoff]
-        closes = df["close"][df.index >= cutoff]
+        test += [100 * t.return_pct for t in result.trades if t.entry_time >= test_start]
+        gross += [100 * t.gross_return for t in in_valid]
+        window = (index >= cutoff) & (index < test_start)
+        equity = result.equity[window]
+        closes = df["close"][(df.index >= cutoff) & (df.index < test_start)]
         if len(equity) > 1:
             strategy_returns.append(equity.iloc[-1] / equity.iloc[0] - 1)
             buy_hold.append(closes.iloc[-1] / closes.iloc[0] - 1)
@@ -179,8 +206,10 @@ def evaluate_variant(
         markets_judged=len(per_market),
         strategy_return=_mean(strategy_returns),
         buy_hold_return=_mean(buy_hold),
-        verdict=lab_verdict(len(valid), study_exp, exp, ci_adj, positive, len(per_market)),
+        verdict=lab_verdict(len(valid), study_exp, exp, ci_adj, positive, len(per_market), len(test), _mean(test)),
         gross_expectancy_pct=_mean(gross),
+        test_trades=len(test),
+        test_expectancy_pct=_mean(test),
     )
 
 
@@ -200,34 +229,39 @@ def run_lab(
 
 
 def format_lab(rows: list[LabRow]) -> str:
-    def pct(x: float, fmt: str) -> str:
-        return "n/a" if math.isnan(x) else format(x, fmt)
+    """Tableau pour la console : assez étroit pour une fenêtre Windows (le détail complet est sur le tableau de bord)."""
+    def pct(x: float, fmt: str = "+.3f") -> str:
+        return "n/a" if math.isnan(x) else format(x, fmt) + " %"
 
     width = max([34, *(len(r.variant) + 1 for r in rows)])
     header = (
-        f"{'Variante':<{width}}{'Unité':>6}{'Trades':>8}{'Réussite':>10}{'Avant frais':>13}{'Espérance':>11}  "
-        f"{'IC 95 %':<20}{'Marchés +':>10}{'Rendement':>11}{'Buy&hold':>10}  Verdict"
+        f"{'Variante':<{width}}{'Unité':>6}{'Trades':>8}{'Réussite':>10}{'Avant frais':>13}{'Après frais':>13}"
+        f"{'Test final':>12}{'Marchés +':>11}  Verdict"
     )
-    lines = [header, "-" * (len(header) + 16)]
+    lines = [header, "-" * (len(header) + 18)]
     for r in rows:
-        ci = "n/a" if math.isnan(r.ci_low) else f"[{r.ci_low:+.3f} ; {r.ci_high:+.3f}]"
         markets = f"{r.markets_positive}/{r.markets_judged}" if r.markets_judged else "n/a"
+        test = pct(r.test_expectancy_pct) if r.test_trades else "n/a"
         lines.append(
-            f"{r.variant:<{width}}{r.timeframe:>6}{r.trades:>8}{pct(100 * r.win_rate, '.1f') + ' %':>10}"
-            f"{pct(r.gross_expectancy_pct, '+.3f') + ' %':>13}{pct(r.expectancy_pct, '+.3f') + ' %':>11}  "
-            f"{ci:<20}{markets:>10}"
-            f"{pct(100 * r.strategy_return, '+.1f') + ' %':>11}{pct(100 * r.buy_hold_return, '+.1f') + ' %':>10}  {r.verdict}"
+            f"{r.variant:<{width}}{r.timeframe:>6}{r.trades:>8}{pct(100 * r.win_rate, '.1f'):>10}"
+            f"{pct(r.gross_expectancy_pct):>13}{pct(r.expectancy_pct):>13}{test:>12}{markets:>11}  {r.verdict}"
         )
+    holds = {}
+    for r in rows:  # même période et mêmes marchés pour toutes les variantes d'une unité
+        if not math.isnan(r.buy_hold_return):
+            holds.setdefault(r.timeframe, r.buy_hold_return)
     lines += [
         "",
-        f"Tout est mesuré sur la validation : les {100 - int(100 * STUDY_SHARE)} % les plus récents de chaque historique.",
-        "Espérance : gain moyen par trade, frais inclus, tous marchés réunis. Marchés + : marchés où elle est positive.",
-        "Avant frais : ce que la stratégie capte sur le prix, sans frais ni glissement. L'écart entre les deux,",
-        "c'est ce que coûte un aller-retour.",
-        "Rendement / Buy&hold : moyenne par marché de la stratégie et du simple achat-conservation sur la même période.",
-        f"« {PROMISING} » : gagnant sur l'étude ET la validation, fourchette au-dessus de 0 avec un seuil durci",
-        f"pour les {len(rows)} essais, et positif sur au moins 60 % des marchés.",
+        f"Validation : de {int(100 * STUDY_SHARE)} à {int(100 * (1 - TEST_SHARE))} % de chaque historique. Test final : les "
+        f"{int(100 * TEST_SHARE)} % les plus récents, jamais regardés pour choisir : ils confirment, ou non.",
+        "Avant frais : ce que la stratégie capte sur le prix. Après frais : le gain moyen par trade, frais et glissement",
+        "compris, tous marchés réunis. L'écart entre les deux est le coût d'un aller-retour. Marchés + : marchés gagnants.",
+        f"« {PROMISING} » : gagnant sur l'étude, la validation (seuil durci pour les {len(rows)} essais, au moins 60 % des",
+        "marchés) et le test final.",
     ]
+    if holds:
+        lines.append("Garder simplement les cryptos sur la même période (buy & hold) : "
+                     + ", ".join(f"{tf} {100 * h:+.1f} %" for tf, h in holds.items()) + ".")
     return "\n".join(lines)
 
 

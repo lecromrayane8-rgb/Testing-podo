@@ -630,6 +630,7 @@ def lab_section(results: dict | None) -> str:
     for r in results["rows"]:
         low, high = num(r.get("ci_low")), num(r.get("ci_high"))
         exp, win, gross = num(r.get("expectancy_pct")), num(r.get("win_rate")), num(r.get("gross_expectancy_pct"))
+        test = num(r.get("test_expectancy_pct")) if num(r.get("test_trades"), 0) else None
         ret, bh = num(r.get("strategy_return")), num(r.get("buy_hold_return"))
         judged, positive = int(num(r.get("markets_judged"), 0)), int(num(r.get("markets_positive"), 0))
         ci = f"{fmt_signed(low, 3)} à {fmt_signed(high, 3)} %" if low is not None and high is not None else "—"
@@ -644,6 +645,7 @@ def lab_section(results: dict | None) -> str:
             f"<td class=\"n\">{fmt_signed(gross, 3, ' %') if gross is not None else '—'}</td>"
             f"<td class=\"n\">{fmt_signed(exp, 3, ' %') if exp is not None else '—'}</td>"
             f"<td class=\"n\">{ci}</td>"
+            f"<td class=\"n\">{fmt_signed(test, 3, ' %') if test is not None else '—'}</td>"
             f"<td class=\"n\">{markets_label}</td>"
             f"<td class=\"n\">{fmt_signed(100 * ret, 1, ' %') if ret is not None else '—'}</td>"
             f"<td class=\"n\">{fmt_signed(100 * bh, 1, ' %') if bh is not None else '—'}</td>"
@@ -652,11 +654,11 @@ def lab_section(results: dict | None) -> str:
         )
     verdict = esc(results.get("verdict", "")).replace("\n", "<br>")
     return (
-        f'<p class="meta">{esc(meta)} · marchés : {esc(markets)} · mesuré sur les 40 % les plus récents de chaque historique</p>'
+        f'<p class="meta">{esc(meta)} · marchés : {esc(markets)} · validation de 50 à 80 % de chaque historique, test final sur les 20 % les plus récents</p>'
         f'<p class="verdict">{verdict}</p>'
         '<div class="table-wrap"><table><thead><tr><th>Variante</th><th>Unité</th><th class="n">Trades</th>'
         '<th class="n">Réussite</th><th class="n">Avant frais</th><th class="n">Espérance</th><th class="n">IC 95 %</th>'
-        '<th class="n">Marchés +</th>'
+        '<th class="n">Test final</th><th class="n">Marchés +</th>'
         '<th class="n">Rendement</th><th class="n">Buy &amp; hold</th><th>Verdict</th></tr></thead>'
         f"<tbody>{''.join(rows)}</tbody></table></div>"
     )
