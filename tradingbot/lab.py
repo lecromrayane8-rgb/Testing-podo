@@ -14,7 +14,12 @@ Méthode, pour ne pas se laisser tromper par la chance :
 from __future__ import annotations
 
 import json
+import logging
 import math
+import os
+import pickle
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
@@ -26,6 +31,8 @@ from .execution import ExecutionParams
 from .risk import RiskParams
 from .robustness import MIN_TRADES, adjusted_lower_bound, bootstrap_means, research_risk
 from .strategy import StrategyParams
+
+log = logging.getLogger(__name__)
 
 LAB_FILE = "laboratoire.json"
 STUDY_SHARE = 0.5  # étude : la première moitié de chaque historique
@@ -153,37 +160,55 @@ def _mean(values: list[float]) -> float:
     return float(np.mean(values)) if values else math.nan
 
 
-def evaluate_variant(
-    name: str,
-    params: StrategyParams,
-    timeframe: str,
-    datasets: dict[str, pd.DataFrame],
-    execution: ExecutionParams,
-    risk: RiskParams,
-    n_tests: int,
-) -> LabRow:
+@dataclass
+class MarketOutcome:
+    """Ce qu'une variante a donné sur un marché : rendements par trade (%) de chaque tranche de l'historique."""
+    study: list[float]
+    valid: list[float]
+    test: list[float]
+    gross: list[float]  # avant frais, sur la validation
+    strategy_return: float | None  # sur la validation
+    buy_hold_return: float | None
+
+
+def market_outcome(df: pd.DataFrame, params: StrategyParams, execution: ExecutionParams,
+                   risk: RiskParams) -> MarketOutcome | None:
+    if len(df) < params.warmup_bars + 50:
+        return None
+    result = run_backtest(df, params, research_risk(risk), 10_000.0, execution)
+    index = result.equity.index
+    cutoff = index[0] + (index[-1] - index[0]) * STUDY_SHARE
+    test_start = index[0] + (index[-1] - index[0]) * (1 - TEST_SHARE)
+    in_valid = [t for t in result.trades if cutoff <= t.entry_time < test_start]
+    window = (index >= cutoff) & (index < test_start)
+    equity = result.equity[window]
+    closes = df["close"][(df.index >= cutoff) & (df.index < test_start)]
+    enough = len(equity) > 1
+    return MarketOutcome(
+        study=[100 * t.return_pct for t in result.trades if t.entry_time < cutoff],
+        valid=[100 * t.return_pct for t in in_valid],
+        test=[100 * t.return_pct for t in result.trades if t.entry_time >= test_start],
+        gross=[100 * t.gross_return for t in in_valid],
+        strategy_return=float(equity.iloc[-1] / equity.iloc[0] - 1) if enough else None,
+        buy_hold_return=float(closes.iloc[-1] / closes.iloc[0] - 1) if enough else None,
+    )
+
+
+def combine(name: str, timeframe: str, outcomes: list[MarketOutcome | None], n_tests: int) -> LabRow:
+    """Une ligne du labo : les trades de tous les marchés réunis, dans l'ordre des marchés."""
     study, valid, test, gross, strategy_returns, buy_hold, per_market = [], [], [], [], [], [], []
-    for df in datasets.values():
-        if len(df) < params.warmup_bars + 50:
+    for o in outcomes:
+        if o is None:
             continue
-        result = run_backtest(df, params, research_risk(risk), 10_000.0, execution)
-        index = result.equity.index
-        cutoff = index[0] + (index[-1] - index[0]) * STUDY_SHARE
-        test_start = index[0] + (index[-1] - index[0]) * (1 - TEST_SHARE)
-        in_valid = [t for t in result.trades if cutoff <= t.entry_time < test_start]
-        market_valid = [100 * t.return_pct for t in in_valid]
-        study += [100 * t.return_pct for t in result.trades if t.entry_time < cutoff]
-        valid += market_valid
-        test += [100 * t.return_pct for t in result.trades if t.entry_time >= test_start]
-        gross += [100 * t.gross_return for t in in_valid]
-        window = (index >= cutoff) & (index < test_start)
-        equity = result.equity[window]
-        closes = df["close"][(df.index >= cutoff) & (df.index < test_start)]
-        if len(equity) > 1:
-            strategy_returns.append(equity.iloc[-1] / equity.iloc[0] - 1)
-            buy_hold.append(closes.iloc[-1] / closes.iloc[0] - 1)
-        if len(market_valid) >= MIN_MARKET_TRADES:
-            per_market.append(np.mean(market_valid))
+        study += o.study
+        valid += o.valid
+        test += o.test
+        gross += o.gross
+        if o.strategy_return is not None:
+            strategy_returns.append(o.strategy_return)
+            buy_hold.append(o.buy_hold_return)
+        if len(o.valid) >= MIN_MARKET_TRADES:
+            per_market.append(np.mean(o.valid))
     if len(valid) >= 2:
         ci_low, ci_high = (float(q) for q in np.quantile(bootstrap_means(np.array(valid), n_resamples=10_000), [0.025, 0.975]))
     else:
@@ -213,17 +238,61 @@ def evaluate_variant(
     )
 
 
+def evaluate_variant(
+    name: str,
+    params: StrategyParams,
+    timeframe: str,
+    datasets: dict[str, pd.DataFrame],
+    execution: ExecutionParams,
+    risk: RiskParams,
+    n_tests: int,
+) -> LabRow:
+    return combine(name, timeframe, [market_outcome(df, params, execution, risk) for df in datasets.values()], n_tests)
+
+
+def _market_job(job: tuple) -> dict[str, MarketOutcome | None]:
+    """Toutes les variantes sur un marché : la tâche envoyée à chaque cœur du processeur."""
+    df, variants, execution, risk = job
+    return {name: market_outcome(df, params, execution, risk) for name, params in variants.items()}
+
+
+def default_workers() -> int:
+    return max(1, (os.cpu_count() or 2) - 1)  # un cœur reste libre pour que l'ordinateur réponde
+
+
 def run_lab(
     datasets_by_timeframe: dict[str, dict[str, pd.DataFrame]],
     execution: ExecutionParams,
     risk: RiskParams,
     variants: dict[str, StrategyParams] = VARIANTS,
+    workers: int | None = None,
 ) -> list[LabRow]:
+    """Chaque (unité, marché) est calculé à part, sur plusieurs cœurs si possible : mêmes résultats qu'en série."""
     n_tests = len(variants) * len(datasets_by_timeframe)
+    jobs = [(tf, market) for tf, group in datasets_by_timeframe.items() for market in group]
+    workers = default_workers() if workers is None else max(1, workers)
+    outcomes: dict[tuple[str, str], dict] = {}
+    if workers > 1 and len(jobs) > 1:
+        try:
+            with ProcessPoolExecutor(max_workers=min(workers, len(jobs))) as pool:
+                futures = {
+                    pool.submit(_market_job, (datasets_by_timeframe[tf][m], variants, execution, risk)): (tf, m)
+                    for tf, m in jobs
+                }
+                for done, future in enumerate(as_completed(futures), start=1):
+                    outcomes[futures[future]] = future.result()
+                    log.info("Labo : %d/%d marchés calculés (%d cœurs)", done, len(jobs), min(workers, len(jobs)))
+        except (OSError, RuntimeError, BrokenProcessPool, pickle.PicklingError) as exc:
+            log.warning("Calcul en parallèle impossible (%s) : le labo continue sur un seul cœur.", exc)
+            outcomes = {}
+    for done, (tf, m) in enumerate(jobs, start=1):
+        if (tf, m) not in outcomes:
+            outcomes[(tf, m)] = _market_job((datasets_by_timeframe[tf][m], variants, execution, risk))
+            log.info("Labo : %d/%d marchés calculés", done, len(jobs))
     rows = [
-        evaluate_variant(name, params, tf, datasets, execution, risk, n_tests)
-        for tf, datasets in datasets_by_timeframe.items()
-        for name, params in variants.items()
+        combine(name, tf, [outcomes[(tf, m)][name] for m in datasets_by_timeframe[tf]], n_tests)
+        for tf in datasets_by_timeframe
+        for name in variants
     ]
     return sorted(rows, key=lambda r: -r.expectancy_pct if not math.isnan(r.expectancy_pct) else math.inf)
 

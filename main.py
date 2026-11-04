@@ -5,6 +5,7 @@ import argparse
 import json
 import logging
 import math
+import multiprocessing
 import os
 import sys
 import time
@@ -184,7 +185,7 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
     execution = replace(s.execution, order_type="limit") if args.ordres_limites else s.execution
     log.info("Laboratoire : %d variantes × %d unités de temps sur %d marchés, %s", len(variants), len(datasets),
              len(markets), describe_execution(execution))
-    rows = run_lab(datasets, execution, s.risk, variants)
+    rows = run_lab(datasets, execution, s.risk, variants, workers=args.coeurs)
     table, verdict = format_lab(rows), overall_lab_verdict(rows)
     print(f"\n=== Laboratoire de stratégies : {', '.join(markets)} ===")
     print(table)
@@ -491,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="simuler des ordres limites (frais maker, sans écart ni glissement à l'entrée)")
     lb.add_argument("--combinaisons", action="store_true",
                     help="ajouter les combinaisons court terme (filtres de volatilité et de volume)")
+    lb.add_argument("--coeurs", type=int, default=None,
+                    help="cœurs du processeur à utiliser (par défaut : tous sauf un)")
     lb.add_argument("--resultats", default=LAB_FILE,
                     help="fichier des résultats dans data (le court terme a le sien pour ne pas écraser le long terme)")
     tn = sub.add_parser("tournoi", help="faire s'affronter en argent fictif les stratégies retenues par le labo")
@@ -553,4 +556,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()  # version Windows sans Python : le labo lance plusieurs processus
     sys.exit(main())

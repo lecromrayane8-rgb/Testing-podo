@@ -160,7 +160,8 @@ python main.py labo                       # ou « 6 - Laboratoire de strategies.
 python main.py labo --csv-dir actions     # + des actions : CSV quotidiens Date,Open,High,Low,Close
 ```
 
-Le laboratoire essaie 24 variantes des huit familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
+Le laboratoire calcule sur tous les cœurs du processeur sauf un (`--coeurs N` pour choisir).
+Il essaie 24 variantes des huit familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
 l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour), soit 96
 combinaisons. Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la chance :
 

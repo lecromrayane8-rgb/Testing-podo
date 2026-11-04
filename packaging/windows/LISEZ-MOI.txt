@@ -43,6 +43,9 @@ CE QUE FAIT CHAQUE FICHIER
     10 secondes. Aucun compte nécessaire.
 Modifier les reglages : ouvre le fichier .env dans le Bloc-notes (stratégie, bots, mode, clés...).
 
+Les labos utilisent tous les cœurs du processeur sauf un : bien plus rapides qu'avant, mais
+l'ordinateur peut ventiler fort pendant le calcul.
+
 LIRE LE TABLEAU DU LABO
 - Avant frais : ce que la stratégie capte sur le prix. Après frais : ce qui reste, frais et
   glissement compris. L'écart entre les deux est le coût d'un aller-retour (environ 0,3 %).

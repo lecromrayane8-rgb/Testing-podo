@@ -45,6 +45,10 @@ jobs:
           python packaging/sample_data.py sample.csv
           .\dist\tradingbot\tradingbot.exe --help
           .\dist\tradingbot\tradingbot.exe backtest --csv sample.csv
+          New-Item -ItemType Directory samples | Out-Null
+          Copy-Item sample.csv samples\a.csv
+          Copy-Item sample.csv samples\b.csv
+          .\dist\tradingbot\tradingbot.exe labo --symbols "," --timeframes "," --csv-dir samples --coeurs 2
 
       - name: Assembler le dossier
         run: |

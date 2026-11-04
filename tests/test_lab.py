@@ -167,3 +167,23 @@ def test_lab_shows_results_before_and_after_costs():
     row = rows[0]
     assert row.gross_expectancy_pct - row.expectancy_pct == pytest.approx(0.3, abs=0.02)  # aller-retour ~0,3 %
     assert "Avant frais" in format_lab(rows)
+
+
+def test_lab_on_several_cores_gives_exactly_the_sequential_results():
+    datasets = {"1h": {"A": walk(11), "B": walk(12)}, "4h": {"A": walk(13, n=1500)}}
+    variants = {"Cassure": FAST, "Retour": StrategyParams(trend_period=50, atr_period=5)}
+    alone = run_lab(datasets, ExecutionParams(), RiskParams(), variants, workers=1)
+    shared = run_lab(datasets, ExecutionParams(), RiskParams(), variants, workers=3)
+    assert [lab.asdict(r) for r in shared] == [lab.asdict(r) for r in alone]
+    assert len(alone) == 4
+
+
+def test_lab_falls_back_to_one_core_when_parallel_runs_fail(monkeypatch, caplog):
+    def broken(*args, **kwargs):
+        raise OSError("processus refusés par l'antivirus")
+
+    monkeypatch.setattr(lab, "ProcessPoolExecutor", broken)
+    datasets = {"1h": {"A": walk(14), "B": walk(15)}}
+    rows = run_lab(datasets, ExecutionParams(), RiskParams(), {"Cassure": FAST}, workers=4)
+    assert len(rows) == 1 and rows[0].trades > 0
+    assert "un seul cœur" in caplog.text

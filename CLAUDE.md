@@ -34,7 +34,8 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   Études sans garde-fous live ni élimination (`research_risk`). Pas de levier dans le labo (choix de l'utilisateur,
   à revoir). `--scanner N` / `--memecoins` ajoutent des cryptos ; sous 15 min, historique plafonné (60 j en 1m).
   `--combinaisons` ajoute `COMBOS` (17 variantes avec filtres, seuils fixés d'avance) ;
-  `ALL_VARIANTS` sert à retrouver une variante par son nom. Le labo affiche l'espérance avant frais
+  `ALL_VARIANTS` sert à retrouver une variante par son nom. `run_lab` répartit le calcul par (unité, marché) sur plusieurs
+  cœurs (`--coeurs`, repli en série si le parallèle échoue ; `multiprocessing.freeze_support()` dans `main.py`). Le labo affiche l'espérance avant frais
   (`gross_expectancy_pct`) et `cost_diagnosis` dit si ce sont les frais qui font perdre.
 - `tradingbot/prices.py` + commande `prix` (lanceur 11) : prix publics de plusieurs plateformes côte à côte (USDT,
   sinon USDC, sinon USD), écart entre elles, cryptos agitées ; une plateforme en panne n'arrête pas les autres.
