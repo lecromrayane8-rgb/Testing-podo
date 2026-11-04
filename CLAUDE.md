@@ -70,6 +70,10 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - Les sessions cloud n'accèdent pas aux plateformes d'échange (réseau bloqué). Les vraies données s'obtiennent
   sur l'ordinateur de l'utilisateur : version Windows, ou Remote Control vers un dossier de son PC.
 - Branche de travail : `claude/trading-bot`.
+- Plateforme (recherche du 04/11/2026, presse de fin juin 2026, statut actuel non confirmé) : Binance n'avait pas
+  l'agrément MiCA au 30/06/2026 et a arrêté le trading pour les clients français (retraits seulement). En paper, ses
+  prix publics restent utilisables. Pour testnet/réel, viser une plateforme agréée MiCA (Coinbase, Kraken, OKX,
+  Bybit EU, Bitpanda...) et régler FEE_RATE / MAKER_FEE_RATE sur ses vrais frais avant de relancer le labo.
 
 ## État actuel
 

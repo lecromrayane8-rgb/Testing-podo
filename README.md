@@ -322,7 +322,10 @@ Ne le fais que si le backtest **et** le testnet montrent une espérance positive
    ```
 3. `python main.py check` puis `python main.py run`.
 
-Vérifie que la plateforme est autorisée dans ton pays (en France : registre de l'AMF / agrément MiCA) et
+En France, depuis le 1er juillet 2026, seules les plateformes agréées MiCA peuvent proposer leurs services ;
+d'après la presse, Binance ne l'était pas à cette date et a arrêté le trading pour ses clients français. Le bot
+n'est lié à aucune plateforme (`EXCHANGE=okx`, `kraken`, `coinbase`...) : en argent fictif, il lit seulement les
+prix publics. Vérifie que la plateforme est autorisée dans ton pays (en France : registre de l'AMF / agrément MiCA) et
 renseigne-toi sur la fiscalité de tes plus-values.
 
 ## Journal Obsidian (la mémoire du bot)
