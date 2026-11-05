@@ -1,6 +1,6 @@
 import pytest
 
-from tradingbot.radar import Radar
+from tradingbot.radar import Move, Radar
 
 
 def markets(*symbols):
@@ -65,3 +65,49 @@ def test_a_network_gap_never_turns_into_a_fake_one_minute_move():
     assert radar.moves(window=60)[0].changes == {60: None, 300: None, 900: None}
     radar.update(MARKETS, {"PEPE/USDT": ticker(1.2)}, 2_000.0)
     assert len(radar.history) == 1  # les relevés trop vieux sont oubliés
+
+
+def test_light_price_updates_follow_the_pairs_of_the_last_full_request():
+    radar = Radar()
+    radar.update_info(MARKETS, {"BTC/USDT": ticker(68_000), "PEPE/USDT": ticker(1.0, change=12.0),
+                                "TINY/USDT": ticker(2.0, volume=1e5)})
+    assert radar.add_prices({"BTC/USDT": 68_100.0, "PEPE/USDT": 1.01, "TINY/USDT": 2.2, "ETH/BTC": 0.05}, 0.0) == 2
+    assert set(radar.latest) == {"BTC/USDT", "PEPE/USDT"}  # seulement les paires assez échangées
+    assert radar.info["PEPE/USDT"] == (1e7, 0.12)
+
+
+def test_the_journal_records_each_big_rise_and_what_happened_next(tmp_path):
+    from tradingbot.radar import MoveJournal, journal_stats
+    journal = MoveJournal(tmp_path / "mouvements.jsonl")
+    radar = Radar()
+    t0 = 1_000.0
+    prices = {"BTC/USDT": 68_000.0, "PEPE/USDT": 1.0}
+    finished = []
+    for i in range(0, 420):  # un relevé toutes les 10 s pendant plus d'une heure
+        now = t0 + 10 * i
+        if i == 50:
+            prices["PEPE/USDT"] = 1.03  # +3 % d'un coup : un gros mouvement sur 1, 5 et 15 min
+        if i == 60:
+            prices["PEPE/USDT"] = 1.0145  # puis il retombe en partie
+        radar.update(MARKETS, {s: ticker(p) for s, p in prices.items()}, now)
+        finished += journal.observe(radar.moves(top=None), radar.latest, now)
+    assert len(finished) == 1  # une envolée = un seul mouvement (pas un par relevé)
+    sighting = finished[0]
+    assert sighting.symbol == "PEPE/USDT" and sighting.window == 60 and sighting.price == 1.03
+    assert sighting.after[300] == pytest.approx(1.0145 / 1.03 - 1) and sighting.after[3600] is not None
+    saved = journal.records()
+    assert len(saved) == 1 and saved[0]["after"]["900"] == pytest.approx(1.0145 / 1.03 - 1)
+    stats = journal_stats(saved, cost=0.003)
+    one_minute = stats[0]
+    assert one_minute["window"] == 60 and one_minute["count"] == 1
+    assert one_minute["after"]["300"]["mean"] == pytest.approx(1.0145 / 1.03 - 1 - 0.003)
+    assert one_minute["after"]["300"]["winners"] == 0.0 and stats[1]["count"] == 0
+
+
+def test_a_missed_measurement_is_left_out_rather_than_guessed(tmp_path):
+    from tradingbot.radar import MoveJournal
+    journal = MoveJournal(None)
+    move = Move("PEPE/USDT", 1.03, {60: 0.03, 300: 0.03, 900: 0.03}, None, 1e7)
+    journal.observe([move], {"PEPE/USDT": 1.03}, 0.0)
+    done = journal.observe([], {"PEPE/USDT": 1.05}, 4_000.0)  # le site était fermé pendant plus d'une heure
+    assert len(done) == 1 and done[0].after == {300: None, 900: None, 3600: None}

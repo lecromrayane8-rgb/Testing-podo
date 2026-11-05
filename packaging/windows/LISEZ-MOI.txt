@@ -19,9 +19,18 @@ LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordina
   PC), puis, tout seul, les deux tournois en argent fictif avec les stratégies retenues. Lance-le le
   soir et laisse le PC allumé.
 - Radar des mouvements : toutes les cryptos de Binance cotées en USDT et échangées à plus de 5 M$ par
-  jour, et celles qui bougent le plus sur 1, 5 et 15 minutes, relevées toutes les 10 secondes. Le radar
-  ne passe aucun ordre : un mouvement affiché a déjà eu lieu. Le labo court terme teste s'il est
-  rentable de sauter dessus (stratégies « Impulsion »), frais compris.
+  jour, et celles qui bougent le plus sur 1, 5 et 15 minutes, relevées toutes les 10 secondes dès que le
+  site est ouvert. Le radar ne passe aucun ordre : un mouvement affiché a déjà eu lieu.
+  Touche le nom d'une crypto : son ÉTUDE reprend 30 jours de bougies de 1 minute, retrouve les mêmes
+  hausses dans le passé, montre la courbe du prix dans l'heure qui a suivi, teste trois façons de sortir
+  (rapide, normale, laisser courir) et dit franchement si c'est bon, mauvais ou rien de net, avec ce que
+  coûterait le stop. Le bouton « Essayer » achète alors en argent fictif.
+  En dessous, le journal des mouvements jaunes : ce que chaque gros mouvement à la hausse a donné 5 min,
+  15 min et 1 h après, frais compris. C'est un test en direct, qui grandit chaque jour.
+- Mes essais : ton compte fictif de 1000 USDT pour essayer les opportunités du radar. Achat au prix réel,
+  frais compris ; un essai risque environ 1 % du compte si son stop est touché (le montant est affiché
+  avant de confirmer) ; il se revend tout seul (stop, essoufflement, temps maximum) ou à la main. Les
+  résultats, la courbe et l'historique de tes essais sont là.
 - Prix : les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte, et l'écart entre eux.
 - Tableau de bord : tes bots, les labos et les deux tournois.
 - Journal : ce que disent les commandes lancées depuis le site, en direct.

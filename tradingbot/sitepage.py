@@ -76,6 +76,33 @@ tr.strong td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
   .tabs .long, .win:not(.focus), .vol { display: none; }
   #view-radar th, #view-radar td { padding: 8px 8px; }
 }
+.link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--text-primary);
+  text-decoration: underline; text-decoration-color: var(--accent); text-underline-offset: 3px; cursor: pointer; }
+.link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+dialog.sheet { width: min(920px, calc(100vw - 24px)); max-height: calc(100vh - 24px); padding: 18px 20px;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--page); color: var(--text-primary); }
+dialog.sheet::backdrop { background: rgba(0, 0, 0, 0.6); }
+@media (max-width: 600px) { dialog.sheet { padding: 14px 12px; } }
+.sheet-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.sheet-head h2 { margin: 2px 0 0; font-size: 20px; }
+.verdict-box { margin: 12px 0; padding: 12px 14px; border-radius: 10px; background: var(--surface-1);
+  border: 1px solid var(--border); border-left: 4px solid var(--warning); }
+.verdict-box p { margin: 0; }
+.verdict-box .verdict-label { font-weight: 700; margin-bottom: 4px; }
+.verdict-box.v-bad { border-left-color: var(--critical); }
+.verdict-box.v-good { border-left-color: var(--good); }
+.mini-chart { position: relative; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+  padding: 8px; margin: 8px 0 4px; }
+.mini-chart svg { display: block; width: 100%; height: auto; font-size: 12px; outline-offset: 4px; }
+.band { fill: var(--series-1); opacity: 0.14; }
+.trial-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 760px) { .trial-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.small-print { color: var(--text-secondary); font-size: 12px; }
+#journal-intro { margin-bottom: 10px; }
+#study-windows button { white-space: nowrap; }
+table.options td:first-child { white-space: normal; min-width: 200px; }
+.option-cards { display: none; gap: 10px; margin-bottom: 8px; }
+@media (max-width: 600px) { .options-wrap, #study-windows .long { display: none; } .option-cards { display: grid; } }
 .frame { display: block; width: 100%; height: 78vh; border: 1px solid var(--border); border-radius: 12px;
   background: var(--page); }
 .form { display: grid; gap: 16px; max-width: 720px; }
@@ -105,6 +132,7 @@ BODY = """
     <a href="#accueil" data-view="accueil">Accueil</a>
     <a href="#radar" data-view="radar">Radar<span class="long"> des mouvements</span></a>
     <a href="#prix" data-view="prix">Prix</a>
+    <a href="#essais" data-view="essais"><span class="long">Mes </span>essais</a>
     <a href="#tableau" data-view="tableau">Tableau<span class="long"> de bord</span></a>
     <a href="#journal" data-view="journal">Journal</a>
     <a href="#reglages" data-view="reglages">Réglages</a>
@@ -133,10 +161,30 @@ BODY = """
       </div>
       <p class="status-line" id="radar-status" aria-live="polite">Démarrage du radar…</p>
       <div class="table-wrap"><table><thead id="radar-head"></thead><tbody id="radar-rows"></tbody></table></div>
-      <p class="note">Barre jaune : gros mouvement (au moins 1 % en 1 min, 2 % en 5 min ou 4 % en 15 min). Un mouvement
-        affiché ici a déjà eu lieu : le labo court terme teste s'il est rentable de sauter dessus (stratégies
-        « Impulsion »), frais compris. Le radar ne passe aucun ordre.</p>
+      <p class="note">Barre jaune : gros mouvement (au moins 1 % en 1 min, 2 % en 5 min ou 4 % en 15 min). Touche le nom
+        d'une crypto pour étudier son mouvement sur 30 jours d'historique et l'essayer en argent fictif. Un mouvement
+        affiché ici a déjà eu lieu ; le radar ne passe aucun ordre.</p>
     </section>
+    <section>
+      <h2>Ce que les mouvements jaunes ont donné ensuite</h2>
+      <p class="meta" id="journal-intro"></p>
+      <div class="table-wrap"><table><thead><tr><th>Mouvement</th><th class="n">Vus</th><th class="n">5 min après</th>
+        <th class="n">15 min après</th><th class="n">1 h après</th></tr></thead><tbody id="journal-rows"></tbody></table></div>
+      <p class="note">Chaque case : ce qu'aurait rapporté, en moyenne, un achat juste après chaque gros mouvement à la
+        hausse, frais et glissement compris, puis la part des cas gagnants. Relevé en direct, sans jamais regarder le
+        futur : un vrai test, qui grandit chaque jour où le site reste ouvert.</p>
+    </section>
+  </div>
+  <div id="view-essais" class="view" hidden>
+    <h1>Mes essais en argent fictif</h1>
+    <p class="meta">Essaie les opportunités du radar avec un compte fictif : achat au prix réel du moment, frais et
+      glissement compris, puis sortie automatique selon l'option choisie (stop, essoufflement, temps maximum). Rien ne
+      part jamais sur une vraie plateforme.</p>
+    <section><div class="trial-kpis" id="trial-kpis"></div></section>
+    <section><h2>En cours</h2><div id="trial-open"></div></section>
+    <section><h2>Le compte fictif après chaque essai</h2><div id="trial-curve"></div></section>
+    <section><h2>Essais terminés</h2><div id="trial-done"></div></section>
+    <div class="row"><button class="btn btn-stop" id="trial-reset" type="button">Remettre le compte fictif à zéro</button></div>
   </div>
   <div id="view-prix" class="view" hidden>
     <h1>Prix en direct</h1>
@@ -186,6 +234,14 @@ BODY = """
   <footer><p class="note">Les performances passées ne garantissent rien. Le site ne passe jamais d'ordre en argent
     réel. Garde la fenêtre noire du bot ouverte : la fermer arrête tout ce que le site a lancé.</p></footer>
 </main>
+<dialog id="study" class="sheet" aria-labelledby="study-title">
+  <div class="sheet-head">
+    <div><p class="eyebrow">Étude d'une opportunité</p><h2 id="study-title">…</h2></div>
+    <button class="btn" type="button" id="study-close">Fermer</button>
+  </div>
+  <div class="controls"><div class="seg" role="group" aria-label="Mouvement étudié" id="study-windows"></div></div>
+  <div id="study-body" aria-live="polite"></div>
+</dialog>
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 """
 
@@ -206,7 +262,7 @@ JS = r"""
   }
   const HEADERS = {'Content-Type': 'application/json', 'X-Demande': 'site-du-bot'};
   async function getJSON(path) {
-    const r = await fetch(path, {cache: 'no-store'});
+    const r = await fetch(path, {cache: 'no-store', headers: {'X-Demande': 'site-du-bot'}});
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ('Erreur ' + r.status));
     return data;
@@ -260,7 +316,7 @@ JS = r"""
   function cls(v) { return v > 0 ? 'up' : v < 0 ? 'down' : ''; }
 
   // --- navigation ---
-  const VIEWS = ['accueil', 'radar', 'prix', 'tableau', 'journal', 'reglages'];
+  const VIEWS = ['accueil', 'radar', 'prix', 'essais', 'tableau', 'journal', 'reglages'];
   let view = 'accueil';
   function show(name) {
     view = VIEWS.includes(name) ? name : 'accueil';
@@ -270,7 +326,7 @@ JS = r"""
     });
     if (view === 'tableau') showBoard(currentBoard);
     if (view === 'reglages') loadSettings();
-    last.radar = last.prices = last.journal = 0;
+    last.radar = last.prices = last.journal = last.trials = 0;
   }
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
 
@@ -449,7 +505,9 @@ JS = r"""
       el('th', {class: 'n', text: '24 h'}), el('th', {class: 'n vol', text: 'Volume 24 h'})));
     const body = $('#radar-rows'); body.replaceChildren();
     for (const m of data.moves) {
-      const cells = [el('td', {class: 'pair', text: m.symbol.split('/')[0]}), el('td', {class: 'n', text: price(m.last)})];
+      const name = el('button', {class: 'link', type: 'button', text: m.symbol.split('/')[0],
+        'aria-label': 'Étudier ' + m.symbol, onclick: () => openStudy(m.symbol, m.rise || data.window, m)});
+      const cells = [el('td', {class: 'pair'}, name), el('td', {class: 'n', text: price(m.last)})];
       for (const w of ['60', '300', '900']) {
         const v = m.changes[w];
         cells.push(el('td', {class: 'n win ' + cls(v) + (Number(w) === data.window ? ' focus' : ''), text: pct(v)}));
@@ -460,7 +518,313 @@ JS = r"""
     }
     if (!data.moves.length) body.append(el('tr', {}, el('td', {colspan: '7', class: 'muted',
       text: data.error ? 'Radar indisponible : ' + data.error : 'Premiers relevés en cours…'})));
+    renderJournal(data.journal, data.pending);
   }
+  function renderJournal(j, pending) {
+    if (!j) return;
+    $('#journal-intro').textContent = j.count ? j.count + ' gros mouvements jugés depuis le ' + when(j.since) +
+      (pending ? ' · ' + pending + ' en cours d\'observation' : '') + '.' :
+      'Le journal se remplit : chaque gros mouvement à la hausse est jugé 5 min, 15 min et 1 h après. ' +
+      (pending ? pending + ' en cours d\'observation. ' : '') + 'Reviens dans une heure.';
+    const body = $('#journal-rows'); body.replaceChildren();
+    for (const row of j.rows) {
+      const cells = [el('td', {text: 'Hausse de ' + pct(row.threshold, 0).replace('+', '') + ' en ' + WINDOW_LABELS[row.window]}),
+        el('td', {class: 'n', text: String(row.count)})];
+      for (const h of ['300', '900', '3600']) {
+        const c = row.after[h];
+        cells.push(el('td', {class: 'n'}, c ? el('strong', {class: cls(c.mean), text: pct(c.mean)}) : '—',
+          c ? el('span', {class: 'small-print', text: ' · ' + Math.round(100 * c.winners) + ' % gagnants'}) : null));
+      }
+      body.append(el('tr', {}, ...cells));
+    }
+  }
+
+  // --- graphiques : une série en ligne de 2 px, sa bande pâle, une ligne de référence nommée, une info-bulle ---
+  const SVG = 'http://www.w3.org/2000/svg';
+  function svg(tag, attrs, ...children) {
+    const node = document.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs || {})) if (v !== null && v !== undefined) node.setAttribute(k, v);
+    for (const c of children) if (c !== null && c !== undefined) node.append(c);
+    return node;
+  }
+  function niceTicks(lo, hi, count) {
+    const raw = (hi - lo || Math.abs(hi) || 1) / Math.max(1, count);
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 2.5, 5, 10].map(m => m * mag).find(st => st >= raw);
+    const ticks = [];
+    for (let t = Math.ceil(lo / step) * step; t <= hi + step * 1e-9; t += step) ticks.push(Math.round(t / step) * step);
+    return ticks;
+  }
+  function lineChart(o) {
+    const W = Math.max(280, Math.round(o.width || 640)), small = W < 520;
+    const H = small ? 220 : 260, ML = small ? 46 : 58, MR = small ? 76 : 170, MT = 14, MB = 28;
+    const ys = o.ys.concat(o.band ? o.band[0].concat(o.band[1]) : [], o.refs.map(r => r.y));
+    let lo = Math.min(...ys), hi = Math.max(...ys);
+    const pad = (hi - lo) * 0.08 || Math.abs(hi) * 0.1 || 0.001;
+    lo -= pad; hi += pad;
+    const n = o.xs.length - 1, x0 = o.xs[0], x1 = o.xs[n];
+    const X = x => ML + (x1 === x0 ? 0.5 : (x - x0) / (x1 - x0)) * (W - ML - MR);
+    const Y = y => MT + (hi - y) / (hi - lo) * (H - MT - MB);
+    const root = svg('svg', {viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': o.label, tabindex: '0'});
+    const ticks = niceTicks(lo, hi, 6), step = ticks.length > 1 ? ticks[1] - ticks[0] : 1;
+    for (const t of ticks) {
+      root.append(svg('line', {x1: ML, x2: W - MR, y1: Y(t), y2: Y(t), class: Math.abs(t) < 1e-12 ? 'zero' : 'grid'}));
+      root.append(svg('text', {x: ML - 8, y: Y(t) + 4, 'text-anchor': 'end', class: 'tick'}, o.yTick(t, step)));
+    }
+    for (const t of (small && o.xTicksSmall) || o.xTicks) {
+      root.append(svg('text', {x: X(t), y: H - 8, 'text-anchor': 'middle', class: 'tick'}, o.xTick(t)));
+    }
+    if (o.band) {
+      const top = o.xs.map((x, i) => X(x) + ',' + Y(o.band[1][i]));
+      const bottom = o.xs.map((x, i) => X(x) + ',' + Y(o.band[0][i])).reverse();
+      root.append(svg('polygon', {points: top.concat(bottom).join(' '), class: 'band'}));
+    }
+    const endY = Y(o.ys[n]);
+    for (const r of o.refs) {
+      const y = Y(r.y);
+      root.append(svg('line', {x1: ML, x2: W - MR, y1: y, y2: y, class: 'cost'}));
+      const nudge = Math.abs(y - endY) < 16 ? (y < endY ? -8 : 8) : 0;  // l'étiquette ne recouvre pas celle de la ligne
+      root.append(svg('text', {x: W - MR + 8, y: y + 4 + nudge, class: 'cost-label'}, small ? r.short : r.label));
+    }
+    root.append(svg('polyline', {points: o.xs.map((x, i) => X(x) + ',' + Y(o.ys[i])).join(' '), class: 'line',
+      stroke: 'var(--series-1)'}));
+    root.append(svg('circle', {cx: X(o.xs[n]), cy: endY, r: 4, fill: 'var(--series-1)', class: 'end'}));
+    const clash = o.refs.some(r => Math.abs(Y(r.y) - endY) < 16 && Y(r.y) >= endY);
+    root.append(svg('text', {x: W - MR + 8, y: endY + 4 + (o.refs.length && Math.abs(Y(o.refs[0].y) - endY) < 16 ?
+      (clash ? -8 : 8) : 0), class: 'end-label'}, small && o.endShort ? o.endShort : o.endLabel));
+    const cross = svg('line', {y1: MT, y2: H - MB, class: 'crosshair'});
+    root.append(cross);
+    const box = el('div', {class: 'mini-chart'}), tip = el('div', {class: 'tip', hidden: true});
+    box.append(root, tip);
+    let index = n;
+    function show(i) {
+      index = Math.max(0, Math.min(n, i));
+      const x = X(o.xs[index]);
+      cross.setAttribute('x1', x); cross.setAttribute('x2', x); cross.style.visibility = 'visible';
+      tip.replaceChildren(...o.tip(index).map((line, k) => el('div', {class: k ? 'tip-row' : 'tip-date', text: line})));
+      tip.hidden = false;
+      const r = root.getBoundingClientRect(), host = box.getBoundingClientRect();
+      const left = r.left - host.left + x / W * r.width;
+      tip.style.left = (left + tip.offsetWidth + 16 > host.width ? Math.max(4, left - tip.offsetWidth - 12) : left + 12) + 'px';
+      tip.style.top = '8px';
+    }
+    function hide() { cross.style.visibility = 'hidden'; tip.hidden = true; }
+    root.addEventListener('pointermove', e => {
+      const r = root.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W;
+      let best = 0;
+      for (let i = 1; i <= n; i++) if (Math.abs(X(o.xs[i]) - px) < Math.abs(X(o.xs[best]) - px)) best = i;
+      show(best);
+    });
+    root.addEventListener('pointerleave', hide);
+    root.addEventListener('focus', () => show(index));
+    root.addEventListener('blur', hide);
+    root.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft') { show(index - 1); e.preventDefault(); }
+      if (e.key === 'ArrowRight') { show(index + 1); e.preventDefault(); }
+    });
+    return box;
+  }
+
+  // --- étude d'une opportunité (fiche ouverte depuis le radar) ---
+  const study = $('#study');
+  let studySymbol = null, studyWindow = 300, studyTimer = null, studyTicket = 0, studyMove = null;
+  const VERDICTS = {bad: ['✕', 'Mauvais signe'], good: ['✓', 'Une piste, pas une preuve'], neutral: ['•', 'Rien de net'],
+    few: ['…', 'Trop peu de cas']};
+  function studyControls() {
+    const box = $('#study-windows'); box.replaceChildren();
+    for (const w of [60, 300, 900]) {
+      box.append(el('button', {type: 'button', 'aria-pressed': String(w === studyWindow),
+        onclick: () => { studyWindow = w; studyControls(); loadStudy(); }},
+        el('span', {class: 'long', text: pct(STRONG[w], 0) + ' en '}), WINDOW_LABELS[w]));
+    }
+  }
+  const STRONG = {60: 0.01, 300: 0.02, 900: 0.04};
+  function openStudy(symbol, window, move) {
+    studySymbol = symbol; studyWindow = window; studyMove = move || null;
+    const now = move && move.changes[String(window)];
+    $('#study-title').textContent = symbol.split('/')[0] + (now !== null && now !== undefined ?
+      ' · ' + pct(now) + ' en ' + WINDOW_LABELS[window] : '');
+    studyControls();
+    if (!study.open) study.showModal();
+    loadStudy();
+  }
+  $('#study-close').addEventListener('click', () => study.close());
+  study.addEventListener('close', () => { clearTimeout(studyTimer); studyTicket++; });
+  function loadStudy() {
+    clearTimeout(studyTimer);
+    $('#study-body').replaceChildren(el('p', {class: 'muted', text: 'Étude en cours : 30 jours de bougies de 1 minute ' +
+      'de ' + studySymbol + ', les mêmes hausses dans le passé, et trois façons d\'en sortir testées… (10 à 30 s la ' +
+      'première fois)'}));
+    pollStudy(++studyTicket);
+  }
+  async function pollStudy(ticket) {
+    if (!study.open || ticket !== studyTicket) return;
+    let data;
+    try {
+      data = await getJSON('/api/etude?symbole=' + encodeURIComponent(studySymbol) + '&fenetre=' + studyWindow);
+    } catch (e) { if (ticket === studyTicket) renderStudyError(e.message); return; }
+    if (ticket !== studyTicket) return;  // une autre fiche ou une autre fenêtre a été demandée entre-temps
+    if (data.status === 'prêt') renderStudy(data.result);
+    else if (data.status === 'erreur') renderStudyError(data.error);
+    else {
+      if (data.message) $('#study-body').firstChild.textContent = data.message;
+      studyTimer = setTimeout(() => pollStudy(ticket), 1500);
+    }
+  }
+  function renderStudyError(message) {
+    $('#study-body').replaceChildren(el('div', {class: 'verdict-box v-bad'},
+      el('p', {class: 'verdict-label', text: 'Étude impossible'}), el('p', {text: message})));
+  }
+  function renderStudy(r) {
+    const body = $('#study-body'); body.replaceChildren();
+    const now = studyMove && studyMove.changes[String(r.window)];
+    if (now !== null && now !== undefined && now < 0) body.append(el('p', {class: 'warn', text: r.symbol.split('/')[0] +
+      ' baisse en ce moment (' + pct(now) + ') : cette étude porte sur ses hausses passées. Le bot n\'achète qu\'à la ' +
+      'hausse : il ne parie jamais sur une baisse.'}));
+    const [icon, label] = VERDICTS[r.verdict.kind] || ['•', ''];
+    body.append(el('div', {class: 'verdict-box v-' + r.verdict.kind},
+      el('p', {class: 'verdict-label', text: icon + ' ' + label}), el('p', {text: r.verdict.text})));
+    body.append(el('p', {class: 'muted', text: r.events + ' hausses pareilles sur les ' + r.days + ' derniers jours (' +
+      r.bars.toLocaleString('fr-FR') + ' bougies de 1 min). Un aller-retour coûte environ ' + pct(r.cost).replace('+', '') +
+      ' en frais et glissement.'}));
+    if (r.path) {
+      const m = r.path.minutes;
+      body.append(el('h3', {class: 'chart-title', text: 'Ce que le prix a fait dans l\'heure qui a suivi l\'achat'}));
+      body.append(lineChart({
+        width: body.clientWidth - 18, xs: m, ys: r.path.median, band: [r.path.q25, r.path.q75],
+        refs: [{y: r.cost, label: 'frais d\'un aller-retour', short: 'frais'}],
+        xTicks: [1, 15, 30, 45, 60], xTicksSmall: [1, 30, 60], xTick: t => t + ' min',
+        yTick: (t, step) => pct(t, step >= 0.0095 ? 0 : step >= 0.00095 ? 1 : 2),
+        endLabel: 'médiane ' + pct(r.path.median[m.length - 1]), endShort: pct(r.path.median[m.length - 1]),
+        label: 'Variation médiane du prix après ' + r.events + ' hausses pareilles, minute par minute',
+        tip: i => ['après ' + m[i] + ' min', 'médiane ' + pct(r.path.median[i]),
+          'la moitié des cas entre ' + pct(r.path.q25[i]) + ' et ' + pct(r.path.q75[i])],
+      }));
+      body.append(el('p', {class: 'small-print', text: 'Ligne : la médiane des cas, sans aucune sortie. Bande : la moitié ' +
+        'des cas, ceux du milieu. Pour gagner, le prix doit passer au-dessus de la ligne des frais. Les options ci-dessous ' +
+        'sortent plus tôt (stop, essoufflement) : leurs résultats diffèrent de cette courbe.'}));
+    }
+    body.append(el('h3', {class: 'chart-title', text: 'Trois façons de sortir, testées sur le même historique'}));
+    const rows = r.options.map(o => {
+      const risk = riskText(o.plan);
+      const button = el('button', {class: 'btn' + (o.key === 'normale' ? ' btn-primary' : ''), type: 'button',
+        disabled: !o.plan, text: 'Essayer', onclick: () => tryOption(r, o)});
+      return el('tr', {}, el('td', {}, el('strong', {text: o.title}), el('br'), el('span', {class: 'small-print', text: o.description})),
+        el('td', {class: 'n'}, String(o.trades), el('br'), el('span', {class: 'small-print',
+          text: o.winners === null ? '' : Math.round(100 * o.winners) + ' % gagnants'})),
+        el('td', {class: 'n'}, el('strong', {class: cls(o.mean), text: pct(o.mean)}), el('br'),
+          el('span', {class: 'small-print', text: 'avant frais ' + pct(o.gross_mean)})),
+        el('td', {class: 'n ' + cls(o.worst), text: pct(o.worst)}),
+        el('td', {class: 'n', text: risk}), el('td', {}, button));
+    });
+    body.append(el('div', {class: 'option-cards'}, ...r.options.map(o => el('div', {class: 'card'},
+      el('div', {class: 'card-head'}, el('h3', {text: o.title}), el('strong', {class: cls(o.mean), text: pct(o.mean)})),
+      el('p', {class: 'small-print', text: o.description}),
+      el('p', {class: 'muted', text: o.trades + ' trades' + (o.winners === null ? '' : ' · ' + Math.round(100 * o.winners) +
+        ' % gagnants') + ' · avant frais ' + pct(o.gross_mean) + ' · pire ' + pct(o.worst)}),
+      el('p', {class: 'muted', text: 'Si le stop est touché : ' + riskText(o.plan)}),
+      el('div', {class: 'row'}, el('button', {class: 'btn' + (o.key === 'normale' ? ' btn-primary' : ''), type: 'button',
+        disabled: !o.plan, text: 'Essayer en argent fictif', onclick: () => tryOption(r, o)}))))));
+    body.append(el('div', {class: 'table-wrap options-wrap'}, el('table', {class: 'options'},
+      el('thead', {}, el('tr', {}, el('th', {text: 'Option'}), el('th', {class: 'n', text: 'Trades'}),
+        el('th', {class: 'n', text: 'Moyenne par trade'}), el('th', {class: 'n', text: 'Pire trade'}),
+        el('th', {class: 'n', text: 'Si le stop est touché'}), el('th', {text: ''}))),
+      el('tbody', {}, ...rows))));
+    body.append(el('p', {class: 'small-print', text: 'Moyennes par trade sur l\'historique, mêmes règles que le bot en ' +
+      'direct. « Si le stop est touché » : la perte d\'un essai maintenant, sur ton compte fictif. Le passé ne garantit ' +
+      'rien ; un essai se fait en argent fictif, rien ne part sur une vraie plateforme.'}));
+  }
+  function riskText(plan) {
+    return plan ? MINUS + usdt(plan.loss_if_stop) + ' (' + pct(-plan.loss_pct) + ')' : '—';
+  }
+  async function tryOption(r, o) {
+    const p = o.plan;
+    const text = 'Essai en ARGENT FICTIF sur ' + r.symbol + ', ' + o.title.toLowerCase() + '.\n\n' +
+      'Achat d\'environ ' + usdt(p.notional) + ' au prix du moment.\n' +
+      'Stop à ' + price(p.stop) + ' (' + pct(p.stop_pct) + ') : s\'il est touché, tu perds environ ' + usdt(p.loss_if_stop) +
+      ' fictifs (' + pct(p.loss_pct).replace('+', '') + ' du compte).\n' +
+      'Sortie automatique : ' + o.description + '.\n\n' +
+      (o.trades >= 20 ? 'Dans le passé, cette option a donné ' + pct(o.mean) + ' par trade en moyenne après frais (' +
+        o.trades + ' trades).' : 'L\'historique ne dit presque rien de ce mouvement (' + o.trades + ' trades) : c\'est un ' +
+        'essai à l\'aveugle.') + ' Rien ne part sur une vraie plateforme. Lancer l\'essai ?';
+    if (!confirm(text)) return;
+    try {
+      await post('/api/essais/ouvrir', {symbole: r.symbol, fenetre: r.window, option: o.key});
+      study.close();
+      toast('Essai lancé en argent fictif : ' + r.symbol);
+      location.hash = '#essais';
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // --- mes essais ---
+  function usdt(v, signed) {
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    const s = Math.abs(v).toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2}) + ' USDT';
+    return signed ? (v > 0 ? '+' : v < 0 ? MINUS : '') + s : (v < 0 ? MINUS : '') + s;
+  }
+  function tile(label, value, sub, hero) {
+    return el('div', {class: 'tile' + (hero ? ' tile-hero' : '')}, el('p', {class: 'tile-label', text: label}),
+      el('p', {class: 'tile-value', text: value}), el('p', {class: 'tile-sub', text: sub}));
+  }
+  async function refreshTrials() {
+    const d = await getJSON('/api/essais');
+    const st = d.stats;
+    $('#trial-kpis').replaceChildren(
+      tile('Compte fictif', usdt(d.equity), 'départ ' + usdt(d.start) + ' le ' + when(d.since)),
+      tile('Résultat', usdt(d.result, true), pct(d.result_pct)),
+      tile('Essais terminés', String(st.n), d.positions.length + ' en cours (' + d.max_open + ' au plus)'),
+      tile('Gagnants', st.n ? st.winners + ' sur ' + st.n : '—', st.n ? 'en moyenne ' + pct(st.mean) + ' par essai' : 'aucun essai terminé'));
+    const open = $('#trial-open'); open.replaceChildren();
+    if (!d.positions.length) open.append(el('p', {class: 'empty-box', text: 'Aucun essai en cours. Dans le radar, touche le ' +
+      'nom d\'une crypto qui bouge, regarde son étude, puis « Essayer ».'}));
+    else open.append(el('div', {class: 'table-wrap'}, el('table', {},
+      el('thead', {}, el('tr', {}, ...['Crypto', 'Option', 'Achat', 'Prix', 'Résultat', 'Stop', 'Depuis', ''].map((h, i) =>
+        el('th', {class: i >= 2 && i <= 6 ? 'n' : null, text: h})))),
+      el('tbody', {}, ...d.positions.map(p => el('tr', {},
+        el('td', {class: 'pair', text: p.symbol}), el('td', {text: p.option_title}),
+        el('td', {class: 'n', text: price(p.entry)}), el('td', {class: 'n', text: price(p.price)}),
+        el('td', {class: 'n'}, el('strong', {class: cls(p.pnl), text: usdt(p.pnl, true)}),
+          el('span', {class: 'small-print', text: ' ' + pct(p.return)})),
+        el('td', {class: 'n', text: price(p.stop)}),
+        el('td', {class: 'n', text: duration(Math.max(0, Math.round(Date.now() / 1000 - p.opened_ts)))}),
+        el('td', {}, el('button', {class: 'btn', type: 'button', text: 'Vendre', onclick: () => sellTrial(p)}))))))));
+    const curve = $('#trial-curve'); curve.replaceChildren();
+    if (!d.curve.length) curve.append(el('p', {class: 'empty-box', text: 'La courbe apparaît après le premier essai terminé.'}));
+    else {
+      const xs = [0].concat(d.curve.map((_, i) => i + 1)), ys = [d.start].concat(d.curve.map(c => c.equity));
+      const trades = d.trades.slice().reverse();
+      curve.append(lineChart({
+        width: curve.clientWidth - 18, xs: xs, ys: ys, band: null,
+        refs: [{y: d.start, label: 'départ : ' + usdt(d.start), short: 'départ'}],
+        xTicks: [0].concat(niceTicks(1, xs.length - 1, 4).filter(t => t >= 1 && t <= xs.length - 1 && Number.isInteger(t))),
+        xTick: t => t ? 'n° ' + t : 'départ', yTick: t => Math.round(t).toLocaleString('fr-FR'),
+        endLabel: usdt(ys[ys.length - 1]), endShort: Math.round(ys[ys.length - 1]).toLocaleString('fr-FR'),
+        label: 'Compte fictif après chaque essai terminé',
+        tip: i => i ? ['après l\'essai n° ' + i, usdt(ys[i]), trades[i - 1].symbol + ' : ' + usdt(trades[i - 1].pnl, true)] :
+          ['au départ', usdt(ys[0])],
+      }));
+    }
+    const done = $('#trial-done'); done.replaceChildren();
+    if (!d.trades.length) done.append(el('p', {class: 'empty-box', text: 'Aucun essai terminé pour l\'instant.'}));
+    else done.append(el('div', {class: 'table-wrap'}, el('table', {},
+      el('thead', {}, el('tr', {}, ...['Fin', 'Crypto', 'Option', 'Résultat', 'Durée', 'Sortie'].map((h, i) =>
+        el('th', {class: i === 3 || i === 4 ? 'n' : null, text: h})))),
+      el('tbody', {}, ...d.trades.slice(0, 50).map(t => el('tr', {},
+        el('td', {text: when(t.closed)}), el('td', {class: 'pair', text: t.symbol}), el('td', {text: t.option_title}),
+        el('td', {class: 'n'}, el('strong', {class: cls(t.pnl), text: usdt(t.pnl, true)}),
+          el('span', {class: 'small-print', text: ' ' + pct(t.return)})),
+        el('td', {class: 'n', text: duration(Math.round(t.minutes * 60))}), el('td', {text: t.reason_text})))))));
+  }
+  async function sellTrial(p) {
+    if (!confirm('Revendre l\'essai sur ' + p.symbol + ' au prix du moment (argent fictif) ?')) return;
+    try { const r = await post('/api/essais/vendre', {id: p.id}); toast('Vendu : ' + usdt(r.trade.pnl, true)); last.trials = 0; }
+    catch (e) { toast(e.message, true); }
+  }
+  $('#trial-reset').addEventListener('click', async () => {
+    if (!confirm('Remettre le compte fictif à zéro ? Les essais en cours et l\'historique des essais sont effacés.')) return;
+    try { await post('/api/essais/zero'); toast('Compte fictif remis à zéro.'); last.trials = 0; }
+    catch (e) { toast(e.message, true); }
+  });
 
   // --- prix ---
   async function refreshPrices() {
@@ -538,7 +902,7 @@ JS = r"""
   });
 
   // --- rythme : chaque source seulement quand sa page est affichée ---
-  const last = {state: 0, journal: 0, radar: 0, prices: 0};
+  const last = {state: 0, journal: 0, radar: 0, prices: 0, trials: 0};
   const busy = {};
   async function every(name, ms, fn) {
     const now = Date.now();
@@ -554,6 +918,7 @@ JS = r"""
     if (view === 'journal') every('journal', 1500, refreshJournal);
     if (view === 'radar') every('radar', radarReady ? 10000 : 2000, refreshRadar);
     if (view === 'prix') every('prices', pricesReady ? 10000 : 2000, refreshPrices);
+    if (view === 'essais') every('trials', 5000, refreshTrials);
   }
   radarControls();
   show(location.hash.slice(1));

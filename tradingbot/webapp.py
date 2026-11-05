@@ -42,11 +42,15 @@ import ccxt
 
 from .broker import atomic_write
 from .config import MODES, ConfigError, Settings, parse_bots, parse_dotenv
+from .execution import ExecutionParams
+from .risk import RiskParams
 from .dashboard import FILENAME as DASHBOARD_FILE, write_dashboard
-from .data import timeframe_to_ms
+from .data import load_or_fetch, ohlcv_to_frame, timeframe_to_ms
+from .desk import DESK_FILE, Desk
 from .lab import LAB_FILE, LAB_FILES, LIMIT_LAB_FILE, PROMISING, SHORT_LAB_FILE, load_lab
 from .prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, board_to_dict, connect, label, short_error, snapshot
-from .radar import STRONG, WINDOWS, Radar
+from .moves import OPTIONS, STUDY_DAYS, round_trip_cost, study
+from .radar import JOURNAL_FILE, STRONG, WINDOWS, MoveJournal, Radar, journal_stats
 from .robustness import MIN_TRADES
 
 log = logging.getLogger(__name__)
@@ -60,6 +64,7 @@ CALCUL = "calcul"  # un seul calcul lourd à la fois : les labos se partagent le
 RETAINED = (PROMISING, "à surveiller")
 MAX_LINES = 3000  # lignes de journal gardées par tâche
 FINISHED_KEPT = 20  # tâches terminées encore affichées
+TRIALS_EVERY_S = 15  # surveillance des essais en argent fictif
 RUNNING, DONE, FAILED, STOPPED = "en cours", "terminé", "échec", "arrêté"
 MODE_LABELS = {"paper": "argent fictif", "testnet": "testnet", "demo": "démo", "live": "ARGENT RÉEL"}
 
@@ -420,32 +425,133 @@ class Poller:
             time.sleep(self.every)
 
 
+FULL_REFRESH_S = 300  # la liste complète des paires (volumes) toutes les 5 min ; entre deux, les derniers prix
+
+
 class RadarSource:
-    def __init__(self, make_exchange, exchange_id: str):
+    """Le radar du site : allumé dès l'ouverture, il note aussi chaque gros mouvement dans le journal."""
+
+    def __init__(self, make_exchange, exchange_id: str, journal: MoveJournal | None = None):
         self.make_exchange, self.exchange_id = make_exchange, exchange_id
         self.exchange = None
         self.radar = Radar()
+        self.journal = journal or MoveJournal(None)
+        self.full_at = -math.inf
         self.lock = threading.Lock()
+
+    def _last_prices(self, symbols: list[str]) -> dict[str, float | None]:
+        """Une requête légère : le dernier prix des paires suivies, sans le reste du ticker."""
+        if self.exchange.has.get("fetchLastPrices"):
+            try:
+                return {s: (v or {}).get("price") for s, v in self.exchange.fetch_last_prices(symbols).items()}
+            except ccxt.ExchangeError:  # pas prévue ou refusée par cette plateforme : le ticker complet
+                pass
+        return {s: (t or {}).get("last") for s, t in self.exchange.fetch_tickers(symbols).items()}
 
     def fetch(self) -> int:
         if self.exchange is None:
             exchange = self.make_exchange(self.exchange_id)
             exchange.load_markets()
             self.exchange = exchange
-        tickers = self.exchange.fetch_tickers()  # toutes les paires en une seule requête
+        now = time.time()
+        if now - self.full_at >= FULL_REFRESH_S or not self.radar.info:
+            tickers = self.exchange.fetch_tickers()  # toutes les paires en une seule requête
+            with self.lock:
+                self.radar.update_info(self.exchange.markets, tickers)
+            prices = {s: t.get("last") or t.get("close") for s, t in tickers.items()}
+            self.full_at = now
+        else:
+            prices = self._last_prices(sorted(self.radar.info))
         with self.lock:
-            return self.radar.update(self.exchange.markets, tickers, time.time())
+            count = self.radar.add_prices(prices, now)
+            self.journal.observe(self.radar.moves(top=None), self.radar.latest, now)
+        return count
+
+    def price(self, symbol: str) -> float | None:
+        with self.lock:
+            return self.radar.latest.get(symbol)
+
+    def follows(self, symbol: str) -> bool:
+        with self.lock:
+            return symbol in self.radar.info
 
     def view(self, window: int, rising_only: bool, top: int = 25) -> dict:
         with self.lock:
             moves, span = self.radar.moves(window, top, rising_only), self.radar.span
-            tracked = len(self.radar.history[-1][1]) if self.radar.history else 0
+            tracked = len(self.radar.latest)
+            pending = len(self.journal.pending)
         return {
             "span": span, "tracked": tracked, "window": window, "windows": list(WINDOWS),
-            "strong": {str(w): STRONG[w] for w in WINDOWS},
+            "strong": {str(w): STRONG[w] for w in WINDOWS}, "pending": pending,
             "moves": [{"symbol": m.symbol, "last": m.last, "changes": {str(w): c for w, c in m.changes.items()},
-                       "change_24h": m.change_24h, "volume_24h": m.volume_24h, "strong": m.strong} for m in moves],
+                       "change_24h": m.change_24h, "volume_24h": m.volume_24h, "strong": m.strong,
+                       "rise": m.strong_rise} for m in moves],
         }
+
+
+class Market:
+    """Bougies de 1 minute pour l'étude et les essais (chacun sa connexion : une étude qui télécharge ne
+    retarde jamais la surveillance d'un stop)."""
+
+    def __init__(self, make_exchange, exchange_id: str, cache_dir: Path):
+        self.make_exchange, self.exchange_id, self.cache_dir = make_exchange, exchange_id, cache_dir
+        self.exchange = None
+        self.lock = threading.Lock()
+
+    def _exchange(self):
+        if self.exchange is None:
+            self.exchange = self.make_exchange(self.exchange_id)
+        return self.exchange
+
+    def history(self, symbol: str, days: int):
+        with self.lock:
+            return load_or_fetch(self.exchange_id, symbol, "1m", days, self.cache_dir, self._exchange())
+
+    def recent(self, symbol: str, limit: int = 60):
+        """Les dernières bougies de 1 minute clôturées (celle en cours n'est pas finie : elle est écartée)."""
+        with self.lock:
+            exchange = self._exchange()
+            frame = ohlcv_to_frame(exchange.fetch_ohlcv(symbol, "1m", limit=limit + 1))
+            return frame[frame["ts"] + 60_000 <= exchange.milliseconds()]
+
+    def last(self, symbol: str) -> float | None:
+        with self.lock:
+            ticker = self._exchange().fetch_ticker(symbol)
+        return ticker.get("last") or ticker.get("close")
+
+
+class Studies:
+    """Les études demandées depuis le radar : une à la fois, gardées 10 minutes."""
+
+    KEEP_S = 600
+
+    def __init__(self, run):
+        self.run = run  # (symbole, fenêtre, prix) -> résultat de moves.study
+        self.results: dict[tuple[str, int], dict] = {}
+        self.worker: threading.Thread | None = None
+        self.lock = threading.Lock()
+
+    def get(self, symbol: str, window: int, price: float | None) -> dict:
+        key = (symbol, window)
+        with self.lock:
+            entry = self.results.get(key)
+            if entry and (entry["status"] == "en cours" or time.time() - entry["at"] < (
+                    self.KEEP_S if entry["status"] == "prêt" else 30)):
+                return entry
+            if self.worker and self.worker.is_alive():
+                return {"status": "attente", "message": "Une autre étude est en cours : celle-ci suit juste après."}
+            self.results[key] = {"status": "en cours", "at": time.time()}
+            self.worker = threading.Thread(target=self._work, args=(key, price), name="etude", daemon=True)
+            self.worker.start()
+            return self.results[key]
+
+    def _work(self, key: tuple[str, int], price: float | None) -> None:
+        try:
+            entry = {"status": "prêt", "result": self.run(key[0], key[1], price)}
+        except Exception as exc:  # réseau coupé, crypto sans historique... : expliqué sur la fiche
+            entry = {"status": "erreur", "error": short_error(exc)}
+        with self.lock:
+            self.results[key] = {**entry, "at": time.time()}
 
 
 class PricesSource:
@@ -657,10 +763,80 @@ class Site:
         self.tasks = TaskManager(root, child_env, command)
         self.dashboard_lock = threading.Lock()
         settings = self.settings()
-        self.radar = RadarSource(make_exchange, settings.exchange if settings else "binance")
-        self.radar_poller = Poller(self.radar.fetch, every=10.0)
+        exchange_id = settings.exchange if settings else "binance"
+        data_dir = self.data_dir()
+        self.radar = RadarSource(make_exchange, exchange_id, MoveJournal(data_dir / JOURNAL_FILE))
+        self.radar_poller = Poller(self.radar.fetch, every=10.0, idle=math.inf)  # toujours allumé : il se remplit
         self.prices_poller = Poller(PricesSource(make_exchange).fetch, every=10.0)
+        execution = settings.execution if settings else ExecutionParams()
+        self.desk = Desk(data_dir / DESK_FILE, execution, settings.risk if settings else RiskParams())
+        self.study_market = Market(make_exchange, exchange_id, data_dir / "cache")
+        self.desk_market = Market(make_exchange, exchange_id, data_dir / "cache")
+        self.studies = Studies(self._study)
         self.code = self._code() if lan_address else None
+
+    def start_background(self) -> None:
+        """Ce qui tourne tant que le site est ouvert : le radar (et son journal) et la surveillance des essais."""
+        self.radar_poller.get()
+        threading.Thread(target=self._watch_trials, name="essais", daemon=True).start()
+
+    def _watch_trials(self) -> None:
+        while True:
+            try:
+                self.check_trials()
+            except Exception as exc:  # un réseau coupé ne doit pas arrêter la surveillance des autres essais
+                log.warning("Surveillance des essais : %s", short_error(exc))
+            time.sleep(TRIALS_EVERY_S)
+
+    def check_trials(self, now: float | None = None) -> list[dict]:
+        """Revend les essais arrivés à leur règle de sortie (stop, essoufflement, temps maximum)."""
+        symbols = self.desk.symbols()
+        if not symbols:
+            return []
+        prices = {s: self.radar.price(s) or self.desk_market.last(s) for s in symbols}
+        candles = {s: self.desk_market.recent(s) for s in symbols}
+        return self.desk.check(prices, candles, now or time.time())
+
+    def _study(self, symbol: str, window: int, price: float | None) -> dict:
+        settings = self.settings()
+        execution = settings.execution if settings else ExecutionParams()
+        df = self.study_market.history(symbol, STUDY_DAYS)
+        price = price or float(df["close"].iloc[-1])
+        return {"symbol": symbol, **study(df, window, execution, self.desk.risk,
+                                          equity=self.desk.equity({symbol: price}), price=price)}
+
+    def journal_view(self) -> dict:
+        settings = self.settings()
+        cost = round_trip_cost(settings.execution if settings else ExecutionParams())
+        records = self.radar.journal.records()
+        return {"since": records[0]["t"] if records else None, "count": len(records), "cost": cost,
+                "rows": journal_stats(records, cost)}
+
+    def price_of(self, symbol: str) -> float:
+        price = self.radar.price(symbol) or self.desk_market.last(symbol)
+        if not price:
+            raise ValueError(f"Prix de {symbol} indisponible pour l'instant : réessaie dans quelques secondes.")
+        return float(price)
+
+    def trial_symbol(self, raw) -> str:
+        symbol = str(raw or "").strip().upper()
+        if not re.fullmatch(r"[A-Z0-9]{1,20}/[A-Z0-9]{2,10}", symbol):
+            raise ValueError("Crypto inconnue")
+        if not self.radar.follows(symbol):
+            raise ValueError(f"{symbol} n'est pas suivie par le radar (pas assez échangée, ou radar en démarrage).")
+        return symbol
+
+    def open_trial(self, body: dict) -> dict:
+        symbol = self.trial_symbol(body.get("symbole"))
+        window, option = int(body.get("fenetre") or 0), str(body.get("option") or "")
+        if window not in STRONG or option not in OPTIONS:
+            raise ValueError("Option inconnue")
+        price = self.price_of(symbol)
+        return self.desk.open(symbol, window, option, price, self.desk_market.recent(symbol), time.time())
+
+    def trials(self) -> dict:
+        prices = {s: p for s in self.desk.symbols() if (p := self.radar.price(s))}
+        return self.desk.summary(prices)
 
     def settings(self) -> Settings | None:
         """Réglages relus à chaque demande (le formulaire ou le Bloc-notes ont pu les changer) ; comme pour les
@@ -907,7 +1083,19 @@ class Handler(BaseHTTPRequestHandler):
             rising = (query.get("hausses") or ["0"])[0] == "1"
             _, error, updated = self.site.radar_poller.get()
             view = self.site.radar.view(window, rising)
-            self.json({**view, "error": error, "updated": iso(updated), "exchange": label(self.site.radar.exchange_id)})
+            self.json({**view, "error": error, "updated": iso(updated), "exchange": label(self.site.radar.exchange_id),
+                       "journal": self.site.journal_view()})
+        elif url.path == "/api/etude":
+            if self.headers.get(HEADER) != HEADER_VALUE:  # une étude télécharge : seulement à la demande de la page
+                self.fail(403, "Étude refusée : elle doit venir de la page du site.")
+                return
+            symbol = self.site.trial_symbol((query.get("symbole") or [""])[0])
+            window = int((query.get("fenetre") or ["300"])[0])
+            if window not in WINDOWS:
+                raise ValueError("Fenêtre inconnue")
+            self.json(self.site.studies.get(symbol, window, self.site.radar.price(symbol)))
+        elif url.path == "/api/essais":
+            self.json(self.site.trials())
         elif url.path == "/api/prix":
             data, error, updated = self.site.prices_poller.get()
             self.json({"board": data, "error": error, "updated": iso(updated)})
@@ -953,6 +1141,17 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(values, dict):
                     raise ValueError("Demande illisible")
                 self.json({"ok": True, **self.site.save_settings(values)})
+            elif path == "/api/essais/ouvrir":
+                self.json({"ok": True, "position": self.site.open_trial(body)})
+            elif path == "/api/essais/vendre":
+                tid = int(body.get("id") or 0)
+                symbol = next((p["symbol"] for p in self.site.desk.state["positions"] if p["id"] == tid), None)
+                if symbol is None:
+                    raise ValueError("Cet essai n'est plus ouvert.")
+                self.json({"ok": True, "trade": self.site.desk.sell(tid, self.site.price_of(symbol), time.time())})
+            elif path == "/api/essais/zero":
+                self.site.desk.reset(time.time())
+                self.json({"ok": True})
             elif path == "/api/ouvrir-reglages":
                 if not self.local:
                     raise ValueError("Le fichier .env s'ouvre seulement sur l'ordinateur du bot.")
@@ -1035,6 +1234,7 @@ def serve(root: Path, pristine_env: dict[str, str], make_exchange, port: int = P
         raise ValueError("Adresse sur le réseau local introuvable : vérifie que l'ordinateur est connecté au Wi-Fi.")
     site = Site(root, pristine_env, make_exchange, port, address)
     server = bind(site, "0.0.0.0" if lan else "127.0.0.1", port)
+    site.start_background()  # le radar se remplit dès maintenant, et les essais sont surveillés
     url = f"http://127.0.0.1:{site.port}/"
     print("=" * 78)
     print(f"  LE SITE DU BOT EST OUVERT : {url}")

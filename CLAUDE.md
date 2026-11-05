@@ -30,9 +30,20 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   `MODE=live`, le formulaire (`FIELDS`, liste blanche) ne touche ni à MODE, ni aux clés, ni à CONFIRM_LIVE_TRADING, ni
   à MAX_CAPITAL. Sécurité : 127.0.0.1, en-tête `X-Demande` exigé pour toute action, contrôle de Host et d'Origin ;
   `--ipad` ouvre au Wi-Fi avec un code à 6 chiffres (`data/site-code.txt`, cookie). Page vérifiée à 1280, 820 et 390 px.
-- `tradingbot/radar.py` : radar des mouvements (onglet du site) : `fetch_tickers` de toutes les paires toutes les 10 s,
-  variation sur 1, 5 et 15 min des paires `scanner.tradable` à plus de 5 M$/jour ; une coupure réseau ne fabrique pas
-  de faux mouvement. Information seulement, jamais un ordre.
+- `tradingbot/radar.py` : radar des mouvements (onglet du site, allumé dès l'ouverture : `Site.start_background`) :
+  tickers complets toutes les 5 min (`update_info` : paires `scanner.tradable` à plus de 5 M$/jour), puis derniers prix
+  seulement toutes les 10 s (`fetch_last_prices`, `add_prices`) ; variation sur 1, 5 et 15 min ; une coupure réseau ne
+  fabrique pas de faux mouvement. `MoveJournal` note chaque gros mouvement à la hausse (une fois par quart d'heure et
+  par crypto) et sa variation 5 min, 15 min et 1 h après (`data/mouvements.jsonl`, `journal_stats` frais compris).
+  Information seulement, jamais un ordre.
+- `tradingbot/moves.py` : étude d'une opportunité (fiche du radar) sur 30 jours de bougies de 1 min : mêmes hausses
+  (signal de la famille impulsion), courbe médiane et quartiles sur 60 min, trois sorties `OPTIONS` (rapide, normale,
+  laisser courir) passées par `run_backtest`, verdict franc (`bad`, `neutral`, `good` = piste à confirmer, `few`),
+  `trade_plan` = stop et perte si le stop est touché.
+- `tradingbot/desk.py` : « Mes essais », compte fictif à part (`data/essais.json`, 1000 USDT) : achat au prix réel,
+  frais et glissement compris, taille par le risque (1 %), au plus 1/5 du compte par essai et 5 essais ; revente par
+  les règles de l'option (stop au prix du moment, puis temps maximum et essoufflement sur les bougies de 1 min
+  clôturées) ou à la main. Surveillé par le site toutes les 15 s (`Site.check_trials`). Jamais d'ordre réel.
 - `BOTS=PAIRE@UNITE,...` : plusieurs bots dans une boucle (`live.run_bots`). En paper, un compte fictif par bot ;
   sur un vrai compte, `MAX_CAPITAL` est le montant de chaque bot (validé dans `config.py`).
 - `tradingbot/strategy.py` : neuf familles (`STRATEGY_TYPE`) : retour_moyenne (RSI, défaut), bollinger, cassure
@@ -140,3 +151,9 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   court terme, jamais tradée sans verdict. Skills : aucun nouveau utile trouvé (SuggestSkills vide) ; connecteur
   CoinGecko branché par l'utilisateur (vue du marché dans la conversation, pas une source du bot). Obsidian reste
   facultatif (journal en notes). Toujours en attente : les résultats du premier pilote/recherche de nuit réel.
+- Soir du 05/11/2026 : l'utilisateur, sur l'appli Claude, veut trader en court terme les mouvements jaunes du radar,
+  en sécurité, avec le risque dit franchement, des tests et des options → étude d'une opportunité (moves.py), journal
+  des mouvements jaunes (test en direct), « Mes essais » en argent fictif (desk.py). Il signale « plein de mauvais
+  trucs sur le site » sans préciser : radar rendu toujours allumé et léger ; lui demander des captures de ce qui ne va
+  pas. Cette session cloud n'a pas accès à son PC (aucun dossier partagé) : une session Claude Code locale sur le
+  dossier du bot le peut.

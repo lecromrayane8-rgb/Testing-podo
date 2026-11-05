@@ -14,6 +14,10 @@ place, puis lui dises en quelques lignes ce qui en ressort.
 - `data\` : résultats des labos (`laboratoire.json`, `laboratoire-court-terme.json`,
   `laboratoire-court-terme-limites.json`), tournois (`data\tournoi\`, `data\tournoi-court-terme\`, chacun avec son
   `tableau-de-bord.html`), tableau de bord des bots (`data\tableau-de-bord.html`), journal (`data\bot.log`).
+- `data\essais.json` : « Mes essais », le compte fictif des essais lancés depuis le radar du site (positions,
+  trades clôturés avec `return` après frais et `reason` : stop, essoufflement, temps, main).
+- `data\mouvements.jsonl` : le journal des gros mouvements à la hausse vus par le radar, une ligne par mouvement,
+  avec `after` = variation 300, 900 et 3600 s après (avant frais ; un aller-retour coûte environ 0,3 %).
 - `autres lanceurs\` : un fichier .bat par commande ; `LISEZ-MOI.txt` : le mode d'emploi de l'utilisateur.
 
 ## Les commandes (lancées depuis ce dossier)

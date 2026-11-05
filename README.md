@@ -133,9 +133,20 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765) :
 - **Pilote automatique** : les trois labos à la suite, puis les deux tournois en argent fictif avec les stratégies
   retenues. Les tournois tournent ensuite tant que le site est ouvert.
 - **Radar des mouvements** : toutes les cryptos de la plateforme cotées en USDT et échangées à plus de 5 M$ par
-  jour, relevées toutes les 10 secondes en une seule requête, classées par variation sur 1, 5 ou 15 minutes
-  (barre jaune au-delà de 1 %, 2 % ou 4 %). Le radar ne passe aucun ordre : un mouvement affiché a déjà eu lieu,
-  et c'est le labo, avec les stratégies « Impulsion », qui dit s'il est rentable de sauter dessus après frais.
+  jour, classées par variation sur 1, 5 ou 15 minutes (barre jaune au-delà de 1 %, 2 % ou 4 %). Il tourne dès
+  l'ouverture du site : la liste complète des paires toutes les 5 minutes, puis le dernier prix seulement toutes
+  les 10 secondes (requête légère). Le radar ne passe aucun ordre : un mouvement affiché a déjà eu lieu.
+  - **L'étude d'une opportunité** (le nom d'une crypto) : 30 jours de bougies de 1 minute, les mêmes hausses dans
+    le passé, la courbe médiane du prix dans l'heure qui suit l'achat (avec la moitié centrale des cas et la ligne
+    des frais), trois sorties testées par le backtest du bot (rapide, normale, laisser courir : seuils fixés
+    d'avance), un verdict franc (mauvais, rien de net, piste à confirmer, trop peu de cas) et la perte si le stop
+    est touché (`tradingbot/moves.py`).
+  - **Le journal des mouvements jaunes** (`data/mouvements.jsonl`) : chaque gros mouvement à la hausse, puis ce que
+    le prix a fait 5 min, 15 min et 1 h après, frais compris. Un test en direct, sans regard vers le futur.
+- **Mes essais** : un compte fictif de 1000 USDT (`data/essais.json`, `tradingbot/desk.py`) pour essayer une
+  opportunité. Achat au prix réel, frais et glissement compris ; taille calculée pour risquer environ 1 % du compte
+  au stop, 1/5 du compte au plus par essai, 5 essais au plus ; revente automatique par les règles de l'option
+  (stop, essoufflement, temps maximum) ou à la main ; résultats, courbe et historique.
 - **Prix** (plusieurs plateformes côte à côte), **Tableau de bord** (mes bots et les labos, chaque tournoi),
   **Journal** (la sortie des commandes, en direct) et **Réglages** (bots, capital fictif, frais, Telegram,
   Obsidian).

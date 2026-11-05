@@ -310,3 +310,58 @@ def test_devices_on_the_home_wifi_need_the_code(tmp_path, fake_bot):
     handler.do_GET()
     assert sent[0][0] == 403
     assert (tmp_path / "data" / "site-code.txt").read_text(encoding="utf-8") == s.code  # le même code au relancement
+
+
+def radar_ready(s, symbols=("PEPE/USDT", "BTC/USDT"), price=1.0):
+    markets = {sym: {"symbol": sym, "spot": True, "active": True, "base": sym.split("/")[0], "quote": "USDT"}
+               for sym in symbols}
+    s.radar.radar.update(markets, {sym: {"last": price, "quoteVolume": 1e8, "percentage": 1.0} for sym in symbols},
+                         time.time())
+
+
+def test_an_opportunity_is_studied_in_the_background_then_shown(server, monkeypatch):
+    from tests.test_moves import jumps
+    s, base = server
+    radar_ready(s, price=100.0)
+    monkeypatch.setattr(s.study_market, "history", lambda symbol, days: jumps())
+    page = {HEADER: HEADER_VALUE}
+
+    def get(path):
+        return request(base, path, headers=page)
+
+    assert request(base, "/api/etude?symbole=PEPE/USDT&fenetre=300")[0] == 403  # un autre site ne peut pas la lancer
+    assert get("/api/etude?symbole=XRP/USDT&fenetre=300")[0] == 400  # pas suivie par le radar
+    assert get("/api/etude?symbole=PEPE/USDT&fenetre=120")[0] == 400
+    first = json.loads(get("/api/etude?symbole=PEPE/USDT&fenetre=300")[1])
+    assert first["status"] in ("en cours", "prêt")
+    assert wait(lambda: json.loads(get("/api/etude?symbole=PEPE/USDT&fenetre=300")[1])["status"] == "prêt")
+    result = json.loads(get("/api/etude?symbole=PEPE/USDT&fenetre=300")[1])["result"]
+    assert result["symbol"] == "PEPE/USDT" and len(result["options"]) == 3 and result["verdict"]["text"]
+    radar = json.loads(request(base, "/api/radar?fenetre=300")[1])
+    assert radar["journal"]["rows"][0]["window"] == 60 and radar["journal"]["cost"] == pytest.approx(0.003)
+
+
+def test_trials_are_opened_watched_and_sold_through_the_site(server, monkeypatch):
+    from tests.test_desk import calm
+    s, base = server
+    radar_ready(s, price=100.0)
+    candles = calm(price=100.0)
+    monkeypatch.setattr(s.desk_market, "recent", lambda symbol, limit=60: candles)
+    ok = {HEADER: HEADER_VALUE, "Content-Type": "application/json"}
+    assert request(base, "/api/essais/ouvrir", {"symbole": "PEPE/USDT", "fenetre": 300, "option": "tout"}, ok)[0] == 400
+    status, body, _ = request(base, "/api/essais/ouvrir", {"symbole": "PEPE/USDT", "fenetre": 300, "option": "normale"}, ok)
+    position = json.loads(body)["position"]
+    assert status == 200 and position["symbol"] == "PEPE/USDT" and position["stop"] < 100.0
+    summary = json.loads(request(base, "/api/essais")[1])
+    assert summary["positions"][0]["price"] == 100.0 and summary["stats"]["n"] == 0
+    assert s.check_trials() == []  # au-dessus du stop, rien ne bouge
+    radar_ready(s, price=position["stop"] * 0.99)  # le prix passe sous le stop
+    closed = s.check_trials()
+    assert closed and closed[0]["reason"] == "stop"
+    status, body, _ = request(base, "/api/essais/ouvrir", {"symbole": "BTC/USDT", "fenetre": 60, "option": "rapide"}, ok)
+    trade = json.loads(request(base, "/api/essais/vendre", {"id": json.loads(body)["position"]["id"]}, ok)[1])["trade"]
+    assert trade["reason"] == "main"
+    assert json.loads(request(base, "/api/essais")[1])["stats"]["n"] == 2
+    assert request(base, "/api/essais/zero", {}, ok)[0] == 200
+    assert json.loads(request(base, "/api/essais")[1])["equity"] == 1000.0
+    assert request(base, "/api/essais/zero", {})[0] == 403  # comme toute action : seulement depuis la page du site
