@@ -77,6 +77,11 @@ Le gardien ne change JAMAIS les réglages d'une stratégie et ne passe jamais en
 il coupe ce qui perd, c'est tout. Un tournoi reprend là où il s'était arrêté ; pour le
 recommencer de zéro, arrête-le et supprime son dossier (data\tournoi ou data\tournoi-court-terme).
 
+AVEC L'APPLICATION CLAUDE SUR TON PC
+Dans l'application Claude pour ordinateur (https://claude.ai/download), ouvre une session Claude Code sur ce
+dossier : Claude y lit le fichier CLAUDE.md (ses consignes pour ce bot), peut lancer les labos et les tournois en
+argent fictif et lire les résultats lui-même. Il n'y passe jamais en argent réel sans ta demande explicite.
+
 AUTRES LANCEURS
 Le dossier « autres lanceurs » garde les anciens fichiers (menu, labos, tournois, prix en direct,
 Telegram...) : ils font la même chose que les boutons du site, dans une fenêtre noire. « 4 - Lancer

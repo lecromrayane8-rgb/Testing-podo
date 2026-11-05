@@ -35,6 +35,19 @@ def test_the_site_runs_exactly_the_commands_of_the_launchers(tmp_path):
     assert set(ACTIONS) >= {"pilote", "recherche", "tournoi-court", "tournoi-long", "bots", "check", "telegram"}
 
 
+def test_the_instructions_for_claude_on_the_pc_give_the_same_commands(tmp_path):
+    text = (WINDOWS / "CLAUDE.md").read_text(encoding="utf-8")
+    shown = {}
+    for line in text.splitlines():
+        if line.startswith("| ") and "`tradingbot\\tradingbot.exe" in line:
+            label, command = line.split("|")[1].strip(), line.split("`")[1]
+            shown[label] = tuple(shlex.split(command)[1:])
+    assert shown["labo court terme"] == steps_for("labo-court", tmp_path)[0]
+    assert shown["tournoi court terme (argent fictif)"] == steps_for("tournoi-court", tmp_path)[0]
+    assert shown["tournoi long terme (argent fictif)"] == steps_for("tournoi-long", tmp_path)[0]
+    assert "CONFIRM_LIVE_TRADING" in text and "Ne promets jamais de gains" in text
+
+
 def test_the_main_launchers_open_the_site_and_the_others_start_from_the_bot_folder():
     assert "tradingbot\\tradingbot.exe site\r\n" in (WINDOWS / "Ouvrir le bot.bat").read_text(encoding="utf-8", newline="")
     assert "tradingbot.exe site --ipad" in (WINDOWS / "Ouvrir le bot sur iPad ou telephone.bat").read_text(encoding="utf-8")

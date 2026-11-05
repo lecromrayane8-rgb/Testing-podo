@@ -65,6 +65,8 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - `packaging/windows/` : à la racine du ZIP, `Ouvrir le bot.bat` (`site`) et `Ouvrir le bot sur iPad ou telephone.bat`
   (`site --ipad`) ; les 15 anciens lanceurs (dont `0 - Menu.bat`) dans `autres lanceurs/`, qui remontent d'un dossier
   (`cd /d "%~dp0.."`). Le workflow vérifie que le site de l'exécutable répond et lance une commande.
+  `packaging/windows/CLAUDE.md` : consignes pour une session Claude ouverte sur le dossier du ZIP, sur le PC de
+  l'utilisateur (commandes de l'exécutable, lecture des résultats, règles non négociables ; test de cohérence).
 - `tradingbot/scanner.py` : cryptos spot USDT les plus agitées sur 24 h, volume ≥ 5 M$, sans stables ni tokens à
   levier ; `MEMECOINS` (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) gardés seulement s'ils sont assez échangés.
 - Commande `tournoi` (`main.py`) : stratégies « à surveiller »/« prometteur » d'un labo (`--labo`, défaut
