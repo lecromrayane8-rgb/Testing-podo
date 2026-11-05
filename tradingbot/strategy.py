@@ -13,6 +13,10 @@ Suivre une tendance :
 - momentum : le prix repasse au-dessus de son niveau d'il y a N bougies ; revend quand il retombe dessous.
 - supertrend : la tendance Supertrend devient haussière ; revend quand elle redevient baissière.
 
+Sauter sur un mouvement :
+- impulsion : le prix vient de prendre au moins `impulse_pct` en `impulse_bars` bougies (un mouvement
+  soudain, comme ceux du radar) ; revend sous le plus bas des M bougies précédentes (le mouvement s'essouffle).
+
 Pour toutes : stop-loss à k × ATR sous le prix d'achat, stop temporel optionnel (0 = aucun),
 filtre de tendance optionnel (clôture au-dessus de la moyenne longue, 0 = aucun filtre).
 Filtres optionnels d'achat, surtout utiles en très court terme où les frais pèsent lourd :
@@ -37,6 +41,7 @@ from .indicators import atr, bollinger, macd, rsi, sma, supertrend
 
 STRATEGY_TYPES = (
     "retour_moyenne", "bollinger", "cassure", "bollinger_cassure", "croisement", "macd", "momentum", "supertrend",
+    "impulsion",
 )
 MEAN_REVERSION = ("retour_moyenne", "bollinger")
 
@@ -60,6 +65,8 @@ class StrategyParams:
     momentum_period: int = 100
     st_period: int = 10
     st_mult: float = 3.0
+    impulse_bars: int = 5  # impulsion : hausse d'au moins impulse_pct (0,01 = 1 %) en impulse_bars bougies
+    impulse_pct: float = 0.01
     atr_period: int = 14
     stop_atr_mult: float = 2.5
     max_bars_in_trade: int = 24  # 0 = pas de stop temporel
@@ -85,6 +92,8 @@ class StrategyParams:
             raise ValueError("TREND_PERIOD et MAX_BARS_IN_TRADE doivent être >= 0")
         if self.min_atr_pct < 0 or self.volume_mult < 0 or self.volume_period < 1:
             raise ValueError("MIN_ATR_PCT et VOLUME_MULT doivent être >= 0, VOLUME_PERIOD >= 1")
+        if self.impulse_bars < 1 or not 0 < self.impulse_pct < 1:
+            raise ValueError("IMPULSE_BARS doit être >= 1 et IMPULSE_PCT entre 0 et 1 (0,01 = 1 %)")
         if not 0 <= self.squeeze_quantile < 1 or self.squeeze_period < 2:
             raise ValueError("SQUEEZE_QUANTILE doit être entre 0 et 1 (0,2 = 20 %), SQUEEZE_PERIOD >= 2")
         if self.active_hours:
@@ -101,6 +110,7 @@ class StrategyParams:
             "macd": [self.macd_slow + self.macd_signal + 1],
             "momentum": [self.momentum_period + 2],
             "supertrend": [self.st_period + 2],
+            "impulsion": [self.impulse_bars + 2, self.breakout_exit_period + 1],
         }[self.strategy_type]
         volume = [self.volume_period] if self.volume_mult else []
         squeeze = [self.bb_period + self.squeeze_period + 1] if self.squeeze_quantile else []
@@ -119,6 +129,8 @@ class StrategyParams:
 
     @property
     def exit_label(self) -> str:
+        if self.strategy_type == "impulsion":
+            return "essoufflement"
         return "rebond" if self.strategy_type in MEAN_REVERSION else "fin de tendance"
 
 
@@ -160,6 +172,12 @@ def compute_signals(df: pd.DataFrame, p: StrategyParams) -> pd.DataFrame:
         change = close / close.shift(p.momentum_period) - 1
         entry = _crossing_up(change > 0)
         exit_ = change < 0
+    elif t == "impulsion":
+        # Seulement la bougie où le mouvement apparaît : pas de rachat à chaque bougie d'une même envolée.
+        rise = close / close.shift(p.impulse_bars) - 1
+        entry = _crossing_up(rise >= p.impulse_pct)
+        lower = out["low"].rolling(p.breakout_exit_period, min_periods=p.breakout_exit_period).min().shift(1)
+        exit_ = close < lower
     else:
         up = supertrend(out, p.st_period, p.st_mult)
         entry = _crossing_up(up)

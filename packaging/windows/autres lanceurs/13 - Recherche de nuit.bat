@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if not exist .env copy .env.example .env >nul
 echo Recherche de nuit : le labo court terme, le meme en ordres limites, puis le labo long terme.
 echo Compter 1 a 3 heures selon le PC. L'ordinateur ne se met pas en veille tant que ca tourne.

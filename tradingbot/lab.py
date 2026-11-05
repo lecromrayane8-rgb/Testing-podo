@@ -122,7 +122,21 @@ COMBOS: dict[str, StrategyParams] = {
     "Bollinger cassure 20/2 + compression": StrategyParams(strategy_type="bollinger_cassure", trend_period=0,
                                                            **TREND, **SQUEEZE),
 }
-ALL_VARIANTS: dict[str, StrategyParams] = {**VARIANTS, **COMBOS}  # pour retrouver une variante par son nom
+# Sauter sur un mouvement soudain (ce que montre le radar) : seuils ronds fixés d'avance, pas ajustés sur les
+# données. Revente sous le plus bas des 5 bougies précédentes, stop à 2 ATR, et au plus 20 bougies en position.
+JUMP = {"strategy_type": "impulsion", "trend_period": 0, "breakout_exit_period": 5, "stop_atr_mult": 2.0,
+        "max_bars_in_trade": 20}
+IMPULSES: dict[str, StrategyParams] = {
+    "Impulsion +1 % en 5 bougies": StrategyParams(impulse_bars=5, impulse_pct=0.01, **JUMP),
+    "Impulsion +1 % en 5 bougies + volume x3": StrategyParams(impulse_bars=5, impulse_pct=0.01, volume_mult=3.0,
+                                                             **JUMP),
+    "Impulsion +0,5 % en 1 bougie + volume x3": StrategyParams(impulse_bars=1, impulse_pct=0.005, volume_mult=3.0,
+                                                              **JUMP),
+    "Impulsion +3 % en 15 bougies + volume x3": StrategyParams(impulse_bars=15, impulse_pct=0.03, volume_mult=3.0,
+                                                              **JUMP),
+}
+SHORT_TERM_VARIANTS: dict[str, StrategyParams] = {**VARIANTS, **COMBOS, **IMPULSES}  # labo court terme
+ALL_VARIANTS: dict[str, StrategyParams] = SHORT_TERM_VARIANTS  # pour retrouver une variante par son nom
 
 
 @dataclass(frozen=True)

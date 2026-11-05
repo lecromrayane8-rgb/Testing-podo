@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if not exist .env copy .env.example .env >nul
 echo Labo court terme : 24 variantes + 12 combinaisons (filtres de volatilite et de volume), en bougies
 echo de 1, 5 et 15 minutes, sur BTC, ETH, SOL, les 8 cryptos les plus agitees et les memecoins assez echanges.

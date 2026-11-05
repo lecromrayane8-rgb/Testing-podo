@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if not exist .env copy .env.example .env >nul
 echo Le meme labo court terme que le 7, mais avec des ordres limites : le bot attend son prix au lieu
 echo de payer l'ecart et le glissement. Ses resultats ont leur propre fichier ; le tournoi 8 lit les deux.

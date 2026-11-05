@@ -19,11 +19,26 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 
 ## Architecture
 
-- `main.py` : ligne de commande (`backtest`, `robustesse`, `labo`, `tournoi`, `check`, `run`, `tableau`, `reset-guard`).
+- `main.py` : ligne de commande (`site`, `backtest`, `robustesse`, `labo`, `tournoi`, `prix`, `telegram`, `check`, `run`,
+  `tableau`, `reset-guard`). Sans argument (double-clic sur l'exécutable Windows), `site`.
+- `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
+  Chaque bouton (`ACTIONS`, `steps_for`) lance la même commande que son lanceur .bat (test `test_packaging`) dans un
+  sous-processus (`TaskManager`, `Task`) dont le journal s'affiche en direct ; un seul calcul lourd à la fois (`CALCUL`) ;
+  « Pilote automatique » = 3 labos puis les 2 tournois. Sous Windows, un job `KILL_ON_JOB_CLOSE` par tâche : fermer
+  le site arrête tout. Les commandes reçoivent l'environnement d'avant `.env` (`args.pristine_env`) et relisent `.env` ;
+  `TRADINGBOT_SITE=1` passe leur sortie en UTF-8 ligne par ligne. Jamais d'argent réel : « Mes bots » refuse
+  `MODE=live`, le formulaire (`FIELDS`, liste blanche) ne touche ni à MODE, ni aux clés, ni à CONFIRM_LIVE_TRADING, ni
+  à MAX_CAPITAL. Sécurité : 127.0.0.1, en-tête `X-Demande` exigé pour toute action, contrôle de Host et d'Origin ;
+  `--ipad` ouvre au Wi-Fi avec un code à 6 chiffres (`data/site-code.txt`, cookie). Page vérifiée à 1280, 820 et 390 px.
+- `tradingbot/radar.py` : radar des mouvements (onglet du site) : `fetch_tickers` de toutes les paires toutes les 10 s,
+  variation sur 1, 5 et 15 min des paires `scanner.tradable` à plus de 5 M$/jour ; une coupure réseau ne fabrique pas
+  de faux mouvement. Information seulement, jamais un ordre.
 - `BOTS=PAIRE@UNITE,...` : plusieurs bots dans une boucle (`live.run_bots`). En paper, un compte fictif par bot ;
   sur un vrai compte, `MAX_CAPITAL` est le montant de chaque bot (validé dans `config.py`).
-- `tradingbot/strategy.py` : huit familles (`STRATEGY_TYPE`) : retour_moyenne (RSI, défaut), bollinger, cassure
-  (Donchian), bollinger_cassure, croisement, macd, momentum, supertrend. `compute_signals` produit `entry`/`exit`
+- `tradingbot/strategy.py` : neuf familles (`STRATEGY_TYPE`) : retour_moyenne (RSI, défaut), bollinger, cassure
+  (Donchian), bollinger_cassure, croisement, macd, momentum, supertrend, impulsion (hausse d'au moins `impulse_pct`
+  en `impulse_bars` bougies, seulement la bougie où elle apparaît ; sortie « essoufflement » sous le plus bas des
+  `breakout_exit_period` bougies). `compute_signals` produit `entry`/`exit`
   pour le backtest ET le live (tests de parité par famille). Le backtest respecte le même temps de chauffe que le live.
   Filtres d'achat optionnels pour toutes : volatilité (`min_atr_pct`), volume (`volume_mult`, `volume_period`),
   heures actives UTC (`active_hours`, « 13-21 ») et compression de Bollinger (`squeeze_quantile`, `squeeze_period`).
@@ -33,8 +48,8 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   sinon « instable »), Bonferroni (approximation normale) sur le nombre d'essais, comparaison au buy & hold.
   Études sans garde-fous live ni élimination (`research_risk`). Pas de levier dans le labo (choix de l'utilisateur,
   à revoir). `--scanner N` / `--memecoins` ajoutent des cryptos ; sous 15 min, historique plafonné (60 j en 1m).
-  `--combinaisons` ajoute `COMBOS` (17 variantes avec filtres, seuils fixés d'avance) ;
-  `ALL_VARIANTS` sert à retrouver une variante par son nom. `run_lab` répartit le calcul par (unité, marché) sur plusieurs
+  `--combinaisons` ajoute `COMBOS` (17 variantes avec filtres) et `IMPULSES` (4 impulsions), seuils fixés d'avance :
+  `SHORT_TERM_VARIANTS` (45) ; `ALL_VARIANTS` sert à retrouver une variante par son nom. `run_lab` répartit le calcul par (unité, marché) sur plusieurs
   cœurs (`--coeurs`, repli en série si le parallèle échoue ; `multiprocessing.freeze_support()` dans `main.py`). Le labo affiche l'espérance avant frais
   (`gross_expectancy_pct`) et `cost_diagnosis` dit si ce sont les frais qui font perdre.
 - `tradingbot/prices.py` + commande `prix` (lanceur 11) : prix publics de plusieurs plateformes côte à côte (USDT,
@@ -47,7 +62,9 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   accepte plusieurs fichiers (`merge_picks` : meilleure version de chaque stratégie, avec les ordres de son labo).
   Lanceur 13 « Recherche de nuit » : les trois labos à la suite. `awake.keep_awake()` empêche la veille Windows
   pendant `labo`, `run` et `tournoi` ; le verdict d'un labo part en alerte Telegram.
-- `packaging/windows/0 - Menu.bat` : menu unique qui explique et lance les 13 autres lanceurs.
+- `packaging/windows/` : à la racine du ZIP, `Ouvrir le bot.bat` (`site`) et `Ouvrir le bot sur iPad ou telephone.bat`
+  (`site --ipad`) ; les 15 anciens lanceurs (dont `0 - Menu.bat`) dans `autres lanceurs/`, qui remontent d'un dossier
+  (`cd /d "%~dp0.."`). Le workflow vérifie que le site de l'exécutable répond et lance une commande.
 - `tradingbot/scanner.py` : cryptos spot USDT les plus agitées sur 24 h, volume ≥ 5 M$, sans stables ni tokens à
   levier ; `MEMECOINS` (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) gardés seulement s'ils sont assez échangés.
 - Commande `tournoi` (`main.py`) : stratégies « à surveiller »/« prometteur » d'un labo (`--labo`, défaut
@@ -115,3 +132,9 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   de vraies données pendant cette session : tout dépend du prochain labo 7 lancé sur le PC de l'utilisateur.
 - L'utilisateur veut du levier et du court terme : on n'en parle qu'après une structure « prometteuse »
   confirmée en paper puis testnet. Le levier ne change pas le signe de l'espérance, il l'amplifie.
+- Session du 05/11/2026 : l'utilisateur ne veut plus jongler avec les fichiers .bat → site du bot (accueil avec la
+  prochaine étape, pilote automatique, radar des mouvements, prix, tableau de bord, journal, réglages, accès iPad) et
+  famille « impulsion » (son idée : « dès qu'il y a un mouvement, il se positionne dessus ») testée dans le labo
+  court terme, jamais tradée sans verdict. Skills : aucun nouveau utile trouvé (SuggestSkills vide) ; connecteur
+  CoinGecko branché par l'utilisateur (vue du marché dans la conversation, pas une source du bot). Obsidian reste
+  facultatif (journal en notes). Toujours en attente : les résultats du premier pilote/recherche de nuit réel.

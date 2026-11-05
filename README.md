@@ -2,13 +2,15 @@
 
 Bot de trading automatique en Python, connecté aux plateformes d'échange via [ccxt](https://github.com/ccxt/ccxt)
 (Binance par défaut, plus de 100 plateformes possibles). Il trade uniquement à l'achat (spot, **sans levier**),
-avec huit familles de stratégies testées hors échantillon, des garde-fous de risque, un laboratoire qui cherche
-ce qui tient après frais, des tournois en argent fictif, un tableau de bord et des alertes sur le téléphone.
+avec neuf familles de stratégies testées hors échantillon, des garde-fous de risque, un laboratoire qui cherche
+ce qui tient après frais, des tournois en argent fictif, un radar des mouvements, un tableau de bord, des alertes
+sur le téléphone, et un site qui réunit tout dans le navigateur.
 
 **Démarrage rapide (Windows, sans Python)** : télécharge le
 [ZIP](https://github.com/lecromrayane8-rgb/Testing-podo/releases/download/windows-dev/tradingbot-windows.zip),
-extrais-le et double-clique sur `0 - Menu.bat`. Le soir, choisis « Recherche de nuit » : les trois labos tournent
-à la suite, et le tableau de bord montre le lendemain ce qui gagne, ou non, après frais.
+extrais-le et double-clique sur `Ouvrir le bot.bat` : le site du bot s'ouvre dans ton navigateur. Le soir, clique
+sur « Pilote automatique » : les trois labos tournent à la suite, puis les tournois en argent fictif démarrent tout
+seuls avec les stratégies retenues ; l'accueil du site dit le lendemain ce qui gagne, ou non, après frais.
 
 > **À lire avant tout.** Aucun bot ne garantit un profit régulier. Un **taux de réussite élevé ne veut pas
 > dire rentable** : une stratégie qui gagne 70 % du temps 0,5 % et perd 30 % du temps 2 % perd de l'argent.
@@ -18,8 +20,8 @@ extrais-le et double-clique sur `0 - Menu.bat`. Le soir, choisis « Recherche de
 
 ## Les stratégies
 
-Le bot connaît huit familles de règles, choisies avec `STRATEGY_TYPE` dans `.env`. Deux achètent un repli,
-six suivent une tendance :
+Le bot connaît neuf familles de règles, choisies avec `STRATEGY_TYPE` dans `.env`. Deux achètent un repli,
+six suivent une tendance, une saute sur un mouvement soudain :
 
 | Famille | `STRATEGY_TYPE` | Achète quand… | Revend quand… |
 |---|---|---|---|
@@ -31,6 +33,7 @@ six suivent une tendance :
 | MACD | `macd` | la ligne MACD croise sa ligne de signal par le haut | elle la recroise par le bas |
 | Momentum | `momentum` | le prix repasse au-dessus de son niveau d'il y a N bougies | il retombe dessous |
 | Supertrend | `supertrend` | la tendance Supertrend devient haussière | elle redevient baissière |
+| Impulsion | `impulsion` | le prix vient de prendre au moins `IMPULSE_PCT` en `IMPULSE_BARS` bougies (seulement la bougie où le mouvement apparaît) | il passe sous le plus bas des M bougies précédentes (le mouvement s'essouffle) |
 
 Toutes ont un stop-loss à k × ATR sous le prix d'achat et un filtre de tendance optionnel (`TREND_PERIOD`,
 0 = aucun). Les signaux sont identiques en backtest et en direct (`compute_signals`), et des tests le vérifient
@@ -108,14 +111,45 @@ Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit 
 1. Télécharge [tradingbot-windows.zip](https://github.com/lecromrayane8-rgb/Testing-podo/releases/download/windows-dev/tradingbot-windows.zip)
    (reconstruit automatiquement à chaque modification du code).
 2. Clic droit sur le ZIP → Propriétés → coche « Débloquer » → OK, puis clic droit → « Extraire tout ».
-3. Dans le dossier extrait, double-clique sur `0 - Menu.bat` : il présente toutes les actions, expliquées, et
-   lance celle dont tu tapes le numéro (`LISEZ-MOI.txt` détaille chaque fichier). Par exemple `11 - Prix en
-   direct.bat` affiche les vrais prix de plusieurs plateformes, `7 - Labo court terme.bat` puis
-   `8 - Tournoi court terme.bat` cherchent puis font tourner en argent fictif une stratégie de très court terme,
-   et `5 - Tableau de bord.bat` ouvre la page de suivi.
+3. Dans le dossier extrait, double-clique sur `Ouvrir le bot.bat` : le site du bot s'ouvre dans ton navigateur
+   (voir ci-dessous). Garde la fenêtre noire ouverte : la fermer arrête le site et tout ce qu'il a lancé.
+   `Ouvrir le bot sur iPad ou telephone.bat` ouvre le même site aux appareils du Wi-Fi de la maison, avec un code.
+   Les anciens lanceurs (menu, labos, tournois, prix...) sont rangés dans `autres lanceurs` ; `LISEZ-MOI.txt`
+   explique tout.
 
 Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires »
 puis « Exécuter quand même ». C'est normal pour un programme qui n'est pas signé.
+
+## Le site du bot (tout à portée de main)
+
+```bash
+python main.py site          # ou « Ouvrir le bot.bat » ; sans argument, le programme Windows fait de même
+```
+
+Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765) :
+
+- **Accueil** : la prochaine étape en une phrase (lancer le pilote, un tournoi, ou attendre), ce qui tourne avec
+  son journal et un bouton Arrêter, les résultats des labos et des tournois, et un bouton par action.
+- **Pilote automatique** : les trois labos à la suite, puis les deux tournois en argent fictif avec les stratégies
+  retenues. Les tournois tournent ensuite tant que le site est ouvert.
+- **Radar des mouvements** : toutes les cryptos de la plateforme cotées en USDT et échangées à plus de 5 M$ par
+  jour, relevées toutes les 10 secondes en une seule requête, classées par variation sur 1, 5 ou 15 minutes
+  (barre jaune au-delà de 1 %, 2 % ou 4 %). Le radar ne passe aucun ordre : un mouvement affiché a déjà eu lieu,
+  et c'est le labo, avec les stratégies « Impulsion », qui dit s'il est rentable de sauter dessus après frais.
+- **Prix** (plusieurs plateformes côte à côte), **Tableau de bord** (mes bots et les labos, chaque tournoi),
+  **Journal** (la sortie des commandes, en direct) et **Réglages** (bots, capital fictif, frais, Telegram,
+  Obsidian).
+
+Chaque bouton lance la même commande que le lanceur `.bat` correspondant (un test le vérifie), dans un processus à
+part ; un seul calcul lourd à la fois. Sous Windows, chaque tâche est rangée dans un « job » : fermer la fenêtre du
+site arrête aussi les labos et les tournois qu'il a lancés, rien ne continue en cachette.
+
+Ce que le site ne fait jamais : passer en argent réel. Les tournois restent en argent fictif, « Mes bots » refuse
+`MODE=live`, et le formulaire ne touche ni à `MODE`, ni aux clés API, ni à `CONFIRM_LIVE_TRADING`, ni à
+`MAX_CAPITAL` (ils se changent dans `.env`). Le site n'écoute que l'ordinateur lui-même ; toute action exige un
+en-tête que seule sa page envoie, et l'adresse demandée doit être la sienne : un autre site ouvert dans le
+navigateur ne peut pas lui donner d'ordres. Avec `--ipad`, il s'ouvre au Wi-Fi de la maison, et chaque appareil
+doit d'abord entrer le code affiché dans la fenêtre du bot.
 
 ## Installation avec Python
 
@@ -188,7 +222,7 @@ Verdicts : **prometteur** (tout est réuni), **à surveiller** (positif, mais le
 Pour une variante prometteuse, le labo affiche les lignes exactes à copier dans `.env` pour l'essayer en
 argent fictif. Le labo peut **tester** des actions ; le bot ne peut pas encore en **acheter**.
 
-**Le très court terme** (`7 - Labo court terme.bat`) :
+**Le très court terme** (« Labo court terme » sur le site, ou `7 - Labo court terme.bat`) :
 
 ```bash
 python main.py labo --symbols BTC/USDT,ETH/USDT,SOL/USDT --timeframes 1m,5m,15m --scanner 8 --memecoins \
@@ -217,13 +251,16 @@ bord, qui montre une section (avec son graphique) par labo. Pendant un labo, un 
 se met pas en veille (appel Windows prévu pour cela, sans changer les réglages ; l'écran peut s'éteindre). Le labo enregistre ses ordres et ses frais avec
 ses résultats, et le tournoi qui reprend ses stratégies les applique à l'identique.
 
-`--combinaisons` ajoute 17 variantes pensées pour ce problème : les mêmes techniques, mais qui n'achètent que
+`--combinaisons` ajoute 17 combinaisons pensées pour ce problème : les mêmes techniques, mais qui n'achètent que
 quand les bougies bougent assez (filtre de volatilité : ATR d'au moins 0,3 % du prix, le coût d'un aller-retour),
 quand le volume double (le mouvement a des acheteurs derrière lui), pendant les heures actives (de 13 h à 21 h
 UTC, quand l'Europe et les États-Unis échangent ensemble), ou après une compression (les bandes de Bollinger de la
 bougie précédente parmi les 20 % les plus serrées des 120 dernières : un marché calme qui se réveille). Ces seuils
-sont fixés d'avance, pas ajustés sur les données, et les 41 variantes passent par la même validation, le même
-seuil durci et le même test final. Les filtres existent aussi dans `.env` (`MIN_ATR_PCT`, `VOLUME_MULT`,
+sont fixés d'avance, pas ajustés sur les données. S'y ajoutent 4 **impulsions**, qui sautent sur un mouvement
+soudain comme ceux du radar : +1 % en 5 bougies (avec ou sans volume triplé), +0,5 % en une seule bougie avec
+volume triplé, +3 % en 15 bougies avec volume triplé ; revente sous le plus bas des 5 bougies précédentes, stop à
+2 ATR, 20 bougies au plus. Les 45 variantes passent par la même validation, le même seuil durci et le même test
+final. Les filtres existent aussi dans `.env` (`MIN_ATR_PCT`, `VOLUME_MULT`,
 `VOLUME_PERIOD`, `ACTIVE_HOURS`, `SQUEEZE_QUANTILE`, `SQUEEZE_PERIOD`) et le bot en direct les applique exactement
 comme le backtest (tests de parité).
 
@@ -411,10 +448,11 @@ tail -f data/bot.log
 
 | Commande | Rôle |
 |---|---|
+| `python main.py site [--port 8765] [--sans-navigateur] [--ipad]` | ouvrir le site du bot (le programme Windows sans argument fait de même) |
 | `python main.py backtest [--days N] [--capital X] [--csv fichier]` | tester la stratégie sur l'historique |
 | `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
 | `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins] [--combinaisons] [--ordres-limites] [--resultats fichier]` | comparer les stratégies, validées hors échantillon |
-| `python main.py tournoi [--labo fichier] [--unite 1m] [--avec-marches-du-labo] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X]` | faire s'affronter en argent fictif les stratégies retenues par un labo |
+| `python main.py tournoi [--labo fichier] [--unite 1m] [--avec-marches-du-labo] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X] [--sans-navigateur]` | faire s'affronter en argent fictif les stratégies retenues par un labo |
 | `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
 | `python main.py run` | lancer les bots selon `MODE` et `BOTS` |
 | `python main.py prix [--cryptos A,B] [--plateformes binance,okx] [--secondes 10] [--une-fois]` | les vrais prix de plusieurs plateformes, en direct et sans compte |

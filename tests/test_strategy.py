@@ -190,3 +190,31 @@ def test_squeeze_buys_a_breakout_only_after_a_calm_market():
 def test_new_filter_settings_are_validated(kwargs, message):
     with pytest.raises(ValueError, match=message):
         StrategyParams(**kwargs)
+
+
+IMPULSE = StrategyParams(strategy_type="impulsion", impulse_bars=3, impulse_pct=0.02, breakout_exit_period=3,
+                         trend_period=0, atr_period=3, max_bars_in_trade=0)
+
+
+def test_impulse_buys_the_candle_where_a_sudden_move_appears_and_sells_when_it_fades():
+    closes = [100.0] * 10 + [100.5, 101.5, 103.0, 105.0, 106.0, 104.0, 101.0]
+    data = compute_signals(frame_from_closes(closes, spread=0.0), IMPULSE)
+    # +3 % en 3 bougies à la bougie 12 ; les suivantes prolongent la même envolée : pas de nouvel achat.
+    assert list(np.flatnonzero(data["entry"])) == [12]
+    assert data["exit"].iloc[16] and not data["exit"].iloc[15]  # sous le plus bas des 3 bougies précédentes
+    assert IMPULSE.exit_label == "essoufflement"
+
+
+def test_impulse_never_looks_ahead_and_ignores_small_moves():
+    closes = list(100 * np.exp(np.cumsum(np.random.default_rng(11).normal(0, 0.015, 300))))
+    full = compute_signals(frame_from_closes(closes), IMPULSE)
+    cut = compute_signals(frame_from_closes(closes[:200]), IMPULSE)
+    assert (full["entry"].iloc[:200].to_numpy() == cut["entry"].to_numpy()).all()
+    calm = compute_signals(frame_from_closes(list(np.linspace(100, 101, 60))), IMPULSE)
+    assert not calm["entry"].any()  # +1 % en 60 bougies n'est pas un mouvement soudain
+
+
+@pytest.mark.parametrize("kwargs", [{"impulse_bars": 0}, {"impulse_pct": 0.0}, {"impulse_pct": 1.5}])
+def test_impulse_settings_are_validated(kwargs):
+    with pytest.raises(ValueError, match="IMPULSE_BARS"):
+        StrategyParams(strategy_type="impulsion", **kwargs)

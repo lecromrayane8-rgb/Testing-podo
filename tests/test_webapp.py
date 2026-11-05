@@ -1,0 +1,312 @@
+import json
+import os
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+from email.message import Message
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from tradingbot import webapp
+from tradingbot.webapp import (
+    ACTIONS, HEADER, HEADER_VALUE, Handler, Poller, Site, TaskManager, already_running, bind, clean_value,
+    finite_json, lab_summaries, next_step, steps_for, update_env,
+)
+
+FAKE_BOT = """
+import os, subprocess, sys, time
+args = sys.argv[1:]
+print("commande :", " ".join(args), flush=True)
+print("accents : é à ç ≥ ×", flush=True)
+if os.environ.get("FAKE_CHILD") and args[0] == "labo":
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    print("petit-enfant", child.pid, flush=True)
+if args[0] == "labo":
+    time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
+sys.exit(3 if "--echec" in args or os.environ.get("FAKE_FAIL") == args[0] else 0)
+"""
+
+
+@pytest.fixture
+def fake_bot(tmp_path):
+    path = tmp_path / "fakebot.py"
+    path.write_text(FAKE_BOT, encoding="utf-8")
+    return [sys.executable, str(path)]
+
+
+def manager(tmp_path, fake_bot, **env):
+    return TaskManager(tmp_path, {**os.environ, "PYTHONIOENCODING": "utf-8", **env}, fake_bot)
+
+
+def wait(condition, timeout=20.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if condition():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def alive(pid: int) -> bool:
+    if sys.platform == "win32":
+        import ctypes
+        kernel32 = ctypes.WinDLL("kernel32")
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+        if not handle:
+            return False
+        try:
+            return kernel32.WaitForSingleObject(ctypes.c_void_p(handle), 0) == 0x102  # WAIT_TIMEOUT : il tourne
+        finally:
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    stat = Path(f"/proc/{pid}/stat")
+    return not (stat.exists() and stat.read_text().split()[2] == "Z")  # un zombie est déjà mort
+
+
+def test_an_action_runs_the_same_command_as_its_launcher_and_streams_its_journal(tmp_path, fake_bot):
+    tasks = manager(tmp_path, fake_bot)
+    task = tasks.start("labo-court")
+    assert wait(lambda: task.status != "en cours")
+    lines, total = task.read(0)
+    assert task.status == "terminé" and total == len(lines)
+    assert lines[0] == "commande : " + " ".join(steps_for("labo-court", tmp_path)[0])
+    assert "accents : é à ç ≥ ×" in lines  # UTF-8 de bout en bout
+    assert "--combinaisons" in lines[0] and "laboratoire-court-terme.json" in lines[0]
+    assert task.read(total)[0] == []  # rien de neuf depuis la dernière lecture
+    assert task.to_dict()["status"] == "terminé" and task.to_dict()["last"] == "Terminé."
+
+
+def test_the_autopilot_runs_the_three_labs_then_starts_both_tournaments(tmp_path, fake_bot):
+    tasks = manager(tmp_path, fake_bot)
+    pilot = tasks.start("pilote")
+    assert wait(lambda: pilot.status != "en cours")
+    lines, _ = pilot.read(0)
+    assert sum("=== Étape" in line for line in lines) == 3
+    assert any("« Tournoi court terme » lancé automatiquement" in line for line in lines)
+    started = {t.action.key for t in tasks.tasks.values()}
+    assert {"tournoi-court", "tournoi-long"} <= started
+    tournament = next(t for t in tasks.tasks.values() if t.action.key == "tournoi-court")
+    assert wait(lambda: tournament.status != "en cours")
+    assert "--sans-navigateur" in tournament.read(0)[0][0]  # le site montre déjà le tableau de bord
+
+
+def test_a_failing_step_does_not_stop_the_night_research(tmp_path, fake_bot):
+    (tmp_path / "actions").mkdir()
+    (tmp_path / "actions" / "aapl.csv").write_text("ts,open,high,low,close,volume\n", encoding="utf-8")
+    assert steps_for("labo-long", tmp_path) == [("labo", "--csv-dir", "actions")]
+    tasks = manager(tmp_path, fake_bot, FAKE_FAIL="labo")
+    research = tasks.start("recherche")
+    assert wait(lambda: research.status != "en cours")
+    assert research.status == "échec" and research.to_dict()["failed"] == 3
+    assert sum("on passe à la suivante" in line for line in research.read(0)[0]) == 3
+    pilot = tasks.start("pilote")
+    assert wait(lambda: pilot.status != "en cours")
+    assert {t.action.key for t in tasks.tasks.values()} == {"recherche", "pilote"}  # rien n'a marché : pas de tournoi
+
+
+def test_one_heavy_computation_at_a_time_and_stop_kills_the_whole_tree(tmp_path, fake_bot):
+    tasks = manager(tmp_path, fake_bot, FAKE_SLEEP="60", FAKE_CHILD="1")
+    lab = tasks.start("labo-court")
+    assert wait(lambda: any(line.startswith("petit-enfant") for line in lab.read(0)[0]))
+    grandchild = int(next(line for line in lab.read(0)[0] if line.startswith("petit-enfant")).split()[1])
+    with pytest.raises(ValueError, match="tourne déjà"):
+        tasks.start("labo-court")
+    with pytest.raises(ValueError, match="un seul calcul à la fois"):
+        tasks.start("labo-long")
+    assert tasks.blocker("check") is None  # une vérification rapide peut tourner pendant un labo
+    lab.stop()
+    assert wait(lambda: lab.status == "arrêté", timeout=15)
+    assert wait(lambda: not alive(grandchild), timeout=15)  # les cœurs du labo ne continuent pas en cachette
+    assert tasks.blocker("labo-long") is None
+
+
+def test_settings_lines_are_changed_in_place_and_checked(tmp_path):
+    env = tmp_path / ".env"
+    env.write_text("# Mes réglages\nMODE=paper\nBOTS=BTC/USDT@1h\nFEE_RATE=0.001\nBOTS=ETH/USDT@4h\n", encoding="utf-8")
+    update_env(env, {"BOTS": "SOL/USDT@15m", "TELEGRAM_CHAT_ID": "42"})
+    assert env.read_text(encoding="utf-8").splitlines() == [
+        "# Mes réglages", "MODE=paper", "BOTS=SOL/USDT@15m", "FEE_RATE=0.001", "BOTS=ETH/USDT@4h", "TELEGRAM_CHAT_ID=42"]
+    fields = webapp.FIELD_KEYS
+    assert clean_value(fields["BOTS"], "btc/usdt@15m, eth/usdt@1h") == "BTC/USDT@15m,ETH/USDT@1h"
+    assert clean_value(fields["FEE_RATE"], "0,00075") == "0.00075"
+    assert clean_value(fields["EXCHANGE"], "OKX") == "okx"
+    for key, bad in [("BOTS", "BTC/USDT"), ("BOTS", "BTC/USDT@1x"), ("FEE_RATE", "0.5"), ("FEE_RATE", "abc"),
+                     ("EXCHANGE", "inconnue"), ("TELEGRAM_TOKEN", "pas-un-token"), ("TELEGRAM_CHAT_ID", "12a"),
+                     ("PAPER_START_BALANCE", "-5")]:
+        with pytest.raises(ValueError):
+            clean_value(fields[key], bad)
+
+
+def site(tmp_path, fake_bot, env_text="MODE=paper\n", **kwargs):
+    (tmp_path / ".env").write_text(env_text, encoding="utf-8")
+    pristine = {k: v for k, v in os.environ.items() if k not in ("MODE", "BOTS", "DATA_DIR", "TELEGRAM_TOKEN")}
+    return Site(tmp_path, pristine, make_exchange=lambda exchange_id: None, port=0, command=fake_bot, **kwargs)
+
+
+def test_the_site_never_switches_to_real_money(tmp_path, fake_bot):
+    s = site(tmp_path, fake_bot)
+    for key in ("MODE", "CONFIRM_LIVE_TRADING", "API_KEY", "API_SECRET", "MAX_CAPITAL"):
+        with pytest.raises(ValueError, match="ne se change pas depuis le site"):
+            s.save_settings({key: "live"})
+    live = site(tmp_path, fake_bot, "MODE=live\nCONFIRM_LIVE_TRADING=OUI\nMAX_CAPITAL=100\n")
+    with pytest.raises(ValueError, match="jamais de bot en argent réel"):
+        live.launch("bots")
+    assert live.state()["mode_label"] == "ARGENT RÉEL"
+    assert [a for a in live.state()["actions"] if a["key"] == "bots"][0]["blocked"]
+
+
+def test_saved_settings_are_used_by_the_next_commands_and_secrets_never_shown(tmp_path, fake_bot):
+    s = site(tmp_path, fake_bot, "MODE=paper\nBOTS=BTC/USDT@1h\n")
+    assert s.settings().bots == (("BTC/USDT", "1h"),)
+    token = "123456789:" + "A" * 30
+    assert s.save_settings({"BOTS": "ETH/USDT@4h", "TELEGRAM_TOKEN": token})["saved"] == ["BOTS", "TELEGRAM_TOKEN"]
+    assert s.settings().bots == (("ETH/USDT", "4h"),) and s.settings().telegram_token == token
+    form = s.settings_form(local=True)
+    secret = [f for f in form["fields"] if f["key"] == "TELEGRAM_TOKEN"][0]
+    assert secret == {**secret, "set": True} and "value" not in secret and token not in json.dumps(form)
+    assert s.save_settings({"TELEGRAM_TOKEN": ""})["saved"] == []  # vide : le token enregistré est gardé
+    assert s.settings().data_dir == tmp_path / "data"  # « data » à côté du bot, où que le site ait été lancé
+    # Le formulaire renvoie toutes ses cases : celles laissées vides gardent leur valeur (ici celle par défaut).
+    form = {f["key"]: f.get("value", "") for f in s.settings_form(local=True)["fields"]}
+    assert form["PAPER_START_BALANCE"] == "" and form["EXCHANGE"] == ""
+    s.save_settings(form)
+    assert s.settings().paper_start_balance == 10_000 and s.settings().exchange == "binance"
+    assert s.settings().bots == (("ETH/USDT", "4h"),) and s.settings().telegram_token == token
+
+
+def test_the_home_page_always_says_what_to_do_next():
+    pilot = next_step([{"file": "laboratoire.json", "done": False}], [], [])
+    assert pilot["action"] == "pilote"
+    labs = [{"file": "laboratoire-court-terme.json", "done": True, "retained": 2},
+            {"file": "laboratoire.json", "done": True, "retained": 0}]
+    assert next_step(labs, [], [])["action"] == "tournoi-court"
+    nothing = next_step([{**lab, "retained": 0} for lab in labs], [], [])
+    assert "Aucune stratégie ne gagne après frais" in nothing["title"]
+    running = [SimpleNamespace(action=ACTIONS["pilote"])]
+    assert "tournois démarreront tout seuls" in next_step(labs, running, [])["text"]
+    tournament = [SimpleNamespace(action=ACTIONS["tournoi-court"])]
+    assert next_step(labs, tournament, [{"running": True}])["view"] == "tableau"
+
+
+def test_lab_results_are_summarised_for_the_home_page(tmp_path):
+    rows = [{"variant": "Cassure 20/10", "timeframe": "5m", "trades": 300, "verdict": "à surveiller",
+             "gross_expectancy_pct": 0.12, "expectancy_pct": -0.18},
+            {"variant": "MACD 12/26/9", "timeframe": "1m", "trades": 900, "verdict": "perd de l'argent",
+             "gross_expectancy_pct": float("nan"), "expectancy_pct": -0.3}]
+    (tmp_path / "laboratoire-court-terme.json").write_text(json.dumps(
+        {"date": "2026-11-05T02:00:00+00:00", "verdict": "VERDICT : une seule.\nDétail", "rows": rows}), encoding="utf-8")
+    summary = {s["file"]: s for s in lab_summaries(tmp_path)}
+    short = summary["laboratoire-court-terme.json"]
+    assert short["retained"] == 1 and short["names"] == ["Cassure 20/10 (5m)"] and short["verdict"] == "une seule."
+    assert short["best"] == {"variant": "Cassure 20/10", "timeframe": "5m", "gross": 0.12, "net": -0.18}
+    assert summary["laboratoire.json"]["done"] is False
+    assert finite_json({"a": [float("nan"), 1.0, float("inf")]}) == {"a": [None, 1.0, None]}
+
+
+def test_a_source_is_read_only_while_someone_looks_at_it():
+    calls = []
+    poller = Poller(lambda: calls.append(1) or len(calls), every=0.01, idle=0.3)
+    assert poller.get()[0] is None  # premier appel : la lecture démarre
+    assert wait(lambda: poller.get()[0] is not None, timeout=5)
+    assert wait(lambda: not poller.thread.is_alive(), timeout=5)  # plus personne ne regarde : la lecture s'arrête
+    count = len(calls)
+    time.sleep(0.1)
+    assert len(calls) == count
+
+
+def request(base, path, data=None, headers=None):
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    req = urllib.request.Request(base + path, data=None if data is None else json.dumps(data).encode(),
+                                 headers=headers or {}, method="POST" if data is not None else "GET")
+    try:
+        with opener.open(req, timeout=10) as response:
+            return response.status, response.read().decode("utf-8"), dict(response.headers)
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode("utf-8"), dict(exc.headers)
+
+
+@pytest.fixture
+def server(tmp_path, fake_bot):
+    s = site(tmp_path, fake_bot)
+    httpd = bind(s, "127.0.0.1", 0)
+    thread = threading.Thread(target=httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+    thread.start()
+    yield s, f"http://127.0.0.1:{s.port}"
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def test_the_site_serves_its_page_and_only_obeys_its_own_page(server):
+    s, base = server
+    status, page, headers = request(base, "/")
+    assert status == 200 and "Prochaine étape" in page and "Radar des mouvements" in page
+    assert "frame-src 'self'" in headers["Content-Security-Policy"]
+    status, body, _ = request(base, "/api/etat")
+    state = json.loads(body)
+    assert status == 200 and state["mode_label"] == "argent fictif" and state["next"]["action"] == "pilote"
+    assert {a["key"] for a in state["actions"]} == set(ACTIONS)
+    ok = {HEADER: HEADER_VALUE, "Content-Type": "application/json"}
+    assert request(base, "/api/lancer", {"action": "check"})[0] == 403  # sans l'en-tête de la page
+    assert request(base, "/api/lancer", {"action": "check"}, {**ok, "Origin": "http://evil.example"})[0] == 403
+    assert request(base, "/api/lancer", {"action": "check"}, {**ok, "Host": "evil.example:80"})[0] == 403
+    status, body, _ = request(base, "/api/lancer", {"action": "check"}, {**ok, "Origin": base})
+    task = json.loads(body)["task"]
+    assert status == 200 and task["title"] == "Vérifier la connexion"
+    assert wait(lambda: s.tasks.get(task["id"]).status != "en cours")
+    status, body, _ = request(base, f"/api/journal?tache={task['id']}&depuis=0")
+    assert status == 200 and json.loads(body)["lines"][0] == "commande : check"
+    assert request(base, "/api/lancer", {"action": "inconnue"}, ok)[0] == 400
+    assert request(base, "/api/journal?tache=abc")[0] == 400
+    assert already_running(s.port) and not already_running(1)
+
+
+def test_dashboards_are_shown_inside_the_site(server):
+    s, base = server
+    status, page, _ = request(base, "/tableau/tournoi-court-terme")
+    assert status == 200 and "Rien à montrer ici pour l'instant" in page  # pas encore de tournoi
+    status, page, _ = request(base, "/tableau/bots")
+    assert status == 200 and "Tableau de bord" in page and (s.root / "data" / "tableau-de-bord.html").exists()
+    assert "Rien à montrer" in request(base, "/tableau/../../.env")[1]  # seulement les tableaux connus
+
+
+def fake_handler(s, path, client="192.168.1.20", headers=None):
+    handler = Handler.__new__(Handler)
+    handler.server = SimpleNamespace(site=s)
+    handler.client_address = (client, 50_000)
+    handler.headers = Message()
+    for key, value in (headers or {}).items():
+        handler.headers[key] = value
+    handler.path, handler.command = path, "GET"
+    sent = []
+    handler.send = lambda status, body, content_type, extra=None: sent.append((status, body, extra or {}))
+    return handler, sent
+
+
+def test_devices_on_the_home_wifi_need_the_code(tmp_path, fake_bot):
+    s = site(tmp_path, fake_bot, lan_address="192.168.1.10")
+    s.port = 8765
+    host = {"Host": "192.168.1.10:8765"}
+    handler, sent = fake_handler(s, "/", headers=host)
+    handler.do_GET()
+    assert sent[0][0] == 403 and "Entre le code du bot" in sent[0][1].decode()
+    handler, sent = fake_handler(s, "/api/etat", headers=host)
+    handler.do_GET()
+    assert sent[0][0] == 403
+    handler, sent = fake_handler(s, f"/?code={s.code}", headers=host)
+    handler.do_GET()
+    assert sent[0][0] == 303 and f"code-du-bot={s.code}" in sent[0][2]["Set-Cookie"]
+    handler, sent = fake_handler(s, "/api/etat", headers={**host, "Cookie": f"code-du-bot={s.code}"})
+    handler.do_GET()
+    assert sent[0][0] == 200
+    handler, sent = fake_handler(s, "/?code=ééé", headers=host)  # code accentué : refusé, sans planter
+    handler.do_GET()
+    assert sent[0][0] == 403
+    assert (tmp_path / "data" / "site-code.txt").read_text(encoding="utf-8") == s.code  # le même code au relancement

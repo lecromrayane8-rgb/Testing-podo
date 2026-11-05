@@ -143,7 +143,7 @@ def test_short_term_combos_are_named_variants_with_filters():
     assert len(COMBOS) == 17 and not set(COMBOS) & set(VARIANTS)
     assert all(p.min_atr_pct or p.volume_mult or p.active_hours or p.squeeze_quantile for p in COMBOS.values())
     assert "ACTIVE_HOURS=13-21" in env_lines(COMBOS["Cassure 20/10 + heures actives"])
-    assert ALL_VARIANTS == {**VARIANTS, **COMBOS}
+    assert {**VARIANTS, **COMBOS}.items() <= ALL_VARIANTS.items()
     assert "MIN_ATR_PCT=0.003" in env_lines(COMBOS["Cassure 20/10 + volatilité"])
 
 
@@ -187,3 +187,11 @@ def test_lab_falls_back_to_one_core_when_parallel_runs_fail(monkeypatch, caplog)
     rows = run_lab(datasets, ExecutionParams(), RiskParams(), {"Cassure": FAST}, workers=4)
     assert len(rows) == 1 and rows[0].trades > 0
     assert "un seul cœur" in caplog.text
+
+
+def test_impulses_jump_on_sudden_moves_with_thresholds_fixed_in_advance():
+    from tradingbot.lab import ALL_VARIANTS, COMBOS, IMPULSES, SHORT_TERM_VARIANTS
+    assert len(IMPULSES) == 4 and all(p.strategy_type == "impulsion" for p in IMPULSES.values())
+    assert SHORT_TERM_VARIANTS == {**VARIANTS, **COMBOS, **IMPULSES} and ALL_VARIANTS == SHORT_TERM_VARIANTS
+    lines = env_lines(IMPULSES["Impulsion +0,5 % en 1 bougie + volume x3"])
+    assert "STRATEGY_TYPE=impulsion" in lines and "IMPULSE_BARS=1" in lines and "IMPULSE_PCT=0.005" in lines

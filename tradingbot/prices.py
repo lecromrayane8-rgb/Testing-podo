@@ -20,6 +20,7 @@ from .scanner import ScanResult
 
 QUOTES = ("USDT", "USDC", "USD")
 DEFAULT_PLATFORMS = ("binance", "okx", "kraken", "coinbaseexchange", "bybit")
+DEFAULT_CRYPTOS = ("BTC", "ETH", "SOL", "BNB", "XRP", "DOGE", "PEPE", "WIF")
 NAMES = {"binance": "Binance", "okx": "OKX", "kraken": "Kraken", "coinbaseexchange": "Coinbase", "bybit": "Bybit",
          "bitstamp": "Bitstamp", "cryptocom": "Crypto.com", "bitget": "Bitget", "onetrading": "One Trading"}
 
@@ -92,6 +93,21 @@ def snapshot(exchanges: dict[str, ccxt.Exchange], bases: list[str], errors: dict
                 if base not in board.changes and change is not None:
                     board.changes[base] = float(change) / 100
     return board
+
+
+def board_to_dict(board: Board) -> dict:
+    """Le même tableau pour le site : une ligne par crypto, une case par plateforme."""
+    return {
+        "platforms": [{"id": p, "name": label(p)} for p in board.platforms],
+        "rows": [
+            {"base": base,
+             "prices": {p: {"price": price, "symbol": symbol, "usd": symbol.endswith("/USD")}
+                        for (b, p), (price, symbol) in board.prices.items() if b == base},
+             "spread": board.spread(base), "change": board.changes.get(base)}
+            for base in board.bases
+        ],
+        "errors": {label(p): problem for p, problem in board.errors.items()},
+    }
 
 
 def new_listings(exchange: ccxt.Exchange, path: Path, quote: str = "USDT") -> list[str] | None:

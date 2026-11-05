@@ -195,7 +195,7 @@ def test_tournament_explains_what_is_missing(tmp_path, monkeypatch, caplog):
     assert main.main(["tournoi"]) == 1
     assert "Lance d'abord le laboratoire" in caplog.text
     lab_file(tmp_path / "data" / "laboratoire.json", ("Cassure 20/10", "15m", "perd de l'argent", -0.4))
-    assert main.main(["tournoi"]) == 1
+    assert main.main(["tournoi"]) == 0  # rien de retenu : une réponse du labo, pas une panne
     assert "aucune stratégie « à surveiller »" in caplog.text
 
 
@@ -249,7 +249,7 @@ def test_long_term_tournament_runs_on_the_lab_markets_at_their_own_pace(tmp_path
     registry = json.loads((folder / "tournoi.json").read_text(encoding="utf-8"))
     assert registry["started"] != "2026-01-01T00:00:00+00:00" and registry["lab_file"] == "laboratoire.json"
 
-    assert main.main(["tournoi", "--labo", "laboratoire-court-terme.json", "--unite", "1m"]) == 1
+    assert main.main(["tournoi", "--labo", "laboratoire-court-terme.json", "--unite", "1m"]) == 0
     assert "Le labo (1m) n'a retenu aucune stratégie" in caplog.text
     assert "relance d'abord « 6 - Laboratoire de strategies »" in caplog.text
 
@@ -263,7 +263,7 @@ def test_tournament_rejects_an_unknown_unit_clearly(tmp_path, monkeypatch, caplo
 
 
 def test_short_term_lab_can_add_the_combos_and_the_tournament_runs_them(tmp_path, monkeypatch):
-    from tradingbot.lab import COMBOS, VARIANTS
+    from tradingbot.lab import SHORT_TERM_VARIANTS
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     walk = frame_from_closes(100 * np.exp(np.cumsum(np.random.default_rng(4).normal(0.0, 0.01, 1500))))
@@ -272,7 +272,7 @@ def test_short_term_lab_can_add_the_combos_and_the_tournament_runs_them(tmp_path
     assert main.main(["labo", "--symbols", "BTC/USDT", "--timeframes", "1h", "--combinaisons",
                       "--resultats", "laboratoire-court-terme.json"]) == 0
     saved = json.loads((tmp_path / "data" / "laboratoire-court-terme.json").read_text(encoding="utf-8"))
-    assert len(saved["rows"]) == len(VARIANTS) + len(COMBOS)
+    assert len(saved["rows"]) == len(SHORT_TERM_VARIANTS)  # variantes, combinaisons et impulsions
     assert all("gross_expectancy_pct" in r for r in saved["rows"])
     combo = {"rows": [{"variant": "Cassure 20/10 + volume x2", "timeframe": "5m", "verdict": "à surveiller"}]}
     assert main.tournament_picks(combo, "1m", 6)[0][:2] == ("Cassure 20/10 + volume x2", "1m")

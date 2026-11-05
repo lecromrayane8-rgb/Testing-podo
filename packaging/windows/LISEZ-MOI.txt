@@ -1,7 +1,8 @@
 BOT DE TRADING - VERSION WINDOWS (aucune installation de Python nécessaire)
 
-LE PLUS SIMPLE : double-clique sur « 0 - Menu ». Il présente toutes les actions avec une phrase
-d'explication ; tape le numéro voulu puis Entrée. Les autres fichiers .bat restent utilisables seuls.
+LE PLUS SIMPLE : double-clique sur « Ouvrir le bot ». Le site du bot s'ouvre dans ton navigateur : tout y
+est, avec un bouton par action et une phrase d'explication. Garde la fenêtre noire ouverte (tu peux la
+réduire) : la fermer arrête le site et tout ce qu'il a lancé (labos, tournois, bots).
 
 AVANT DE COMMENCER
 Avant d'extraire le ZIP : clic droit sur le fichier ZIP > Propriétés > cocher « Débloquer » > OK.
@@ -11,55 +12,46 @@ Sinon Windows affichera un avertissement à chaque lancement. S'il apparaît qua
 Si tu avais une version précédente : recopie ton fichier .env et ton dossier « data » dans le
 nouveau dossier (ils gardent tes réglages, tes bots et les résultats du labo).
 
-CE QUE FAIT CHAQUE FICHIER
-0 - Menu : toutes les actions ci-dessous, expliquées, dans une seule fenêtre.
-1 - Tester la robustesse : la stratégie choisie, sur 5 cryptos et 4 unités de temps.
-2 - Backtest : la stratégie choisie, sur un seul marché, avec le détail.
-3 - Verifier la connexion : accès à la plateforme et soldes.
-4 - Lancer le bot : les bots en argent fictif (par défaut BTC/USDT en 15 min, 1 h et 1 jour).
-    Fermer la fenêtre les arrête ; les positions sont reprises au redémarrage.
-5 - Tableau de bord : la page de suivi dans ton navigateur (bots, trades, résultats des tests).
-6 - Laboratoire de strategies : 24 variantes de 8 techniques (RSI, Bollinger, cassures, moyennes
-    mobiles, MACD, momentum, Supertrend), sur cryptos, or et euro (et tes actions, voir le
-    dossier « actions »), en 15 min, 1 h, 4 h et 1 jour. Compter 10 à 20 minutes.
-7 - Labo court terme : les mêmes 24 variantes plus 17 combinaisons (filtres de volatilité, de
-    volume, d'heures actives et de compression), en bougies de 1, 5 et 15 minutes, sur BTC, ETH,
-    SOL, les 8 cryptos les plus agitées du moment et les memecoins cotés sur Binance (DOGE, SHIB,
-    PEPE, FLOKI, BONK, WIF) quand ils sont assez échangés. Compter environ 1 heure. Ses résultats ont
-    leur propre fichier : ils n'effacent pas ceux du labo 6.
-8 - Tournoi court terme : les stratégies « à surveiller » des deux labos court terme (7 et 10)
-    s'affrontent en argent fictif, chacune dans l'unité de temps où le labo l'a trouvée, avec les
-    ordres et les frais de son labo (dossier data\tournoi-court-terme). Si aucun labo n'en a retenu,
-    le tournoi refuse de démarrer et le dit.
-9 - Tournoi long terme : les stratégies « à surveiller » ou « prometteur » du labo 6, chacune
-    dans son unité de temps (4 h, 1 jour...), sur les marchés du labo, les cryptos agitées et les
-    memecoins. Plus il y a de cryptos, plus les trades arrivent vite (dossier data\tournoi).
-    Dans les tournois, chaque bot (une stratégie sur une crypto) a 1000 USDT fictifs, le tableau
-    de bord s'ouvre tout seul et fermer la fenêtre arrête le tournoi.
-10 - Labo court terme ordres limites : le même labo que le 7, mais avec des ordres limites (le bot
-    attend son prix au lieu de payer l'écart et le glissement). Ses résultats ont leur propre fichier.
-11 - Prix en direct : les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte,
-    l'écart entre plateformes, les cryptos les plus agitées du moment et les nouvelles cotations
-    depuis ta dernière visite, mis à jour toutes les 10 secondes. Aucun compte nécessaire.
-12 - Tester les alertes Telegram : relie le bot à ton téléphone (gratuit). Dans Telegram, écris à
-    @BotFather, envoie /newbot et colle le « token » donné dans TELEGRAM_TOKEN (Modifier les reglages) ;
-    écris un message à ton nouveau bot, puis lance ce fichier : il affiche le TELEGRAM_CHAT_ID à
-    recopier et t'envoie un test. Ensuite, tes bots t'envoient leurs achats, ventes et alertes ; un
-    tournoi envoie son départ, les éliminations et un résumé par heure.
-13 - Recherche de nuit : enchaîne le labo court terme, le même en ordres limites et le labo long
-    terme (1 à 3 heures selon le PC), puis ouvre le tableau de bord. Avec les alertes Telegram, chaque
-    verdict arrive aussi sur ton téléphone. Lance-le le soir, laisse le PC allumé.
-Modifier les reglages : ouvre le fichier .env dans le Bloc-notes (stratégie, bots, mode, clés...).
+LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordinateur)
+- Accueil : la prochaine étape en une phrase, ce qui tourne (avec son journal et un bouton Arrêter),
+  les résultats des labos et des tournois, et toutes les actions.
+- Pilote automatique : le bouton du haut. Il lance les trois labos à la suite (1 à 3 heures selon le
+  PC), puis, tout seul, les deux tournois en argent fictif avec les stratégies retenues. Lance-le le
+  soir et laisse le PC allumé.
+- Radar des mouvements : toutes les cryptos de Binance cotées en USDT et échangées à plus de 5 M$ par
+  jour, et celles qui bougent le plus sur 1, 5 et 15 minutes, relevées toutes les 10 secondes. Le radar
+  ne passe aucun ordre : un mouvement affiché a déjà eu lieu. Le labo court terme teste s'il est
+  rentable de sauter dessus (stratégies « Impulsion »), frais compris.
+- Prix : les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte, et l'écart entre eux.
+- Tableau de bord : tes bots, les labos et les deux tournois.
+- Journal : ce que disent les commandes lancées depuis le site, en direct.
+- Réglages : tes bots, le capital fictif, les frais, Telegram, Obsidian. Le mode (testnet, réel) et les
+  clés API ne se changent que dans le fichier .env : le site ne passe jamais en argent réel.
+
+LES LABOS
+- Labo court terme : 24 variantes de 8 techniques, 17 combinaisons (filtres de volatilité, de volume,
+  d'heures actives et de compression) et 4 impulsions (sauter sur un mouvement soudain), en bougies de
+  1, 5 et 15 minutes, sur BTC, ETH, SOL, les 8 cryptos les plus agitées du moment et les memecoins
+  assez échangés (DOGE, SHIB, PEPE, FLOKI, BONK, WIF). Environ 1 heure.
+- Le même en ordres limites : le bot attend son prix au lieu de payer l'écart et le glissement.
+- Labo long terme : les 24 variantes de 15 minutes à 1 jour, sur cryptos, or et euro (et tes actions,
+  voir le dossier « actions »). 10 à 20 minutes.
+Chaque labo a son fichier de résultats : l'un n'efface jamais l'autre.
+
+SUR L'IPAD OU LE TÉLÉPHONE
+Ferme la fenêtre du bot, puis lance « Ouvrir le bot sur iPad ou telephone » : la fenêtre affiche une
+adresse du type http://192.168.1.23:8765/?code=123456 à taper dans Safari sur l'iPad (même Wi-Fi).
+L'iPad retient le code. Si Windows demande l'autorisation du pare-feu, accepte pour les réseaux
+PRIVÉS seulement. À n'utiliser que sur le Wi-Fi de la maison.
 
 MISE EN VEILLE
 Tant qu'un bot, un tournoi ou un labo tourne, l'ordinateur ne se met pas en veille (l'écran, lui, peut
-s'éteindre). Le réglage normal revient tout seul dès que la fenêtre est fermée. Ne ferme pas le capot
-d'un portable : selon ses réglages, il s'endort quand même.
+s'éteindre). Le réglage normal revient tout seul dès qu'ils s'arrêtent. Ne ferme pas le capot d'un
+portable : selon ses réglages, il s'endort quand même.
+Les labos utilisent tous les cœurs du processeur sauf un : l'ordinateur peut ventiler fort pendant
+le calcul.
 
-Les labos utilisent tous les cœurs du processeur sauf un : bien plus rapides qu'avant, mais
-l'ordinateur peut ventiler fort pendant le calcul.
-
-LIRE LE TABLEAU DU LABO
+LIRE LES RÉSULTATS DU LABO
 - Avant frais : ce que la stratégie capte sur le prix. Après frais : ce qui reste, frais et
   glissement compris. L'écart entre les deux est le coût d'un aller-retour (environ 0,3 %).
 - Test final : les 20 % les plus récents de l'historique, jamais regardés pour choisir. Une
@@ -68,30 +60,39 @@ LIRE LE TABLEAU DU LABO
   ligne pour le coût d'un aller-retour. Pour gagner, une barre doit dépasser la ligne.
 
 DANS L'ORDRE
-1. Le soir, lance « 13 - Recherche de nuit ». Le lendemain, envoie à Claude une photo du tableau de
-   bord (les sections « Laboratoire ») ou le haut des tableaux et les VERDICTS.
-2. Si un labo court terme y retient une stratégie (« à surveiller » ou « prometteur »), lance
-   « 8 - Tournoi court terme ».
-3. En parallèle, « 9 - Tournoi long terme » fait tourner les stratégies retenues par le labo long
-   terme : à laisser tourner plusieurs semaines, PC allumé.
-4. Dans le tableau de bord, une stratégie n'est marquée « candidate au testnet » qu'après 30 trades
+1. Le soir : « Ouvrir le bot », puis « Pilote automatique ». Le lendemain, regarde l'accueil du
+   site (ou envoie à Claude une photo des « Résultats » ou du tableau de bord).
+2. Si un labo a retenu une stratégie, le pilote a déjà lancé son tournoi en argent fictif : laisse-le
+   tourner plusieurs semaines, PC allumé et fenêtre du bot ouverte.
+3. Dans le tableau de bord, une stratégie n'est marquée « candidate au testnet » qu'après 30 trades
    nettement positifs, frais compris, avec un seuil d'autant plus dur qu'il y a de bots en
    compétition (sinon la chance en ferait gagner).
+4. Si aucune stratégie n'est retenue, c'est la réponse honnête du labo : rien ne bat les frais sur
+   ces marchés. Relance une recherche dans quelques semaines ; n'engage pas d'argent réel.
 
 LE GARDIEN (correction automatique)
 Après 20 trades, une stratégie qui perd nettement (même en comptant la malchance) est éliminée :
 le bot n'ouvre plus de position, et le tableau de bord affiche « Éliminée » avec la raison.
 Le gardien ne change JAMAIS les réglages d'une stratégie et ne passe jamais en argent réel :
 il coupe ce qui perd, c'est tout. Un tournoi reprend là où il s'était arrêté ; pour le
-recommencer de zéro, ferme-le et supprime son dossier (data\tournoi ou data\tournoi-court-terme).
+recommencer de zéro, arrête-le et supprime son dossier (data\tournoi ou data\tournoi-court-terme).
+
+AUTRES LANCEURS
+Le dossier « autres lanceurs » garde les anciens fichiers (menu, labos, tournois, prix en direct,
+Telegram...) : ils font la même chose que les boutons du site, dans une fenêtre noire. « 4 - Lancer
+le bot » est le seul moyen de lancer un bot en argent réel (MODE=live dans .env), après un verdict
+« prometteur » et plusieurs semaines de testnet. « Modifier les reglages » ouvre le fichier .env.
+
+ALERTES TELEGRAM (facultatif, gratuit)
+Dans Telegram, écris à @BotFather, envoie /newbot et colle le « token » donné dans les Réglages du
+site ; écris un message à ton nouveau bot, puis lance « Tester les alertes Telegram » : il affiche le
+TELEGRAM_CHAT_ID à recopier et t'envoie un test. Ensuite, tes bots t'envoient leurs achats, ventes
+et alertes ; un tournoi envoie son départ, les éliminations et un résumé par heure.
 
 PLATEFORME
 En argent fictif, le bot lit seulement les prix publics : aucun compte n'est nécessaire. Pour un
 vrai compte plus tard, il faudra une plateforme agréée en France (liste blanche de l'AMF) : d'après
 la presse, Binance a arrêté le trading pour ses clients français le 1er juillet 2026.
-
-Si tu avais déjà un fichier .env d'une version précédente, ajoute-y cette ligne pour avoir
-les 3 bots : BOTS=BTC/USDT@15m,BTC/USDT@1h,BTC/USDT@1d
 
 Les résultats, le journal et le tableau de bord sont dans le dossier « data ».
 Ne mets jamais d'argent réel sans une structure « prometteuse » ET plusieurs semaines de testnet.

@@ -45,17 +45,21 @@ def pick_markets(
     return chosen
 
 
+def tradable(market: dict | None, quote: str) -> bool:
+    """Une paire spot ouverte, cotée dans `quote`, qui n'est ni une monnaie stable ni un token à levier."""
+    if not market or not market.get("spot") or market.get("active") is False or market.get("quote") != quote:
+        return False
+    base = market.get("base", "")
+    return base not in STABLE_OR_PEGGED and not base.endswith(LEVERAGED_SUFFIXES)
+
+
 def liquid_markets(exchange: ccxt.Exchange, quote: str, min_volume: float) -> list[ScanResult]:
     """Toutes les paires spot assez échangées, de la plus agitée à la plus calme (une seule requête)."""
     if not exchange.markets:
         exchange.load_markets()
     results = []
     for symbol, t in exchange.fetch_tickers().items():
-        market = exchange.markets.get(symbol)
-        if not market or not market.get("spot") or market.get("active") is False or market.get("quote") != quote:
-            continue
-        base = market.get("base", "")
-        if base in STABLE_OR_PEGGED or base.endswith(LEVERAGED_SUFFIXES):
+        if not tradable(exchange.markets.get(symbol), quote):
             continue
         high, low, last = t.get("high"), t.get("low"), t.get("last")
         volume = t.get("quoteVolume") or 0

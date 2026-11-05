@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 
@@ -18,24 +19,34 @@ class ConfigError(ValueError):
     pass
 
 
-def load_dotenv(path: Path = Path(".env")) -> None:
-    """Charge un fichier KEY=VALUE sans écraser les variables déjà définies."""
+def parse_dotenv(path: Path = Path(".env")) -> dict[str, str]:
+    """Les lignes KEY=VALUE d'un fichier .env (commentaires et lignes vides ignorés ; une clé écrite deux fois
+    garde sa première valeur)."""
+    values: dict[str, str] = {}
     if not path.exists():
-        return
+        return values
     for line in path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        os.environ.setdefault(key.strip(), value.strip().strip("'\""))
+        values.setdefault(key.strip(), value.strip().strip("'\""))
+    return values
 
 
-def _params_from_env(cls):
+def load_dotenv(path: Path = Path(".env")) -> None:
+    """Charge un fichier KEY=VALUE sans écraser les variables déjà définies."""
+    for key, value in parse_dotenv(path).items():
+        os.environ.setdefault(key, value)
+
+
+def _params_from_env(cls, environ: Mapping[str, str] | None = None):
     """Chaque champ du dataclass peut être surchargé par la variable d'env du même nom en majuscules."""
+    environ = os.environ if environ is None else environ
     defaults = cls()
     overrides = {}
     for f in fields(cls):
-        raw = os.environ.get(f.name.upper(), "").strip()
+        raw = environ.get(f.name.upper(), "").strip()
         if raw:
             default = getattr(defaults, f.name)
             # « 2,5 » à la française est accepté comme 2.5
@@ -43,8 +54,8 @@ def _params_from_env(cls):
     return cls(**overrides)
 
 
-def _env(name: str, default: str = "") -> str:
-    return os.environ.get(name, default).strip()
+def _env(name: str, default: str = "", environ: Mapping[str, str] | None = None) -> str:
+    return (os.environ if environ is None else environ).get(name, default).strip()
 
 
 def parse_bots(raw: str) -> tuple[tuple[str, str], ...]:
@@ -93,27 +104,31 @@ class Settings:
         return [replace(self, symbol=symbol, timeframe=timeframe) for symbol, timeframe in self.markets]
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
+        """Réglages lus dans l'environnement (ou dans `environ`, pour le site qui relit .env sans le charger)."""
+        def env(name: str, default: str = "") -> str:
+            return _env(name, default, environ)
+
         return cls(
-            mode=_env("MODE", "paper").lower(),
-            exchange=_env("EXCHANGE", "binance").lower(),
-            symbol=_env("SYMBOL", "BTC/USDT"),
-            timeframe=_env("TIMEFRAME", "1h"),
-            api_key=_env("API_KEY"),
-            api_secret=_env("API_SECRET"),
-            api_password=_env("API_PASSWORD"),
-            poll_seconds=int(_env("POLL_SECONDS", "30")),
-            max_capital=float(_env("MAX_CAPITAL", "0")),
-            paper_start_balance=float(_env("PAPER_START_BALANCE", "10000")),
-            data_dir=Path(_env("DATA_DIR", "data")),
-            obsidian_vault=Path(_env("OBSIDIAN_VAULT")).expanduser() if _env("OBSIDIAN_VAULT") else None,
-            live_confirmed=_env("CONFIRM_LIVE_TRADING") == LIVE_CONFIRMATION,
-            strategy=_params_from_env(StrategyParams),
-            risk=_params_from_env(RiskParams),
-            execution=_params_from_env(ExecutionParams),
-            bots=parse_bots(_env("BOTS")),
-            telegram_token=_env("TELEGRAM_TOKEN"),
-            telegram_chat_id=_env("TELEGRAM_CHAT_ID"),
+            mode=env("MODE", "paper").lower(),
+            exchange=env("EXCHANGE", "binance").lower(),
+            symbol=env("SYMBOL", "BTC/USDT"),
+            timeframe=env("TIMEFRAME", "1h"),
+            api_key=env("API_KEY"),
+            api_secret=env("API_SECRET"),
+            api_password=env("API_PASSWORD"),
+            poll_seconds=int(env("POLL_SECONDS", "30")),
+            max_capital=float(env("MAX_CAPITAL", "0")),
+            paper_start_balance=float(env("PAPER_START_BALANCE", "10000")),
+            data_dir=Path(env("DATA_DIR", "data")),
+            obsidian_vault=Path(env("OBSIDIAN_VAULT")).expanduser() if env("OBSIDIAN_VAULT") else None,
+            live_confirmed=env("CONFIRM_LIVE_TRADING") == LIVE_CONFIRMATION,
+            strategy=_params_from_env(StrategyParams, environ),
+            risk=_params_from_env(RiskParams, environ),
+            execution=_params_from_env(ExecutionParams, environ),
+            bots=parse_bots(env("BOTS")),
+            telegram_token=env("TELEGRAM_TOKEN"),
+            telegram_chat_id=env("TELEGRAM_CHAT_ID"),
         )
 
     def validate_for_trading(self) -> None:

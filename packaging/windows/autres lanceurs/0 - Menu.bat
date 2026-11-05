@@ -1,11 +1,12 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if not exist .env copy .env.example .env >nul
 :menu
 cls
 echo ==========================================================================
 echo   BOT DE TRADING - MENU          (argent fictif tant que tu ne changes rien)
 echo ==========================================================================
+echo   Le plus simple : ferme ce menu et ouvre "Ouvrir le bot" (le site du bot).
 echo.
 echo   VOIR
 echo     1  Prix en direct : Binance, OKX, Kraken, Coinbase, Bybit cote a cote
@@ -52,44 +53,44 @@ if "%choix%"=="14" goto choix14
 if "%choix%"=="0" exit /b
 goto menu
 :choix1
-call "11 - Prix en direct.bat"
+call "%~dp011 - Prix en direct.bat"
 goto menu
 :choix2
-call "5 - Tableau de bord.bat"
+call "%~dp05 - Tableau de bord.bat"
 goto menu
 :choix3
-call "7 - Labo court terme.bat"
+call "%~dp07 - Labo court terme.bat"
 goto menu
 :choix4
-call "10 - Labo court terme ordres limites.bat"
+call "%~dp010 - Labo court terme ordres limites.bat"
 goto menu
 :choix5
-call "6 - Laboratoire de strategies.bat"
+call "%~dp06 - Laboratoire de strategies.bat"
 goto menu
 :choix6
-call "1 - Tester la robustesse.bat"
+call "%~dp01 - Tester la robustesse.bat"
 goto menu
 :choix7
-call "2 - Backtest.bat"
+call "%~dp02 - Backtest.bat"
 goto menu
 :choix8
-call "8 - Tournoi court terme.bat"
+call "%~dp08 - Tournoi court terme.bat"
 goto menu
 :choix9
-call "9 - Tournoi long terme.bat"
+call "%~dp09 - Tournoi long terme.bat"
 goto menu
 :choix10
-call "4 - Lancer le bot.bat"
+call "%~dp04 - Lancer le bot.bat"
 goto menu
 :choix11
-call "3 - Verifier la connexion.bat"
+call "%~dp03 - Verifier la connexion.bat"
 goto menu
 :choix12
-call "Modifier les reglages.bat"
+call "%~dp0Modifier les reglages.bat"
 goto menu
 :choix13
-call "12 - Tester les alertes Telegram.bat"
+call "%~dp012 - Tester les alertes Telegram.bat"
 goto menu
 :choix14
-call "13 - Recherche de nuit.bat"
+call "%~dp013 - Recherche de nuit.bat"
 goto menu

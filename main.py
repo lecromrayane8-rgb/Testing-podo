@@ -1,4 +1,7 @@
-"""Point d'entrée : python main.py {backtest,robustesse,labo,tournoi,prix,telegram,check,run,tableau,reset-guard} --help"""
+"""Point d'entrée : python main.py {site,backtest,robustesse,labo,tournoi,prix,telegram,check,run,tableau,reset-guard} --help
+
+Sans argument (double-clic sur la version Windows), le site du bot s'ouvre dans le navigateur.
+"""
 from __future__ import annotations
 
 import argparse
@@ -24,15 +27,16 @@ from tradingbot.dashboard import ROBUSTNESS_FILE, write_dashboard
 from tradingbot.execution import ExecutionParams
 from tradingbot.data import load_csv, load_or_fetch, make_exchange, timeframe_to_ms
 from tradingbot.lab import (
-    ALL_VARIANTS, COMBOS, LAB_FILE, PROMISING, VARIANTS, env_lines, format_lab, load_lab, overall_lab_verdict, run_lab,
-    save_lab,
+    ALL_VARIANTS, LAB_FILE, PROMISING, SHORT_TERM_VARIANTS, VARIANTS, env_lines, format_lab, load_lab,
+    overall_lab_verdict, run_lab, save_lab,
 )
 from tradingbot.live import Bot, StateStore, bot_paths, px, run_bots, slug
 from tradingbot.obsidian import JOURNAL, ObsidianHandler, ObsidianJournal
 from tradingbot.robustness import evaluate, format_robustness, overall_verdict, research_risk, save_results
 from tradingbot.notify import ALERT, attach as attach_telegram, call as telegram_call, latest_chat_id
-from tradingbot.prices import DEFAULT_PLATFORMS, connect, format_board, label, new_listings, snapshot
+from tradingbot.prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, connect, format_board, label, new_listings, snapshot
 from tradingbot.scanner import ScanResult, pick_markets, scan_volatile
+from tradingbot.webapp import PORT, serve
 
 log = logging.getLogger("tradingbot")
 
@@ -45,6 +49,10 @@ TOURNAMENT_DIR = "tournoi"
 WATCH = "à surveiller"
 SUMMARY_SECONDS = 300  # résumé du tournoi dans la console toutes les 5 minutes
 PHONE_SUMMARY_SECONDS = 3600  # et sur le téléphone (Telegram) toutes les heures
+
+
+class NothingRetained(ValueError):
+    """Le labo n'a retenu aucune stratégie : rien à faire tourner. C'est une réponse, pas une panne."""
 
 
 def history_days(timeframe: str, days: int) -> int:
@@ -185,7 +193,7 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
     if not datasets:
         raise ValueError("Aucune donnée récupérée : vérifie ta connexion internet.")
     markets = sorted({m for group in datasets.values() for m in group})
-    variants = {**VARIANTS, **COMBOS} if args.combinaisons else VARIANTS
+    variants = SHORT_TERM_VARIANTS if args.combinaisons else VARIANTS
     # Ordres limites : on attend son prix au lieu de payer l'écart et le glissement (frais maker du .env).
     execution = replace(s.execution, order_type="limit") if args.ordres_limites else s.execution
     log.info("Laboratoire : %d variantes × %d unités de temps sur %d marchés, %s", len(variants), len(datasets),
@@ -377,7 +385,7 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
         timeframes = {r.get("timeframe", "?") for _, one in labs for r in one["rows"]}
         hint = (" Pour le long terme, relance d'abord « 6 - Laboratoire de strategies »."
                 if all(is_short_term(tf) for tf in timeframes) else "")
-        raise ValueError(
+        raise NothingRetained(
             f"Le labo ({', '.join(sorted(timeframes))}) n'a retenu aucune stratégie « à surveiller » ou « prometteur » : "
             "rien à mettre en compétition. C'est le signe qu'aucune ne gagne après frais sur ces marchés et à ces "
             f"unités de temps.{hint}"
@@ -454,7 +462,9 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
         return path
 
     try:
-        webbrowser.open(refresh().resolve().as_uri())
+        page = refresh()
+        if not args.sans_navigateur:  # lancé depuis le site : son onglet « Tableau de bord » le montre déjà
+            webbrowser.open(page.resolve().as_uri())
     except Exception as exc:  # le tableau de bord ne doit jamais empêcher de trader
         log.warning("Tableau de bord du tournoi non écrit : %s", exc)
     # Bougies de moins de 15 min : un tour toutes les 15 s au plus ; au-delà, le rythme habituel suffit.
@@ -519,6 +529,12 @@ def cmd_telegram(s: Settings, args: argparse.Namespace) -> None:
     print("Message de test envoyé : regarde Telegram.")
 
 
+def cmd_site(s: Settings, args: argparse.Namespace) -> None:
+    """Le site du bot : tout à portée de main dans le navigateur (voir tradingbot/webapp.py)."""
+    serve(Path.cwd(), args.pristine_env, make_exchange, port=args.port, open_browser=not args.sans_navigateur,
+          lan=args.ipad)
+
+
 def cmd_dashboard(s: Settings, args: argparse.Namespace) -> None:
     path = write_dashboard(s)
     print(f"Tableau de bord : {path}")
@@ -540,10 +556,29 @@ def cmd_reset_guard(s: Settings, args: argparse.Namespace) -> None:
         print(f"[{bs.symbol} {bs.timeframe}] garde-fou réarmé : le bot pourra de nouveau ouvrir des positions.")
 
 
+def live_output() -> None:
+    """Lancé par le site : sortie en UTF-8, ligne par ligne, pour que son journal s'affiche en direct."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    if os.environ.get("TRADINGBOT_SITE"):
+        live_output()
+    pristine_env = dict(os.environ)  # avant .env : le site le donne aux commandes, qui relisent .env elles-mêmes
     load_dotenv()
+    if argv is None:
+        argv = sys.argv[1:] or ["site"]  # double-clic sur le programme : le site s'ouvre
     parser = argparse.ArgumentParser(description="Bot de trading spot : backtest, labo, tournoi et bots en direct")
     sub = parser.add_subparsers(dest="command", required=True)
+    st = sub.add_parser("site", help="ouvrir le site du bot dans le navigateur (tout à portée de main)")
+    st.add_argument("--port", type=int, default=PORT)
+    st.add_argument("--sans-navigateur", action="store_true", help="ne pas ouvrir le navigateur")
+    st.add_argument("--ipad", action="store_true",
+                    help="ouvrir aussi le site aux appareils du Wi-Fi de la maison (avec un code)")
     bt = sub.add_parser("backtest", help="tester la stratégie sur l'historique")
     bt.add_argument("--days", type=int, default=730, help="profondeur d'historique en jours")
     bt.add_argument("--capital", type=float, default=10_000.0)
@@ -563,7 +598,8 @@ def main(argv: list[str] | None = None) -> int:
     lb.add_argument("--ordres-limites", action="store_true",
                     help="simuler des ordres limites (frais maker, sans écart ni glissement à l'entrée)")
     lb.add_argument("--combinaisons", action="store_true",
-                    help="ajouter les combinaisons court terme (filtres de volatilité et de volume)")
+                    help="ajouter les combinaisons court terme (filtres de volatilité, de volume, d'heures et de "
+                         "compression) et les impulsions (sauter sur un mouvement soudain)")
     lb.add_argument("--coeurs", type=int, default=None,
                     help="cœurs du processeur à utiliser (par défaut : tous sauf un)")
     lb.add_argument("--resultats", default=LAB_FILE,
@@ -578,8 +614,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="ajouter les marchés sur lesquels le labo a testé ses stratégies")
     tn.add_argument("--strategies", type=int, default=6, help="nombre maximum de stratégies en compétition")
     tn.add_argument("--capital", type=float, default=1000.0, help="capital fictif de chaque bot")
+    tn.add_argument("--sans-navigateur", action="store_true", help="ne pas ouvrir le tableau de bord au départ")
     pr = sub.add_parser("prix", help="les vrais prix de plusieurs plateformes, en direct et sans compte")
-    pr.add_argument("--cryptos", default="BTC,ETH,SOL,BNB,XRP,DOGE,PEPE,WIF")
+    pr.add_argument("--cryptos", default=",".join(DEFAULT_CRYPTOS))
     pr.add_argument("--plateformes", default=",".join(DEFAULT_PLATFORMS))
     pr.add_argument("--secondes", type=float, default=10.0, help="délai entre deux mises à jour")
     pr.add_argument("--agitees", type=int, default=8, help="nombre de cryptos agitées à lister (0 = aucune)")
@@ -591,6 +628,7 @@ def main(argv: list[str] | None = None) -> int:
     tb.add_argument("--no-open", action="store_true", help="ne pas ouvrir le navigateur")
     sub.add_parser("reset-guard", help="réarmer les bots après un arrêt pour drawdown (bots arrêtés)")
     args = parser.parse_args(argv)
+    args.pristine_env = pristine_env
 
     try:
         settings = Settings.from_env()
@@ -609,6 +647,7 @@ def main(argv: list[str] | None = None) -> int:
         "run": cmd_run,
         "tableau": cmd_dashboard,
         "reset-guard": cmd_reset_guard,
+        "site": cmd_site,
     }
     try:
         commands[args.command](settings, args)
@@ -621,6 +660,9 @@ def main(argv: list[str] | None = None) -> int:
     except ccxt.NetworkError as exc:
         log.error("Impossible de joindre %s : %s", settings.exchange, exc)
         return 1
+    except NothingRetained as exc:
+        log.warning("%s", exc)
+        return 0
     except ValueError as exc:
         log.error("%s", exc)
         return 1

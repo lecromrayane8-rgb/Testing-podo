@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0.."
 if not exist .env copy .env.example .env >nul
 echo Tournoi en ARGENT FICTIF : les strategies "a surveiller" du labo court terme (7 ou 10), chacune dans
 echo l'unite de temps ou le labo l'a trouvee, avec les memes ordres et les memes frais que dans le labo.

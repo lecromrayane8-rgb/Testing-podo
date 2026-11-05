@@ -415,7 +415,8 @@ ICONS = {
 def kpis(views: list[BotView], quote: str) -> str:
     started = [v for v in views if v.started]
     if not started:
-        return '<p class="empty">Aucun bot n\'a encore tourné. Lance « 4 - Lancer le bot ».</p>'
+        return ('<p class="empty">Aucun bot n\'a encore tourné. Lance « Mes bots » depuis le site du bot '
+                "(ou « 4 - Lancer le bot »).</p>")
     initial = sum(v.initial for v in started)
     equity = sum(v.equity for v in started)
     pnl = equity - initial

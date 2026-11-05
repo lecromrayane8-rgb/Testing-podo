@@ -50,6 +50,30 @@ jobs:
           Copy-Item sample.csv samples\b.csv
           .\dist\tradingbot\tradingbot.exe labo --symbols "," --timeframes "," --csv-dir samples --coeurs 2
 
+      - name: Vérifier le site (il lance l'exécutable lui-même et lit son journal)
+        run: |
+          $site = Start-Process -FilePath .\dist\tradingbot\tradingbot.exe -PassThru -NoNewWindow `
+            -ArgumentList "site", "--sans-navigateur", "--port", "8790"
+          $ping = $null
+          foreach ($i in 1..30) {
+            Start-Sleep -Seconds 1
+            try { $ping = Invoke-RestMethod http://127.0.0.1:8790/api/ping; break } catch { }
+          }
+          if ($ping.site -ne "tradingbot") { throw "le site ne répond pas" }
+          $page = Invoke-WebRequest http://127.0.0.1:8790/
+          if ($page.Content -notmatch "Prochaine étape") { throw "page du site incomplète" }
+          $task = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8790/api/lancer `
+            -Headers @{ "X-Demande" = "site-du-bot" } -ContentType "application/json" -Body '{"action": "telegram"}'
+          $text = ""
+          foreach ($i in 1..30) {
+            Start-Sleep -Seconds 1
+            $journal = Invoke-RestMethod "http://127.0.0.1:8790/api/journal?tache=$($task.task.id)&depuis=0"
+            if ($journal.task.status -ne "en cours") { $text = $journal.lines -join "`n"; break }
+          }
+          Write-Output $text
+          Stop-Process -Id $site.Id -Force
+          if ($text -notmatch "TELEGRAM_TOKEN" -or $text -notmatch "réglages") { throw "journal de la tâche illisible" }
+
       - name: Assembler le dossier
         run: |
           $out = "tradingbot-windows"
