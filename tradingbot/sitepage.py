@@ -71,9 +71,11 @@ main.site { padding-top: 20px; }
 .status-line { margin: 0 0 12px; color: var(--text-secondary); font-size: 13px; }
 td.focus { font-weight: 700; }
 tr.strong td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+.tabs .short { display: none; }
 @media (max-width: 600px) {
   .tabs { flex-wrap: wrap; }
   .tabs .long, .win:not(.focus), .vol { display: none; }
+  .tabs .short { display: inline; }
   #view-radar th, #view-radar td { padding: 8px 8px; }
 }
 .link { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--text-primary);
@@ -139,7 +141,7 @@ BODY = """
     <a href="#accueil" data-view="accueil">Accueil</a>
     <a href="#radar" data-view="radar">Radar<span class="long"> des mouvements</span></a>
     <a href="#prix" data-view="prix">Prix</a>
-    <a href="#essais" data-view="essais"><span class="long">Mes </span>essais</a>
+    <a href="#essais" data-view="essais"><span class="long">Mes essais</span><span class="short">Essais</span></a>
     <a href="#savoir" data-view="savoir">Comprendre</a>
     <a href="#tableau" data-view="tableau">Tableau<span class="long"> de bord</span></a>
     <a href="#journal" data-view="journal">Journal</a>
@@ -209,9 +211,10 @@ BODY = """
   </div>
   <div id="view-savoir" class="view" hidden>
     <h1>Comprendre les courbes</h1>
-    <p class="meta">Technique par technique : ce qu'elle mesure, comment la lire, ce que dit la recherche publiée (études
-      relues par des pairs, avec leurs liens) et ce qu'en dit ton propre labo, sur tes données. Rien ici n'est un conseil
-      d'achat : la recherche donne des pistes, seul le test tranche.</p>
+    <p class="meta">D'abord la base des bots : les idées tirées d'études publiées (relues par des pairs, avec leurs liens),
+      devenues des règles que ton labo teste. Puis, technique par technique : ce qu'elle mesure, comment la lire, ce que
+      dit la recherche et ce qu'en dit ton labo, sur tes données. Rien ici n'est un conseil d'achat : la recherche donne
+      des pistes, seul le test tranche.</p>
     <div id="savoir-cards"><p class="muted">Chargement…</p></div>
   </div>
   <div id="view-tableau" class="view" hidden>
@@ -440,6 +443,45 @@ JS = r"""
         text: 'Voir son tableau de bord', onclick: () => { currentBoard = t.folder; location.hash = '#tableau'; showBoard(t.folder); }})));
       box.append(card);
     }
+    if (s.portfolio) renderPortfolio(s.portfolio, box);
+  }
+  function pct2(v) {  // déjà en pourcentage, deux décimales
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    const s = Math.abs(v).toFixed(2);
+    return (Number(s) === 0 ? '' : v > 0 ? '+' : MINUS) + s.replace('.', ',') + ' %';
+  }
+  function renderPortfolio(pf, box) {
+    const lab = pf.lab;
+    const card = el('article', {class: 'card'}, el('h3', {text: 'Labo portefeuille'}));
+    if (!lab.done) {
+      card.append(el('p', {class: 'muted', text: 'Pas encore lancé.'}));
+    } else {
+      card.append(el('p', {class: 'muted', text: when(lab.date) + ' · ' + lab.tested + ' variantes sur ' + lab.coins + ' cryptos'}));
+      card.append(el('p', {}, el('strong', {text: lab.retained === 0 ? 'Aucune variante retenue' :
+        lab.retained === 1 ? '1 variante retenue' : lab.retained + ' variantes retenues'}),
+        lab.retained ? ' : ' + lab.names.join(', ') + (lab.retained > lab.names.length ? '…' : '') :
+          ' : aucune ne bat le panier de toutes les cryptos, frais compris'));
+      if (lab.best) card.append(el('p', {class: 'muted', text: 'Meilleure : ' + pct2(lab.best.mean) +
+        ' par semaine après frais, contre ' + pct2(lab.best.basket) + ' pour le panier de toutes les cryptos (' +
+        lab.best.variant + ', ' + lab.best.verdict + ')'}));
+    }
+    box.append(card);
+    const run = el('article', {class: 'card'},
+      el('div', {class: 'card-head'}, el('h3', {text: 'Portefeuille momentum'}), pf.running ? chip('live', 'en cours') : null));
+    if (!pf.books.length) run.append(el('p', {class: 'muted', text: pf.running ? 'Démarrage…' : 'Jamais lancé.'}));
+    for (const b of pf.books) {
+      run.append(el('p', {}, el('strong', {text: b.variant}), el('br'),
+        usdt(b.value) + ' fictifs, ', el('span', {class: cls(b.pnl_pct), text: pct2(b.pnl_pct)}),
+        ' depuis le ' + when(b.since)));
+      run.append(el('p', {class: 'muted', text: (b.holdings.length ? 'Garde ' + b.holdings.join(', ') : 'Rien en main') +
+        ' · prochaine rotation le ' + when(b.next)}));
+    }
+    if (!pf.running && pf.books.some(b => b.retained)) run.append(el('p', {class: 'muted',
+      text: 'À l\'arrêt : relance « Portefeuille momentum » pour qu\'il continue.'}));
+    if (pf.books.some(b => !b.retained)) run.append(el('p', {class: 'muted',
+      text: 'Le dernier labo portefeuille ne retient plus ' + (pf.books.filter(b => !b.retained).length > 1 ?
+        'certaines de ces variantes : elles ne tournent plus.' : 'une de ces variantes : elle ne tourne plus.')}));
+    box.append(run);
   }
   function renderActions(s) {
     const box = $('#actions'); box.replaceChildren();
@@ -777,12 +819,44 @@ JS = r"""
     let data;
     try { data = await getJSON('/api/savoir'); } catch (e) { toast(e.message, true); return; }
     const box = $('#savoir-cards'); box.replaceChildren();
+    const links = sources => el('p', {class: 'sources'}, ...sources.flatMap((src, i) => [i ? ' · ' : null,
+      el('a', {href: src.url, target: '_blank', rel: 'noopener', text: src.title})]));
+    if (data.ideas && data.ideas.length) {
+      const cards = el('div', {class: 'cards wide'});
+      const STATUS = {retenue: ['ok', 'utilisée par les bots'], recalee: ['bad', 'recalée par ton labo'],
+        defavorable: ['warn', 'recherche défavorable'], 'a-tester': ['idle', 'à tester']};
+      for (const idea of data.ideas) {
+        const [kind, label] = STATUS[idea.status] || ['idle', idea.status];
+        let best = '';
+        if (idea.best_portfolio) best = ' Meilleure : ' + idea.best_portfolio.variant + ', ' + pct2(idea.best_portfolio.mean) +
+          ' par semaine après frais (panier de toutes les cryptos : ' + pct2(idea.best_portfolio.basket) + ').';
+        else if (idea.best_rule) best = ' Meilleure : ' + idea.best_rule.variant + ' en ' + idea.best_rule.timeframe + ', ' +
+          pctPoints(idea.best_rule.net) + ' par trade après frais (' + idea.best_rule.verdict + ').';
+        cards.append(el('article', {class: 'card know'},
+          el('div', {class: 'card-head'}, el('h3', {text: idea.title}), chip(kind, label)),
+          el('p', {}, el('strong', {text: 'Ce que les études ont trouvé. '}), idea.finding),
+          idea.rules.length ? el('p', {}, el('strong', {text: 'Règles fixées d\'avance, testées par le bot. '}),
+            idea.rules.join(' · ')) : null,
+          el('p', {class: 'lab-says'}, el('strong', {text: 'Où elle en est : '}), idea.status_text + best),
+          links(idea.sources)));
+      }
+      box.append(el('h3', {class: 'group-title', text: 'La base des bots : des études aux règles'}),
+        el('p', {class: 'muted', text: 'Chaque idée vient d\'études publiées. Elle devient une règle chiffrée, fixée ' +
+          'd\'après l\'étude et jamais ajustée sur tes données, que le labo teste. Les bots n\'utilisent que celles qui ' +
+          'passent le labo.'}), cards);
+    }
     for (const group of [...new Set(data.entries.map(e => e.group))]) {
       const cards = el('div', {class: 'cards wide'});
       for (const e of data.entries.filter(x => x.group === group)) {
         const lab = e.lab;
         let says = null;
-        if (lab) {
+        if (lab && lab.kind === 'portefeuille') {
+          if (!lab.tested) says = 'pas encore testé : le labo portefeuille (ou le pilote automatique) s\'en charge.';
+          else says = (lab.best ? 'meilleure variante ' + lab.best.variant + ' : ' + pct2(lab.best.mean) +
+            ' par semaine après frais, contre ' + pct2(lab.best.basket) + ' pour le panier de toutes les cryptos (' +
+            lab.best.verdict + '). ' : '') + (lab.retained ? lab.retained + ' variante(s) retenue(s) sur ' + lab.tested + '.' :
+            'Aucune des ' + lab.tested + ' variantes n\'est retenue.');
+        } else if (lab) {
           if (!lab.tested) says = 'pas encore testée dans tes labos.';
           else if (!lab.best) says = lab.tested + ' essais, trop peu de trades pour juger.';
           else says = 'meilleure version ' + lab.best.variant + ' en ' + lab.best.timeframe + ' : ' + pctPoints(lab.best.net) +
@@ -795,8 +869,7 @@ JS = r"""
           el('p', {}, el('strong', {text: 'Ce que ça mesure. '}), e.measures),
           el('p', {}, el('strong', {text: 'Comment le lire. '}), e.reading),
           el('p', {}, el('strong', {text: 'Ce que dit la recherche. '}), e.research),
-          el('p', {class: 'sources'}, ...e.sources.flatMap((src, i) => [i ? ' · ' : null,
-            el('a', {href: src.url, target: '_blank', rel: 'noopener', text: src.title})])),
+          links(e.sources),
           says ? el('p', {class: 'lab-says'}, el('strong', {text: 'Dans ton labo : '}), says) : null));
       }
       box.append(el('h3', {class: 'group-title', text: group}), cards);

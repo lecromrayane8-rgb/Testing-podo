@@ -1,9 +1,10 @@
 import json
 
 import numpy as np
+import pytest
 
 import main
-from tests.conftest import frame_from_closes
+from tests.conftest import daily_frame, frame_from_closes
 
 
 def test_robustness_command_uses_long_history_for_daily_bars(tmp_path, monkeypatch):
@@ -361,3 +362,108 @@ def test_a_finished_lab_sends_its_verdict_as_an_alert(tmp_path, monkeypatch, cap
     done = [r for r in caplog.records if r.getMessage().startswith("Labo terminé")]
     assert len(done) == 1 and getattr(done[0], "alert", False) and "VERDICT" in done[0].getMessage()
     assert awake == [True]
+
+
+def trending_coins(n=8, days=800, seed=2):
+    rng = np.random.default_rng(seed)
+    return {f"C{k}/USDT": daily_frame(100 * np.exp(np.cumsum(rng.normal(d, 0.01, days))))
+            for k, d in enumerate(np.linspace(-0.002, 0.004, n))}
+
+
+def test_the_portfolio_lab_tests_the_most_traded_coins(tmp_path, monkeypatch, caplog):
+    import logging
+    from tradingbot.scanner import ScanResult
+    caplog.set_level(logging.INFO, logger="tradingbot")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    frames, asked = trending_coins(), []
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: "connexion")
+    monkeypatch.setattr(main, "by_volume", lambda exchange, top: asked.append(top) or [
+        ScanResult(s, 0.1, 1e8, 0.0) for s in frames])
+    monkeypatch.setattr(main, "load_or_fetch", lambda ex, symbol, tf, days, cache, exchange=None: (
+        asked.append((tf, days)) or frames[symbol]))
+    monkeypatch.setattr(main, "keep_awake", lambda: True)
+    assert main.main(["labo-portefeuille", "--cryptos", "8"]) == 0
+    saved = json.loads((tmp_path / "data" / "laboratoire-portefeuille.json").read_text(encoding="utf-8"))
+    assert asked[0] == 8 and set(asked[1:]) == {("1d", main.LONG_TERM_DAYS)}
+    assert saved["univers"] == sorted(frames) and len(saved["rows"]) == 6
+    assert saved["cout"] == pytest.approx(0.0015) and saved["jours"] == 800
+    done = [r for r in caplog.records if r.getMessage().startswith("Labo portefeuille terminé")]
+    assert len(done) == 1 and getattr(done[0], "alert", False) and "VERDICT" in done[0].getMessage()
+
+
+def test_the_portfolio_lab_needs_enough_coins(tmp_path, monkeypatch):
+    from tradingbot.scanner import ScanResult
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    frames = trending_coins(n=3)
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: None)
+    monkeypatch.setattr(main, "by_volume", lambda exchange, top: [ScanResult(s, 0.1, 1e8, 0.0) for s in frames])
+    monkeypatch.setattr(main, "load_or_fetch", lambda ex, symbol, *a, **k: frames[symbol])
+    monkeypatch.setattr(main, "keep_awake", lambda: True)
+    assert main.main(["labo-portefeuille"]) == 1
+    assert not (tmp_path / "data" / "laboratoire-portefeuille.json").exists()
+
+
+class DailyExchange:
+    """Une plateforme qui rejoue des bougies d'un jour : derniers prix et clôtures terminées."""
+
+    def __init__(self, frames):
+        self.frames = frames
+        self.markets = {s: {"symbol": s, "base": s.split("/")[0], "quote": "USDT", "spot": True, "active": True}
+                        for s in frames}
+
+    def load_markets(self):
+        return self.markets
+
+    def milliseconds(self):
+        return int(max(df["ts"].iloc[-1] for df in self.frames.values())) + 86_400_000 + 1
+
+    def fetch_tickers(self, symbols=None):
+        return {s: {"last": float(df["close"].iloc[-1])} for s, df in self.frames.items() if symbols is None or s in symbols}
+
+    def fetch_ohlcv(self, symbol, timeframe, limit):
+        assert timeframe == "1d"
+        return self.frames[symbol][["ts", "open", "high", "low", "close", "volume"]].iloc[-limit:].values.tolist()
+
+
+def portfolio_lab(path, verdicts, universe):
+    rows = [{"variant": name, "verdict": verdict} for name, verdict in verdicts.items()]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"rows": rows, "univers": universe}), encoding="utf-8")
+
+
+def test_the_paper_portfolio_runs_only_what_the_lab_retained(tmp_path, monkeypatch, caplog):
+    import logging
+    caplog.set_level(logging.INFO, logger="tradingbot")
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    monkeypatch.setenv("DATA_DIR", str(data))
+    frames = trending_coins(days=60)
+    portfolio_lab(data / "laboratoire-portefeuille.json", {
+        "Momentum croisé 7 j, 3 cryptos": "à surveiller", "Momentum croisé 28 j, 5 cryptos": "perd de l'argent",
+    }, [*frames, "DISPARUE/USDT"])
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: DailyExchange(frames))
+    monkeypatch.setattr(main, "keep_awake", lambda: True)
+    assert main.main(["portefeuille", "--une-fois", "--capital", "500"]) == 0
+    books = list((data / "portefeuille").glob("*.json"))
+    assert len(books) == 1
+    state = json.loads(books[0].read_text(encoding="utf-8"))
+    assert state["variant"] == "Momentum croisé 7 j, 3 cryptos" and state["start"] == 500
+    assert len(state["rotations"]) == 1 and len(state["holdings"]) == 3 and state["next"]
+    assert 495 < state["value"] < 500  # frais et glissement de l'achat, rien d'autre
+    alerts = [r.getMessage() for r in caplog.records if getattr(r, "alert", False)]
+    assert any("rotation" in m for m in alerts)
+    assert main.main(["portefeuille", "--une-fois"]) == 0  # la semaine n'est pas finie : aucune rotation de plus
+    assert len(json.loads(books[0].read_text(encoding="utf-8"))["rotations"]) == 1
+
+
+def test_no_paper_portfolio_without_a_retained_variant(tmp_path, monkeypatch, caplog):
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    monkeypatch.setenv("DATA_DIR", str(data))
+    assert main.main(["portefeuille", "--une-fois"]) == 1  # le labo n'a jamais tourné
+    assert "labo portefeuille" in caplog.text.lower()
+    portfolio_lab(data / "laboratoire-portefeuille.json", {"Momentum croisé 7 j, 3 cryptos": "instable"}, ["A/USDT"])
+    assert main.main(["portefeuille", "--une-fois"]) == 0  # une réponse, pas une panne
+    assert "aucune variante" in caplog.text and not (data / "portefeuille").exists()

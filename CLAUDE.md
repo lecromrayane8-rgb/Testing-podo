@@ -19,12 +19,15 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 
 ## Architecture
 
-- `main.py` : ligne de commande (`site`, `backtest`, `robustesse`, `labo`, `tournoi`, `prix`, `telegram`, `check`, `run`,
-  `tableau`, `reset-guard`). Sans argument (double-clic sur l'exécutable Windows), `site`.
+- `main.py` : ligne de commande (`site`, `backtest`, `robustesse`, `labo`, `labo-portefeuille`, `tournoi`,
+  `portefeuille`, `prix`, `telegram`, `check`, `run`, `tableau`, `reset-guard`). Sans argument (double-clic sur
+  l'exécutable Windows), `site`. `NothingRetained` : un labo qui ne retient rien n'est pas une panne (code 0).
 - `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
   Chaque bouton (`ACTIONS`, `steps_for`) lance la même commande que son lanceur .bat (test `test_packaging`) dans un
   sous-processus (`TaskManager`, `Task`) dont le journal s'affiche en direct ; un seul calcul lourd à la fois (`CALCUL`) ;
-  « Pilote automatique » = 3 labos puis les 2 tournois. Sous Windows, un job `KILL_ON_JOB_CLOSE` par tâche : fermer
+  « Pilote automatique » = 4 labos (`PORTFOLIO_LAB` d'abord, le plus rapide) puis les 2 tournois et le portefeuille
+  (`then`) ; une étape en échec n'arrête pas les suivantes. Accueil : `next_step`, `lab_summaries`,
+  `tournament_summaries`, `portfolio_summary`. Sous Windows, un job `KILL_ON_JOB_CLOSE` par tâche : fermer
   le site arrête tout. Les commandes reçoivent l'environnement d'avant `.env` (`args.pristine_env`) et relisent `.env` ;
   `TRADINGBOT_SITE=1` passe leur sortie en UTF-8 ligne par ligne. Jamais d'argent réel : « Mes bots » refuse
   `MODE=live`, le formulaire (`FIELDS`, liste blanche) ne touche ni à MODE, ni aux clés, ni à CONFIRM_LIVE_TRADING, ni
@@ -41,10 +44,24 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   (signal de la famille impulsion), courbe médiane et quartiles sur 60 min, trois sorties `OPTIONS` (rapide, normale,
   laisser courir) passées par `run_backtest`, verdict franc (`bad`, `neutral`, `good` = piste à confirmer, `few`),
   `trade_plan` = stop et perte si le stop est touché.
-- `tradingbot/knowledge.py` : onglet « Comprendre » du site (`/api/savoir`) : une fiche par technique (toutes les
-  familles de `STRATEGY_TYPES`, plus figures chartistes et momentum croisé), ce que dit la recherche (`SOURCES`,
-  pages SciSpace d'études relues par des pairs) et ce qu'en dit le labo de l'utilisateur (`evidence`). Une idée tirée
-  d'une étude entre comme une règle à tester dans le labo, jamais comme un ordre.
+- `tradingbot/research.py` : la base de recherche des bots. `IDEAS` : une idée par effet documenté (clés de
+  `knowledge.SOURCES`), avec ses règles fixées d'avance d'après l'étude (`rules` → `RESEARCH_VARIANTS`, ajoutées au
+  labo : Momentum 7/28, Prix au-dessus de la MM 20/50) ou ses variantes de portefeuille (`portfolio`), ou `caution`
+  quand la recherche est défavorable (surréaction, intraday). Chemin : étude → règle → labo → tournoi/portefeuille →
+  testnet ; un bot n'agit jamais « parce qu'une étude le dit ».
+- `tradingbot/portfolio.py` : momentum croisé (Liu, Tsyvinski et Wu). `PORTFOLIO_VARIANTS` (7/14/28 j × 3/5 cryptos,
+  rotation tous les 7 jours), `simulate` (classement sur la clôture du jour i, achat à l'ouverture de i+1, frais sur
+  ce qui change, vente finale payée), `split` 50/30/20, `evaluate` (Bonferroni), `portfolio_verdict` : retenue
+  seulement si elle bat le panier de toutes les cryptos à parts égales (étude, validation, test final) ; « prometteur »
+  = borne basse durcie de l'écart avec le panier > 0 et test final gagnant ; biais du survivant rappelé dans le
+  verdict. `PaperPortfolio` : argent fictif, état dans `data/portefeuille/`, rotation immédiate puis tous les 7 jours à
+  00 h 10 UTC, dernier prix connu en secours. Commandes `labo-portefeuille` (30 cryptos les plus échangées,
+  `scanner.by_volume`, bougies d'un jour du cache) et `portefeuille` (2 variantes retenues au plus) ; lanceurs 14 et 15.
+- `tradingbot/knowledge.py` : onglet « Comprendre » du site (`/api/savoir`) : d'abord « la base des bots »
+  (`idea_view` : chaque idée de `research.IDEAS`, ses règles et son statut `a-tester`/`retenue`/`recalee`/
+  `defavorable` d'après les labos), puis une fiche par technique (toutes les familles de `STRATEGY_TYPES`, plus
+  figures chartistes et momentum croisé), ce que dit la recherche (`SOURCES`, pages SciSpace d'études relues par des
+  pairs) et ce qu'en dit le labo de l'utilisateur (`evidence`, `portfolio_evidence`).
 - `tradingbot/desk.py` : « Mes essais », compte fictif à part (`data/essais.json`, 1000 USDT) : achat au prix réel,
   frais et glissement compris, taille par le risque (1 %), au plus 1/5 du compte par essai et 5 essais ; revente par
   les règles de l'option (stop au prix du moment, puis temps maximum et essoufflement sur les bougies de 1 min
@@ -59,14 +76,14 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   Filtres d'achat optionnels pour toutes : volatilité (`min_atr_pct`), volume (`volume_mult`, `volume_period`),
   heures actives UTC (`active_hours`, « 13-21 ») et compression de Bollinger (`squeeze_quantile`, `squeeze_period`).
   Chaque trade du backtest garde le prix du graphique (`entry_mark`, `exit_mark`) : `gross_return` = avant frais.
-- `tradingbot/lab.py` : commande `labo`, 26 variantes × 7 marchés × 4 unités = 104 combinaisons, étude 50 % /
+- `tradingbot/lab.py` : commande `labo`, 28 variantes × 4 unités = 112 combinaisons (7 marchés réunis), étude 50 % /
   validation 30 % / test final 20 % (jamais regardé pour choisir : « prometteur » exige un test final positif,
   sinon « instable »), Bonferroni (approximation normale) sur le nombre d'essais, comparaison au buy & hold.
   Études sans garde-fous live ni élimination (`research_risk`). Pas de levier dans le labo (choix de l'utilisateur,
   à revoir). `--scanner N` / `--memecoins` ajoutent des cryptos ; sous 15 min, historique plafonné (60 j en 1m).
   `--combinaisons` ajoute `COMBOS` (17 variantes avec filtres) et `IMPULSES` (4 impulsions), seuils fixés d'avance :
-  `SHORT_TERM_VARIANTS` (47) ; `ALL_VARIANTS` sert à retrouver une variante par son nom. « Momentum 7 » et
-  « Momentum 28 » viennent de la recherche (momentum de 1 à 8 semaines en crypto), pas de nos données. `run_lab` répartit le calcul par (unité, marché) sur plusieurs
+  `SHORT_TERM_VARIANTS` (49) ; `ALL_VARIANTS` sert à retrouver une variante par son nom. `VARIANTS` se termine par
+  `research.RESEARCH_VARIANTS` (réglages tirés des études, pas de nos données). `run_lab` répartit le calcul par (unité, marché) sur plusieurs
   cœurs (`--coeurs`, repli en série si le parallèle échoue ; `multiprocessing.freeze_support()` dans `main.py`). Le labo affiche l'espérance avant frais
   (`gross_expectancy_pct`) et `cost_diagnosis` dit si ce sont les frais qui font perdre.
 - `tradingbot/prices.py` + commande `prix` (lanceur 11) : prix publics de plusieurs plateformes côte à côte (USDT,
@@ -77,10 +94,10 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - Labos (`lab.LAB_FILES`) : `laboratoire.json` (long terme), `laboratoire-court-terme.json` (lanceur 7),
   `laboratoire-court-terme-limites.json` (lanceur 10) ; une section par labo sur le tableau de bord ; `tournoi --labo`
   accepte plusieurs fichiers (`merge_picks` : meilleure version de chaque stratégie, avec les ordres de son labo).
-  Lanceur 13 « Recherche de nuit » : les trois labos à la suite. `awake.keep_awake()` empêche la veille Windows
+  Lanceur 13 « Recherche de nuit » : les quatre labos à la suite (portefeuille d'abord). `awake.keep_awake()` empêche la veille Windows
   pendant `labo`, `run` et `tournoi` ; le verdict d'un labo part en alerte Telegram.
 - `packaging/windows/` : à la racine du ZIP, `Ouvrir le bot.bat` (`site`) et `Ouvrir le bot sur iPad ou telephone.bat`
-  (`site --ipad`) ; les 15 anciens lanceurs (dont `0 - Menu.bat`) dans `autres lanceurs/`, qui remontent d'un dossier
+  (`site --ipad`) ; les 17 anciens lanceurs (dont `0 - Menu.bat`) dans `autres lanceurs/`, qui remontent d'un dossier
   (`cd /d "%~dp0.."`). Le workflow vérifie que le site de l'exécutable répond et lance une commande.
   `packaging/windows/CLAUDE.md` : consignes pour une session Claude ouverte sur le dossier du ZIP, sur le PC de
   l'utilisateur (commandes de l'exécutable, lecture des résultats, règles non négociables ; test de cohérence).
@@ -167,5 +184,10 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   court terme : comportement voulu) ; tournoi long terme avec une seule position et zéro trade après quelques heures,
   et « Mes bots » (BTC seul, 15m/1h/1d) qui ont tradé puis plus rien : normal (stratégies longues et rares). Il veut
   plein de cryptos → tournois en `--top 20` ; et une « base comme un livre d'expert » → onglet Comprendre sourcé
-  (SciSpace) + variantes Momentum 7/28 issues de la recherche. Prochaine piste : momentum croisé entre cryptos
-  (Liu, Tsyvinski et Wu), qui demande un labo de portefeuille.
+  (SciSpace) + variantes Momentum 7/28 issues de la recherche.
+- Nuit du 06/11/2026 (session autonome, toujours sans accès aux plateformes depuis le cloud) : l'utilisateur précise
+  que la base doit servir aux bots (« une base de données pour les bots », documents de finance) et veut un bot
+  opérationnel le lendemain → `research.py` (idées sourcées → règles du labo, dont Prix au-dessus de la MM 20/50),
+  labo portefeuille + portefeuille momentum en argent fictif (`portfolio.py`), branchés au pilote, à l'accueil, à
+  « Comprendre » et aux lanceurs 13/14/15. Aucun résultat réel encore : tout dépend du prochain pilote sur son PC.
+  Avant toute idée nouvelle : attendre les verdicts réels (photo de l'accueil et du journal du pilote).

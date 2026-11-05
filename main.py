@@ -1,4 +1,4 @@
-"""Point d'entrée : python main.py {site,backtest,robustesse,labo,tournoi,prix,telegram,check,run,tableau,reset-guard} --help
+"""Point d'entrée : python main.py {site,backtest,robustesse,labo,labo-portefeuille,tournoi,portefeuille,prix,telegram,check,run,tableau,reset-guard} --help
 
 Sans argument (double-clic sur la version Windows), le site du bot s'ouvre dans le navigateur.
 """
@@ -14,10 +14,11 @@ import sys
 import time
 import webbrowser
 from dataclasses import asdict, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import ccxt
+import pandas as pd
 
 from tradingbot.awake import keep_awake
 from tradingbot.backtest import format_comparison, format_report, run_backtest
@@ -25,7 +26,7 @@ from tradingbot.broker import CcxtBroker, PaperBroker, atomic_write
 from tradingbot.config import ConfigError, Settings, load_dotenv
 from tradingbot.dashboard import ROBUSTNESS_FILE, write_dashboard
 from tradingbot.execution import ExecutionParams
-from tradingbot.data import load_csv, load_or_fetch, make_exchange, timeframe_to_ms
+from tradingbot.data import load_csv, load_or_fetch, make_exchange, ohlcv_to_frame, timeframe_to_ms
 from tradingbot.lab import (
     ALL_VARIANTS, LAB_FILE, PROMISING, SHORT_TERM_VARIANTS, VARIANTS, env_lines, format_lab, load_lab,
     overall_lab_verdict, run_lab, save_lab,
@@ -35,7 +36,12 @@ from tradingbot.obsidian import JOURNAL, ObsidianHandler, ObsidianJournal
 from tradingbot.robustness import evaluate, format_robustness, overall_verdict, research_risk, save_results
 from tradingbot.notify import ALERT, attach as attach_telegram, call as telegram_call, latest_chat_id
 from tradingbot.prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, connect, format_board, label, new_listings, snapshot
-from tradingbot.scanner import ScanResult, pick_markets, scan_volatile
+from tradingbot.portfolio import (
+    MIN_COINS, PORTFOLIO_DIR, PORTFOLIO_LAB_FILE, PORTFOLIO_VARIANTS, RETAINED as PORTFOLIO_RETAINED, PaperPortfolio, align,
+    evaluate as evaluate_portfolio, format_rows as format_portfolio, load as load_portfolio_lab,
+    overall_verdict as portfolio_verdict, save as save_portfolio_lab,
+)
+from tradingbot.scanner import ScanResult, by_volume, pick_markets, scan_volatile, tradable
 from tradingbot.webapp import PORT, serve
 
 log = logging.getLogger("tradingbot")
@@ -473,6 +479,102 @@ def cmd_tournament(s: Settings, args: argparse.Namespace) -> None:
     run_bots(bots, min(s.poll_seconds, 15) if fast else s.poll_seconds, after_cycle=refresh)
 
 
+def cmd_portfolio_lab(s: Settings, args: argparse.Namespace) -> None:
+    """Le momentum croisé (garder chaque semaine les cryptos qui ont le plus monté), testé hors échantillon."""
+    keep_awake()
+    attach_telegram(s, journal=False)
+    exchange = make_exchange(s.exchange)
+    universe = [r.symbol for r in by_volume(exchange, top=args.cryptos)]
+    frames = {}
+    for symbol in universe:  # bougies d'un jour : le même cache que le labo long terme
+        try:
+            frames[symbol] = load_or_fetch(s.exchange, symbol, "1d", history_days("1d", args.days), s.data_dir / "cache",
+                                           exchange)
+        except (ccxt.ExchangeError, ccxt.NetworkError) as exc:
+            log.warning("%s ignorée : %s", symbol, exc)
+    if len(frames) < MIN_COINS:
+        raise ValueError(f"Seulement {len(frames)} cryptos récupérées : vérifie ta connexion internet.")
+    opens, closes = align(frames)
+    cost = s.execution.fee_rate + s.execution.slippage  # par ordre : frais au marché et glissement
+    log.info("Labo portefeuille : %d variantes sur %d cryptos, %d jours", len(PORTFOLIO_VARIANTS), len(frames),
+             len(closes))
+    rows = evaluate_portfolio(opens, closes, cost)
+    verdict = portfolio_verdict(rows, len(frames))
+    print(f"\n=== Labo portefeuille (momentum croisé) : {len(frames)} cryptos ===")
+    print(format_portfolio(rows))
+    print()
+    print(verdict)
+    save_portfolio_lab(s.data_dir / Path(args.resultats).name, rows, verdict,
+                       date=datetime.now(timezone.utc).isoformat(timespec="seconds"), jours=len(closes),
+                       univers=sorted(frames), cout=cost)
+    refresh_dashboard(s)
+    log.info("Labo portefeuille terminé :\n%s", verdict, extra=ALERT)
+
+
+def daily_closes(exchange: ccxt.Exchange, symbols: list[str], days: int) -> "pd.DataFrame":
+    """Les dernières clôtures journalières terminées de chaque crypto (celle du jour en cours est écartée)."""
+    frames, now = {}, exchange.milliseconds()
+    for symbol in symbols:
+        try:
+            frame = ohlcv_to_frame(exchange.fetch_ohlcv(symbol, "1d", limit=days + 2))
+        except (ccxt.NetworkError, ccxt.ExchangeError) as exc:
+            log.warning("%s : bougies journalières indisponibles (%s)", symbol, exc)
+            continue
+        frames[symbol] = frame[frame["ts"] + DAY_MS <= now]
+    return align(frames)[1]
+
+
+def cmd_portfolio(s: Settings, args: argparse.Namespace) -> None:
+    """Le portefeuille en argent fictif : les variantes retenues par le labo portefeuille, une rotation par semaine."""
+    lab = load_portfolio_lab(s.data_dir / PORTFOLIO_LAB_FILE)
+    if not lab or not lab.get("rows"):
+        raise ValueError("Aucun résultat du labo portefeuille : lance-le d'abord (« Labo portefeuille » sur le site).")
+    retained = [r for r in lab["rows"] if r.get("verdict") in PORTFOLIO_RETAINED
+                and r.get("variant") in PORTFOLIO_VARIANTS][:args.variantes]
+    if not retained:
+        raise NothingRetained("Le labo portefeuille n'a retenu aucune variante : sur ces cryptos, le momentum croisé "
+                              "ne bat pas le panier de toutes les cryptos, frais compris. Donc pas de portefeuille, "
+                              "c'est voulu.")
+    universe = lab.get("univers") or []
+    exchange = make_exchange(s.exchange)
+    exchange.load_markets()
+    universe = [u for u in universe if tradable(exchange.markets.get(u), "USDT")]  # toujours cotées
+    folder = s.data_dir / PORTFOLIO_DIR
+    books = [PaperPortfolio(folder / f"{slug(r['variant'])}.json", r["variant"], PORTFOLIO_VARIANTS[r["variant"]],
+                            s.execution.fee_rate, s.execution.slippage, args.capital) for r in retained]
+    keep_awake()  # une rotation par semaine : l'ordinateur doit rester éveillé
+    attach_telegram(s, journal=False)
+    log.info("Portefeuille fictif : %s, sur %d cryptos, %.0f USDT fictifs chacun",
+             ", ".join(b.name for b in books), len(universe), args.capital, extra={**JOURNAL, **ALERT})
+    lookback = max(b.params.lookback for b in books)
+    postponed: dict[str, datetime] = {}  # rotation reportée : nouvel essai un quart d'heure plus tard
+    while True:
+        now = datetime.now(timezone.utc)
+        try:
+            tickers = exchange.fetch_tickers()  # une requête pour tout : une crypto retirée ne bloque pas les autres
+            prices = {sym: float(tickers[sym]["last"]) for sym in universe if (tickers.get(sym) or {}).get("last")}
+            due = [b for b in books if b.due(now) and now >= postponed.get(b.name, now)]
+            if due:
+                closes = daily_closes(exchange, universe, lookback + 1)
+                for book in due:
+                    try:
+                        rotation = book.rotate(closes, prices, now)
+                    except ValueError as exc:
+                        postponed[book.name] = now + timedelta(minutes=15)
+                        log.warning("Portefeuille %s : %s", book.name, exc)
+                        continue
+                    log.info("Portefeuille %s : rotation, garde %s (vendu %s), valeur %.2f USDT fictifs", book.name,
+                             ", ".join(rotation["chosen"]), ", ".join(rotation["sold"]) or "rien", rotation["value"],
+                             extra={**JOURNAL, **ALERT})
+            for book in books:
+                book.mark(prices, now)
+        except (ccxt.NetworkError, ccxt.ExchangeError, ValueError, KeyError) as exc:
+            log.warning("Portefeuille : %s (nouvel essai dans %.0f s)", exc, args.secondes)
+        if args.une_fois:
+            return
+        time.sleep(args.secondes)
+
+
 HOT_REFRESH_S = 60  # la liste des cryptos agitées demande tout le marché : une fois par minute suffit
 
 
@@ -621,6 +723,15 @@ def main(argv: list[str] | None = None) -> int:
     pr.add_argument("--secondes", type=float, default=10.0, help="délai entre deux mises à jour")
     pr.add_argument("--agitees", type=int, default=8, help="nombre de cryptos agitées à lister (0 = aucune)")
     pr.add_argument("--une-fois", action="store_true", help="afficher une seule fois, puis s'arrêter")
+    lp = sub.add_parser("labo-portefeuille", help="tester le momentum croisé (garder les cryptos qui ont le plus monté)")
+    lp.add_argument("--cryptos", type=int, default=30, help="nombre de cryptos, les plus échangées")
+    lp.add_argument("--days", type=int, default=2500, help="jours d'historique (bougies d'un jour)")
+    lp.add_argument("--resultats", default=PORTFOLIO_LAB_FILE)
+    pf = sub.add_parser("portefeuille", help="le momentum croisé en argent fictif, une rotation par semaine")
+    pf.add_argument("--capital", type=float, default=1000.0, help="capital fictif de chaque portefeuille")
+    pf.add_argument("--variantes", type=int, default=2, help="nombre de variantes retenues à faire tourner")
+    pf.add_argument("--secondes", type=float, default=60.0, help="délai entre deux relevés de prix")
+    pf.add_argument("--une-fois", action="store_true", help="un seul tour (rotation si elle est due), puis s'arrêter")
     sub.add_parser("telegram", help="relier les alertes du bot à Telegram et envoyer un message de test")
     sub.add_parser("check", help="vérifier la connexion et les soldes")
     sub.add_parser("run", help="lancer le ou les bots (selon MODE et BOTS dans .env)")
@@ -648,6 +759,8 @@ def main(argv: list[str] | None = None) -> int:
         "tableau": cmd_dashboard,
         "reset-guard": cmd_reset_guard,
         "site": cmd_site,
+        "labo-portefeuille": cmd_portfolio_lab,
+        "portefeuille": cmd_portfolio,
     }
     try:
         commands[args.command](settings, args)

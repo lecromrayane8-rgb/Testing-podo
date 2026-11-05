@@ -51,6 +51,7 @@ from .lab import LAB_FILE, LAB_FILES, LIMIT_LAB_FILE, PROMISING, SHORT_LAB_FILE,
 from .prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, board_to_dict, connect, label, short_error, snapshot
 from .knowledge import knowledge
 from .moves import OPTIONS, STUDY_DAYS, round_trip_cost, study
+from .portfolio import PORTFOLIO_DIR, PORTFOLIO_LAB_FILE, RETAINED as PORTFOLIO_RETAINED, load as load_portfolio_lab
 from .radar import JOURNAL_FILE, STRONG, WINDOWS, MoveJournal, Radar, journal_stats
 from .robustness import MIN_TRADES
 
@@ -88,15 +89,23 @@ LIMIT_LAB = (*SHORT_LAB[:-2], "--ordres-limites", "--resultats", LIMIT_LAB_FILE)
 # Beaucoup de cryptos : plus de trades, donc un verdict plus rapide (les stratégies retenues achètent rarement).
 SHORT_TOURNAMENT = ("tournoi", "--labo", f"{SHORT_LAB_FILE},{LIMIT_LAB_FILE}", "--top", "20", "--sans-navigateur")
 LONG_TOURNAMENT = ("tournoi", "--avec-marches-du-labo", "--top", "20", "--sans-navigateur")
+PORTFOLIO_LAB = ("labo-portefeuille",)  # la règle de la recherche (momentum croisé), la plus rapide : en premier
+PORTFOLIO = ("portefeuille",)
 
 GROUPS = ("Le plus simple", "Chercher une stratégie", "Faire tourner en argent fictif", "Vérifier")
 ACTIONS = {a.key: a for a in (
     Action("pilote", "Pilote automatique", GROUPS[0],
-           "Cherche des stratégies sur l'historique réel (les trois labos), puis lance tout seul les deux tournois en "
-           "argent fictif avec celles qui ont été retenues. Tu n'as plus qu'à regarder.",
-           "1 à 3 h de calcul, puis les tournois tournent", CALCUL, then=("tournoi-court", "tournoi-long")),
+           "Cherche des stratégies sur l'historique réel (les quatre labos, dont la règle de portefeuille issue de la "
+           "recherche), puis lance tout seul, en argent fictif, les tournois et le portefeuille avec ce qui a été "
+           "retenu. Tu n'as plus qu'à regarder.",
+           "1 à 3 h de calcul, puis tout tourne", CALCUL, then=("tournoi-court", "tournoi-long", "portefeuille")),
     Action("recherche", "Recherche de nuit", GROUPS[1],
-           "Les trois labos à la suite : court terme, court terme en ordres limites, long terme.", "1 à 3 h", CALCUL),
+           "Les quatre labos à la suite : portefeuille, court terme, court terme en ordres limites, long terme.",
+           "1 à 3 h", CALCUL),
+    Action("labo-portefeuille", "Labo portefeuille", GROUPS[1],
+           "Une règle issue de la recherche : chaque semaine, garder les 3 ou 5 cryptos qui ont le plus monté parmi "
+           "les 30 plus échangées. Testée sur des années de bougies d'un jour, hors échantillon, contre le panier de "
+           "toutes les cryptos.", "2 à 5 min", CALCUL),
     Action("labo-court", "Labo court terme", GROUPS[1],
            "Bougies de 1, 5 et 15 min, avec les combinaisons et les impulsions, sur BTC, ETH, SOL, les cryptos les "
            "plus agitées et les memecoins.", "environ 1 h", CALCUL),
@@ -116,6 +125,10 @@ ACTIONS = {a.key: a for a in (
     Action("tournoi-long", "Tournoi long terme", GROUPS[2],
            "Les stratégies retenues par le labo long terme, chacune dans son unité de temps, sur beaucoup de cryptos. "
            "À laisser tourner plusieurs semaines.", "tourne jusqu'à ce que tu l'arrêtes", endless=True),
+    Action("portefeuille", "Portefeuille momentum", GROUPS[2],
+           "Les variantes retenues par le labo portefeuille, avec 1000 USDT fictifs chacune : une rotation par semaine "
+           "aux prix réels, frais compris. À laisser tourner plusieurs semaines.", "tourne jusqu'à ce que tu l'arrêtes",
+           endless=True),
     Action("bots", "Mes bots", GROUPS[2],
            "Les bots des réglages (BOTS), en argent fictif, testnet ou démo — jamais en argent réel depuis le site.",
            "tourne jusqu'à ce que tu l'arrêtes", endless=True),
@@ -134,8 +147,10 @@ def steps_for(key: str, root: Path) -> list[tuple[str, ...]]:
     """Les commandes du bot qu'une action lance, dans l'ordre."""
     long_lab = ("labo", "--csv-dir", "actions") if any((root / "actions").glob("*.csv")) else ("labo",)
     return {
-        "pilote": [SHORT_LAB, LIMIT_LAB, long_lab],
-        "recherche": [SHORT_LAB, LIMIT_LAB, long_lab],
+        "pilote": [PORTFOLIO_LAB, SHORT_LAB, LIMIT_LAB, long_lab],
+        "recherche": [PORTFOLIO_LAB, SHORT_LAB, LIMIT_LAB, long_lab],
+        "labo-portefeuille": [PORTFOLIO_LAB],
+        "portefeuille": [PORTFOLIO],
         "labo-court": [SHORT_LAB],
         "labo-limites": [LIMIT_LAB],
         "labo-long": [long_lab],
@@ -718,17 +733,45 @@ def tournament_summaries(data_dir: Path, running: set[str]) -> list[dict]:
     return out
 
 
-def next_step(labs: list[dict], running: list[Task], tournaments: list[dict]) -> dict:
+def portfolio_summary(data_dir: Path, running: bool) -> dict:
+    """Le labo portefeuille (ce qu'il a retenu) et les portefeuilles fictifs (valeur, cryptos gardées)."""
+    lab = load_portfolio_lab(data_dir / PORTFOLIO_LAB_FILE) or {}
+    rows = [r for r in lab.get("rows") or [] if isinstance(r, dict)]
+    retained = [r for r in rows if r.get("verdict") in PORTFOLIO_RETAINED]
+    best = (retained or rows or [None])[0]
+    books = []
+    for path in sorted((data_dir / PORTFOLIO_DIR).glob("*.json")):
+        try:
+            book = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        start, value = finite(book.get("start")), finite(book.get("value"))
+        books.append({"variant": book.get("variant"), "start": start, "value": value,
+                      "retained": any(r.get("variant") == book.get("variant") for r in retained),
+                      "pnl_pct": 100 * (value / start - 1) if start and value is not None else None,
+                      "holdings": sorted(s.split("/")[0] for s in book.get("holdings") or {}),
+                      "next": book.get("next"), "since": book.get("since"),
+                      "rotations": len(book.get("rotations") or [])})
+    return {"lab": {"done": bool(rows), "date": lab.get("date"), "tested": len(rows), "retained": len(retained),
+                    "coins": len(lab.get("univers") or []), "names": [r.get("variant") for r in retained[:3]],
+                    "best": {"variant": best.get("variant"), "mean": finite(best.get("mean_pct")),
+                             "basket": finite(best.get("basket_pct")), "verdict": best.get("verdict")}
+                    if best else None},
+            "books": books, "running": running}
+
+
+def next_step(labs: list[dict], running: list[Task], tournaments: list[dict], portfolio: dict | None = None) -> dict:
     """Une seule chose à faire maintenant, en une phrase."""
     keys = {t.action.key for t in running}
+    portfolio = portfolio or {"lab": {"done": False, "retained": 0}, "books": [], "running": False}
     computing = next((t for t in running if t.action.slot == CALCUL), None)
     if computing:
-        then = " Les tournois démarreront tout seuls à la fin." if computing.action.then else ""
+        then = " Les tournois et le portefeuille démarreront tout seuls à la fin." if computing.action.then else ""
         return {"title": f"{computing.action.title} : le bot calcule",
                 "text": "Il teste les stratégies sur l'historique réel. Tu peux fermer le navigateur, mais garde la "
                         f"fenêtre noire ouverte et l'ordinateur allumé.{then}", "view": "journal"}
     done = [lab for lab in labs if lab["done"]]
-    if not done:
+    if not done and not portfolio["lab"]["done"]:
         return {"title": "Lance le pilote automatique",
                 "text": "Le bot cherche, sur l'historique réel, des stratégies qui gagnent après frais (1 à 3 h), "
                         "puis les fait tourner en argent fictif. Aucun argent réel n'est engagé.", "action": "pilote"}
@@ -743,11 +786,16 @@ def next_step(labs: list[dict], running: list[Task], tournaments: list[dict]) ->
         return {"title": "Lance le tournoi long terme",
                 "text": f"Le labo long terme a retenu {long_} stratégie(s). Le tournoi les fait tourner en argent "
                         "fictif pendant plusieurs semaines.", "action": "tournoi-long"}
-    if any(t["running"] for t in tournaments):
-        return {"title": "Les tournois tournent : laisse-les accumuler des trades",
+    if portfolio["lab"]["retained"] and "portefeuille" not in keys:
+        return {"title": "Lance le portefeuille momentum",
+                "text": f"Le labo portefeuille a retenu {portfolio['lab']['retained']} variante(s) de la règle issue de "
+                        "la recherche. Le portefeuille l'applique en argent fictif, une rotation par semaine.",
+                "action": "portefeuille"}
+    if any(t["running"] for t in tournaments) or portfolio["running"]:
+        return {"title": "Tout tourne en argent fictif : laisse le temps faire",
                 "text": "Une stratégie n'est « candidate au testnet » qu'après 30 trades nettement positifs, frais "
-                        "compris. Le gardien coupe tout seul celles qui perdent. Regarde le tableau de bord de temps "
-                        "en temps.", "view": "tableau"}
+                        "compris ; le portefeuille, lui, se juge sur des semaines. Le gardien coupe tout seul ce qui "
+                        "perd. Regarde l'accueil et le tableau de bord de temps en temps.", "view": "tableau"}
     return {"title": "Aucune stratégie ne gagne après frais pour l'instant",
             "text": "C'est la réponse honnête du labo : sur ces marchés et ces unités de temps, rien ne bat les frais. "
                     "Relance une recherche dans quelques semaines, les marchés changent. N'engage pas d'argent réel.",
@@ -886,15 +934,16 @@ class Site:
         running = self.tasks.running()
         labs = lab_summaries(data_dir)
         tournaments = tournament_summaries(data_dir, {t.action.key for t in running})
+        portfolio = portfolio_summary(data_dir, any(t.action.key == "portefeuille" for t in running))
         mode = settings.mode if settings else "?"
         return {
             "mode": mode, "mode_label": MODE_LABELS.get(mode, mode), "exchange": settings.exchange if settings else "?",
             "settings_error": self.settings_error,
-            "next": next_step(labs, running, tournaments),
+            "next": next_step(labs, running, tournaments, portfolio),
             "tasks": [t.to_dict() for t in sorted(self.tasks.all(), key=lambda t: -t.id)],
             "actions": [{"key": a.key, "title": a.title, "group": a.group, "description": a.description,
                          "duration": a.duration, "blocked": self.blocked(a.key, mode)} for a in ACTIONS.values()],
-            "groups": list(GROUPS), "labs": labs, "tournaments": tournaments,
+            "groups": list(GROUPS), "labs": labs, "tournaments": tournaments, "portfolio": portfolio,
         }
 
     def blocked(self, key: str, mode: str) -> str | None:

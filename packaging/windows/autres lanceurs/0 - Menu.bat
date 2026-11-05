@@ -18,11 +18,13 @@ echo     4  Labo court terme en ordres limites, pour moins de frais (environ 1 h
 echo     5  Labo long terme : 15 min a 1 jour, cryptos, or, euro (10 a 20 min)
 echo     6  Test de robustesse de la strategie choisie dans les reglages
 echo     7  Backtest detaille de la strategie choisie
-echo    14  Recherche de nuit : les 3 labos a la suite, puis le tableau de bord (1 a 3 h)
+echo    15  Labo portefeuille : la regle de la recherche (momentum croise), 2 a 5 min
+echo    14  Recherche de nuit : les 4 labos a la suite, puis le tableau de bord (1 a 3 h)
 echo.
 echo   FAIRE TOURNER EN ARGENT FICTIF (prix reels)
 echo     8  Tournoi court terme : les strategies retenues par le labo court terme
 echo     9  Tournoi long terme : les strategies retenues par le labo long terme
+echo    16  Portefeuille momentum : les variantes retenues par le labo portefeuille
 echo    10  Mes bots : ceux definis dans les reglages (BOTS)
 echo.
 echo   REGLAGES
@@ -50,6 +52,8 @@ if "%choix%"=="11" goto choix11
 if "%choix%"=="12" goto choix12
 if "%choix%"=="13" goto choix13
 if "%choix%"=="14" goto choix14
+if "%choix%"=="15" goto choix15
+if "%choix%"=="16" goto choix16
 if "%choix%"=="0" exit /b
 goto menu
 :choix1
@@ -93,4 +97,10 @@ call "%~dp012 - Tester les alertes Telegram.bat"
 goto menu
 :choix14
 call "%~dp013 - Recherche de nuit.bat"
+goto menu
+:choix15
+call "%~dp014 - Labo portefeuille.bat"
+goto menu
+:choix16
+call "%~dp015 - Portefeuille momentum.bat"
 goto menu

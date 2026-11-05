@@ -9,8 +9,9 @@ sur le téléphone, et un site qui réunit tout dans le navigateur.
 **Démarrage rapide (Windows, sans Python)** : télécharge le
 [ZIP](https://github.com/lecromrayane8-rgb/Testing-podo/releases/download/windows-dev/tradingbot-windows.zip),
 extrais-le et double-clique sur `Ouvrir le bot.bat` : le site du bot s'ouvre dans ton navigateur. Le soir, clique
-sur « Pilote automatique » : les trois labos tournent à la suite, puis les tournois en argent fictif démarrent tout
-seuls avec les stratégies retenues ; l'accueil du site dit le lendemain ce qui gagne, ou non, après frais.
+sur « Pilote automatique » : les quatre labos tournent à la suite (dont le labo portefeuille, une règle issue de
+la recherche), puis les tournois et le portefeuille en argent fictif démarrent tout seuls avec ce qui a été retenu ;
+l'accueil du site dit le lendemain ce qui gagne, ou non, après frais.
 
 > **À lire avant tout.** Aucun bot ne garantit un profit régulier. Un **taux de réussite élevé ne veut pas
 > dire rentable** : une stratégie qui gagne 70 % du temps 0,5 % et perd 30 % du temps 2 % perd de l'argent.
@@ -130,8 +131,10 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765) :
 
 - **Accueil** : la prochaine étape en une phrase (lancer le pilote, un tournoi, ou attendre), ce qui tourne avec
   son journal et un bouton Arrêter, les résultats des labos et des tournois, et un bouton par action.
-- **Pilote automatique** : les trois labos à la suite, puis les deux tournois en argent fictif avec les stratégies
-  retenues. Les tournois tournent ensuite tant que le site est ouvert.
+- **Pilote automatique** : les quatre labos à la suite (portefeuille, court terme, court terme en ordres limites,
+  long terme), puis les deux tournois et le portefeuille momentum en argent fictif avec ce qui a été retenu. Ils
+  tournent ensuite tant que le site est ouvert. Si un labo ne retient rien, la suite correspondante ne démarre pas :
+  c'est voulu.
 - **Radar des mouvements** : toutes les cryptos de la plateforme cotées en USDT et échangées à plus de 5 M$ par
   jour, classées par variation sur 1, 5 ou 15 minutes (barre jaune au-delà de 1 %, 2 % ou 4 %). Il tourne dès
   l'ouverture du site : la liste complète des paires toutes les 5 minutes, puis le dernier prix seulement toutes
@@ -147,11 +150,11 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765) :
   opportunité. Achat au prix réel, frais et glissement compris ; taille calculée pour risquer environ 1 % du compte
   au stop, 1/5 du compte au plus par essai, 5 essais au plus ; revente automatique par les règles de l'option
   (stop, essoufflement, temps maximum) ou à la main ; résultats, courbe et historique.
-- **Comprendre** (`tradingbot/knowledge.py`) : chaque technique du bot, ce qu'elle mesure et comment la lire, ce
-  qu'en dit la recherche publiée (études relues par des pairs, liens SciSpace) et ce qu'en dit le labo de
-  l'utilisateur (meilleure version après frais, versions retenues). Une idée tirée d'une étude entre dans le bot
-  comme une règle de plus à tester : le momentum sur 7 et 28 bougies d'un jour (1 et 4 semaines, Liu et Tsyvinski
-  2021) a ainsi rejoint le labo.
+- **Comprendre** (`tradingbot/knowledge.py`) : d'abord **la base des bots**, les idées tirées d'études publiées
+  (`tradingbot/research.py`), chacune avec ses règles et où elle en est (à tester, retenue par le labo et utilisée par
+  les bots, recalée, ou défavorable selon la recherche) ; puis chaque technique du bot, ce qu'elle mesure et comment la
+  lire, ce qu'en dit la recherche publiée (études relues par des pairs, liens SciSpace) et ce qu'en dit le labo de
+  l'utilisateur (meilleure version après frais, versions retenues).
 - **Prix** (plusieurs plateformes côte à côte), **Tableau de bord** (mes bots et les labos, chaque tournoi),
   **Journal** (la sortie des commandes, en direct) et **Réglages** (bots, capital fictif, frais, Telegram,
   Obsidian).
@@ -217,9 +220,10 @@ python main.py labo --csv-dir actions     # + des actions : CSV quotidiens Date,
 ```
 
 Le laboratoire calcule sur tous les cœurs du processeur sauf un (`--coeurs N` pour choisir).
-Il essaie 26 variantes des huit familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
-l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour), soit 96
-combinaisons. Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la chance :
+Il essaie 28 variantes des huit familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
+l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour), soit 112
+combinaisons (chaque variante dans chaque unité, tous marchés réunis). Quatre de ces variantes viennent de la
+recherche (voir plus bas). Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la chance :
 
 1. **Étude, validation, puis test final** : chaque historique est coupé dans le temps. La première moitié sert
    d'étude, la tranche de 50 à 80 % de validation (c'est elle qui classe les variantes), et les 20 % les plus
@@ -228,9 +232,9 @@ combinaisons. Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la ch
    sur les mêmes données finirait toujours par en trouver une qui a gagné par hasard.
 2. **Tous les marchés à la fois** : une structure qui marche doit marcher un peu partout, pas sur un seul
    marché choisi après coup.
-3. **Seuil durci par le nombre d'essais** : 104 combinaisons testées, donc un seuil 104 fois plus exigeant
+3. **Seuil durci par le nombre d'essais** : 112 combinaisons testées, donc un seuil 112 fois plus exigeant
    (correction de Bonferroni). Plus on ajoute de variantes, plus il est dur d'être retenu : c'est voulu.
-   Sur des prix purement aléatoires, aucune des 104 ne sort « prometteur ».
+   Sur des prix purement aléatoires, aucune ne sort « prometteur ».
 4. **Comparaison au buy & hold** : la stratégie doit faire mieux, ou risquer bien moins, que garder l'actif.
 
 Verdicts : **prometteur** (tout est réuni), **à surveiller** (positif, mais le hasard peut l'expliquer),
@@ -262,7 +266,7 @@ mouvement, alors que les frais restent les mêmes : c'est pourquoi le labo court
 `--ordres-limites` simule des ordres limites (le bot attend son prix : frais maker, ni écart ni glissement à
 l'entrée), pour savoir si une exécution moins chère suffirait ; le lanceur 10 range ces résultats dans
 `data/laboratoire-court-terme-limites.json`, et le tournoi court terme lit les deux labos.
-`13 - Recherche de nuit.bat` enchaîne les deux labos court terme puis le labo long terme, et ouvre le tableau de
+`13 - Recherche de nuit.bat` enchaîne le labo portefeuille, les deux labos court terme puis le labo long terme, et ouvre le tableau de
 bord, qui montre une section (avec son graphique) par labo. Pendant un labo, un bot ou un tournoi, l'ordinateur ne
 se met pas en veille (appel Windows prévu pour cela, sans changer les réglages ; l'écran peut s'éteindre). Le labo enregistre ses ordres et ses frais avec
 ses résultats, et le tournoi qui reprend ses stratégies les applique à l'identique.
@@ -275,7 +279,7 @@ bougie précédente parmi les 20 % les plus serrées des 120 dernières : un mar
 sont fixés d'avance, pas ajustés sur les données. S'y ajoutent 4 **impulsions**, qui sautent sur un mouvement
 soudain comme ceux du radar : +1 % en 5 bougies (avec ou sans volume triplé), +0,5 % en une seule bougie avec
 volume triplé, +3 % en 15 bougies avec volume triplé ; revente sous le plus bas des 5 bougies précédentes, stop à
-2 ATR, 20 bougies au plus. Les 47 variantes passent par la même validation, le même seuil durci et le même test
+2 ATR, 20 bougies au plus. Les 49 variantes passent par la même validation, le même seuil durci et le même test
 final. Les filtres existent aussi dans `.env` (`MIN_ATR_PCT`, `VOLUME_MULT`,
 `VOLUME_PERIOD`, `ACTIVE_HOURS`, `SQUEEZE_QUANTILE`, `SQUEEZE_PERIOD`) et le bot en direct les applique exactement
 comme le backtest (tests de parité).
@@ -284,6 +288,56 @@ Le tableau du labo affiche deux gains par trade : **avant frais** (ce que la str
 graphique) et **après frais** (l'espérance). L'écart est le coût d'un aller-retour. Le verdict en tire la leçon :
 si même avant frais rien ne gagne, aucune plateforme moins chère n'y changera rien ; si c'est positif avant frais
 mais négatif après, ce sont les frais qui font perdre.
+
+### La base de recherche des bots : des études aux règles
+
+`tradingbot/research.py` est la base de connaissances que les bots utilisent. Chaque idée vient d'études de finance
+relues par des pairs et suit toujours le même chemin : l'étude documente un effet ; l'effet devient une règle chiffrée,
+réglée d'après l'étude et jamais ajustée sur nos données ; le labo la teste sur les vraies données (étude, validation,
+test final, seuil durci) ; si elle tient, un tournoi ou le portefeuille la fait tourner en argent fictif, puis
+éventuellement le testnet. Un bot n'agit donc jamais « parce qu'une étude le dit » : il applique les règles qui ont
+passé le labo.
+
+| Idée | Ce que disent les études | Règles testées |
+|---|---|---|
+| La tendance des dernières semaines continue | fort momentum en crypto sur 1 à 8 semaines (Liu et Tsyvinski 2021 ; Hong 2017) | Momentum 7 et 28 (bougies d'un jour) |
+| Le prix au-dessus de sa moyenne mobile | l'écart prix/moyennes prévoit les rendements journaliers du Bitcoin (Detzel, Liu et Strauss 2021) | Prix au-dessus de la MM 20, de la MM 50 |
+| Garder les cryptos qui ont le plus monté | le momentum entre cryptos est un des trois facteurs de leurs rendements (Liu, Tsyvinski et Wu ; Kosc et al. 2019) | labo portefeuille : 6 variantes |
+| Parier contre un excès | défavorable : le retournement après un jour excessif n'a pas rapporté (Caporale et Plastun 2019) | aucune nouvelle règle |
+| Trader en minutes plutôt qu'en jours | défavorable : en 5 minutes, le Bitcoin se trade moins bien qu'en jours (Resta et al. 2020) | aucune nouvelle règle |
+
+L'onglet « Comprendre » du site affiche ces idées, leurs sources et où chacune en est dans tes labos.
+
+### Le labo portefeuille : le momentum croisé
+
+```bash
+python main.py labo-portefeuille        # ou « 14 - Labo portefeuille.bat » ; 2 à 5 minutes
+python main.py portefeuille             # ou « 15 - Portefeuille momentum.bat » ; argent fictif
+```
+
+Au lieu de juger chaque crypto seule, cette règle les compare entre elles : chaque semaine, classer les 30 cryptos
+les plus échangées selon leur hausse des 7, 14 ou 28 derniers jours, garder les 3 ou 5 meilleures à parts égales,
+revendre celles qui sortent du classement. Soit 6 variantes, aux seuils ronds fixés d'avance. Le labo
+(`tradingbot/portfolio.py`) les teste sur des années de bougies d'un jour, sans tricher :
+
+- la décision se prend sur la clôture d'un jour et s'exécute à l'ouverture du lendemain ; chaque rotation paie frais
+  et glissement sur ce qui change, la vente finale comprise ;
+- les semaines sont coupées dans le temps comme dans le labo (étude 50 %, validation 30 %, test final 20 %) et le
+  seuil est durci par le nombre de variantes ;
+- chaque variante est comparée au **panier de toutes les cryptos à parts égales**. Toujours investi en crypto, un
+  portefeuille gagne quand le marché monte : seul ce qu'il gagne **en plus du panier** montre l'effet du momentum.
+
+Verdicts : **prometteur** (bat le panier nettement, seuil durci compris, sur la validation et le test final, et gagne
+sur le test final), **à surveiller** (bat le panier, mais pas assez nettement pour exclure le hasard),
+**instable** (ne battait pas le panier sur l'étude ou ne le bat plus sur le test final), **ne bat pas le panier**,
+**perd de l'argent**, **trop peu de semaines**. Limite connue, rappelée par le verdict : les cryptos testées sont
+celles qui s'échangent aujourd'hui ; celles qui ont disparu manquent, ce qui embellit le passé (biais du survivant).
+
+`portefeuille` fait tourner en argent fictif les variantes retenues (2 au plus, `--variantes`), avec 1 000 USDT
+fictifs chacune (`--capital`) : une rotation tout de suite, puis tous les 7 jours à 00 h 10 UTC (juste après la
+clôture de la bougie du jour), aux prix réels, frais et glissement compris. Rien ne part sur une plateforme. L'état
+est gardé dans `data/portefeuille/` et repris au redémarrage ; chaque rotation part en alerte Telegram. Si le labo
+n'a rien retenu, le portefeuille ne démarre pas.
 
 ### Les prix en direct
 
@@ -469,6 +523,8 @@ tail -f data/bot.log
 | `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
 | `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins] [--combinaisons] [--ordres-limites] [--resultats fichier]` | comparer les stratégies, validées hors échantillon |
 | `python main.py tournoi [--labo fichier] [--unite 1m] [--avec-marches-du-labo] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X] [--sans-navigateur]` | faire s'affronter en argent fictif les stratégies retenues par un labo |
+| `python main.py labo-portefeuille [--cryptos 30] [--days N]` | tester le momentum croisé (garder chaque semaine les cryptos qui ont le plus monté) contre le panier |
+| `python main.py portefeuille [--capital X] [--variantes 2] [--une-fois]` | les variantes retenues par le labo portefeuille, en argent fictif, une rotation par semaine |
 | `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
 | `python main.py run` | lancer les bots selon `MODE` et `BOTS` |
 | `python main.py prix [--cryptos A,B] [--plateformes binance,okx] [--secondes 10] [--une-fois]` | les vrais prix de plusieurs plateformes, en direct et sans compte |
@@ -478,9 +534,10 @@ tail -f data/bot.log
 
 Fichiers produits dans `data/` : `bot.log` (journal), `state_*.json` (position en cours, reprise au redémarrage),
 `trades_*.csv` (historique des trades), `paper_wallet_*.json` (portefeuilles simulés), `robustesse.json`
-(dernier test), `laboratoire.json` (dernier labo long terme), `laboratoire-court-terme.json` et
-`tableau-de-bord.html`. Les tournois rangent les leurs dans `data/tournoi/` et `data/tournoi-court-terme/`, avec
-`tournoi.json` (cryptos et stratégies en compétition).
+(dernier test), `laboratoire.json` (dernier labo long terme), `laboratoire-court-terme.json`,
+`laboratoire-portefeuille.json` et `tableau-de-bord.html`. Les tournois rangent les leurs dans `data/tournoi/` et
+`data/tournoi-court-terme/`, avec `tournoi.json` (cryptos et stratégies en compétition) ; les portefeuilles fictifs
+dans `data/portefeuille/`.
 
 ## Limites connues
 

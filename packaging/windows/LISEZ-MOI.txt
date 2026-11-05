@@ -15,9 +15,9 @@ nouveau dossier (ils gardent tes réglages, tes bots et les résultats du labo).
 LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordinateur)
 - Accueil : la prochaine étape en une phrase, ce qui tourne (avec son journal et un bouton Arrêter),
   les résultats des labos et des tournois, et toutes les actions.
-- Pilote automatique : le bouton du haut. Il lance les trois labos à la suite (1 à 3 heures selon le
-  PC), puis, tout seul, les deux tournois en argent fictif avec les stratégies retenues. Lance-le le
-  soir et laisse le PC allumé.
+- Pilote automatique : le bouton du haut. Il lance les quatre labos à la suite (1 à 3 heures selon le
+  PC), puis, tout seul, les deux tournois et le portefeuille momentum en argent fictif avec ce qui a
+  été retenu. Lance-le le soir et laisse le PC allumé.
 - Radar des mouvements : toutes les cryptos de Binance cotées en USDT et échangées à plus de 5 M$ par
   jour, et celles qui bougent le plus sur 1, 5 et 15 minutes, relevées toutes les 10 secondes dès que le
   site est ouvert. Le radar ne passe aucun ordre : un mouvement affiché a déjà eu lieu.
@@ -32,22 +32,34 @@ LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordina
   avant de confirmer) ; il se revend tout seul (stop, essoufflement, temps maximum) ou à la main. Les
   résultats, la courbe et l'historique de tes essais sont là.
 - Prix : les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte, et l'écart entre eux.
-- Comprendre : chaque technique du bot expliquée (ce qu'elle mesure, comment la lire), ce qu'en dit la
-  recherche publiée, avec les liens des études, et ce qu'en dit ton propre labo sur tes données.
+- Comprendre : d'abord la base des bots, les idées tirées d'études de finance publiées, devenues des
+  règles que ton labo teste (et ce qu'il en a conclu : à tester, retenue, recalée) ; puis chaque
+  technique du bot expliquée (ce qu'elle mesure, comment la lire), ce qu'en dit la recherche publiée,
+  avec les liens des études, et ce qu'en dit ton propre labo sur tes données.
 - Tableau de bord : tes bots, les labos et les deux tournois.
 - Journal : ce que disent les commandes lancées depuis le site, en direct.
 - Réglages : tes bots, le capital fictif, les frais, Telegram, Obsidian. Le mode (testnet, réel) et les
   clés API ne se changent que dans le fichier .env : le site ne passe jamais en argent réel.
 
 LES LABOS
-- Labo court terme : 26 variantes de 8 techniques, 17 combinaisons (filtres de volatilité, de volume,
+- Labo portefeuille : une règle issue de la recherche (le momentum croisé). Chaque semaine, garder
+  les 3 ou 5 cryptos qui ont le plus monté parmi les 30 plus échangées, à parts égales. Testée sur des
+  années de bougies d'un jour, frais compris, contre le panier de toutes les cryptos à parts égales :
+  une variante n'est retenue que si elle fait mieux que ce panier. 2 à 5 minutes.
+- Labo court terme : 28 variantes de 8 techniques, 17 combinaisons (filtres de volatilité, de volume,
   d'heures actives et de compression) et 4 impulsions (sauter sur un mouvement soudain), en bougies de
   1, 5 et 15 minutes, sur BTC, ETH, SOL, les 8 cryptos les plus agitées du moment et les memecoins
   assez échangés (DOGE, SHIB, PEPE, FLOKI, BONK, WIF). Environ 1 heure.
 - Le même en ordres limites : le bot attend son prix au lieu de payer l'écart et le glissement.
-- Labo long terme : les 26 variantes de 15 minutes à 1 jour, sur cryptos, or et euro (et tes actions,
+- Labo long terme : les 28 variantes de 15 minutes à 1 jour, sur cryptos, or et euro (et tes actions,
   voir le dossier « actions »). 10 à 20 minutes.
 Chaque labo a son fichier de résultats : l'un n'efface jamais l'autre.
+
+LE PORTEFEUILLE MOMENTUM (argent fictif)
+Si le labo portefeuille a retenu une variante, le pilote lance le portefeuille : 1000 USDT fictifs,
+une rotation tout de suite puis tous les 7 jours (à 1 h 10 du matin, heure de Paris en hiver), aux
+prix réels, frais compris. Entre deux rotations il ne se passe rien : c'est normal. Sa valeur et les
+cryptos gardées sont sur l'accueil du site. Il se juge sur des semaines, pas sur des heures.
 
 SUR L'IPAD OU LE TÉLÉPHONE
 Ferme la fenêtre du bot, puis lance « Ouvrir le bot sur iPad ou telephone » : la fenêtre affiche une
@@ -73,7 +85,8 @@ LIRE LES RÉSULTATS DU LABO
 DANS L'ORDRE
 1. Le soir : « Ouvrir le bot », puis « Pilote automatique ». Le lendemain, regarde l'accueil du
    site (ou envoie à Claude une photo des « Résultats » ou du tableau de bord).
-2. Si un labo a retenu une stratégie, le pilote a déjà lancé son tournoi en argent fictif : laisse-le
+2. Si un labo a retenu une stratégie, le pilote a déjà lancé son tournoi (ou le portefeuille) en
+   argent fictif : laisse-le
    tourner plusieurs semaines, PC allumé et fenêtre du bot ouverte. Chaque tournoi suit les 20 cryptos
    les plus agitées, les memecoins et les marchés du labo. En long terme (bougies de 4 h ou 1 jour), une
    stratégie de tendance achète rarement et garde sa position des jours, voire des semaines : un trade

@@ -30,6 +30,7 @@ from .backtest import run_backtest
 from .execution import ExecutionParams
 from .risk import RiskParams
 from .robustness import MIN_TRADES, adjusted_lower_bound, bootstrap_means, research_risk
+from .research import RESEARCH_VARIANTS
 from .strategy import StrategyParams
 
 log = logging.getLogger(__name__)
@@ -75,16 +76,15 @@ VARIANTS: dict[str, StrategyParams] = {
                                            trend_period=0, **TREND),
     "MACD 12/26/9": StrategyParams(strategy_type="macd", trend_period=0, **TREND),
     "MACD 12/26/9 + MM200": StrategyParams(strategy_type="macd", **TREND),
-    # Momentum de 1 et 4 semaines en bougies d'un jour : les horizons où la recherche trouve un effet de tendance en
-    # crypto (Liu et Tsyvinski 2021, Hong 2017 ; voir tradingbot/knowledge.py). Choisis d'après elle, pas d'après nos données.
-    "Momentum 7": StrategyParams(strategy_type="momentum", momentum_period=7, trend_period=0, **TREND),
-    "Momentum 28": StrategyParams(strategy_type="momentum", momentum_period=28, trend_period=0, **TREND),
     "Momentum 50": StrategyParams(strategy_type="momentum", momentum_period=50, trend_period=0, **TREND),
     "Momentum 100": StrategyParams(strategy_type="momentum", momentum_period=100, trend_period=0, **TREND),
     "Momentum 200": StrategyParams(strategy_type="momentum", momentum_period=200, trend_period=0, **TREND),
     "Supertrend 10/2": StrategyParams(strategy_type="supertrend", st_period=10, st_mult=2.0, trend_period=0, **TREND),
     "Supertrend 10/3": StrategyParams(strategy_type="supertrend", st_period=10, st_mult=3.0, trend_period=0, **TREND),
     "Supertrend 20/3": StrategyParams(strategy_type="supertrend", st_period=20, st_mult=3.0, trend_period=0, **TREND),
+    # Les règles tirées d'études de finance (tradingbot/research.py) : réglages fixés d'après les études, pas d'après
+    # nos données (momentum de 1 et 4 semaines, prix au-dessus de sa moyenne mobile...).
+    **RESEARCH_VARIANTS,
 }
 
 # Combinaisons pour le très court terme, où un aller-retour coûte environ 0,3 % (frais + glissement).

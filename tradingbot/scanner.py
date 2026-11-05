@@ -45,6 +45,12 @@ def pick_markets(
     return chosen
 
 
+def by_volume(exchange: ccxt.Exchange, quote: str = "USDT", top: int = 30,
+              min_volume: float = 5_000_000) -> list[ScanResult]:
+    """Les `top` paires spot les plus échangées sur 24 h (sans monnaies stables ni tokens à levier)."""
+    return sorted(liquid_markets(exchange, quote, min_volume), key=lambda r: r.volume, reverse=True)[:top]
+
+
 def tradable(market: dict | None, quote: str) -> bool:
     """Une paire spot ouverte, cotée dans `quote`, qui n'est ni une monnaie stable ni un token à levier."""
     if not market or not market.get("spot") or market.get("active") is False or market.get("quote") != quote:

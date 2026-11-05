@@ -20,6 +20,19 @@ def frame_from_closes(closes, spread=0.002, opens=None, lows=None):
     return ohlcv_to_frame(rows)
 
 
+DAY_MS = 86_400_000
+DAY0 = 1_600_000_000_000 - 1_600_000_000_000 % DAY_MS
+
+
+def daily_frame(closes, first_day=0):
+    """Bougies d'un jour : l'ouverture d'un jour est la clôture de la veille."""
+    closes = np.asarray(closes, dtype=float)
+    opens = np.r_[closes[0], closes[:-1]]
+    rows = [[DAY0 + (first_day + i) * DAY_MS, o, max(o, c), min(o, c), c, 1.0]
+            for i, (o, c) in enumerate(zip(opens, closes))]
+    return ohlcv_to_frame(rows)
+
+
 @pytest.fixture
 def random_walk():
     rng = np.random.default_rng(7)

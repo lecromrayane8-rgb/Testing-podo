@@ -13,8 +13,12 @@ import math
 from pathlib import Path
 
 from .lab import ALL_VARIANTS, LAB_FILES, load_lab
+from .portfolio import PORTFOLIO_LAB_FILE, PORTFOLIO_VARIANTS, RETAINED as PORTFOLIO_RETAINED, load as load_portfolio
+from .research import IDEAS, Idea
 from .robustness import MIN_TRADES
 from .strategy import STRATEGY_TYPES
+
+RETAINED = ("prometteur", "à surveiller")
 
 SCISPACE = "https://scispace.com/papers/"
 SOURCES = {  # clé -> (référence courte, page de l'étude)
@@ -154,14 +158,15 @@ ENTRIES = (
                  "et Laurent). Leur défaut : on les voit souvent après coup. Le bot en garde la forme objective et "
                  "testable : les cassures.",
      "sources": ("lo", "savin", "caginalp", "jiang")},
-    {"key": "momentum-croise", "title": "Momentum croisé : garder les cryptos qui ont le plus monté",
-     "group": "Ce que le bot ne fait pas (encore)",
-     "measures": "Chaque semaine, classer les cryptos selon leur hausse récente.",
-     "reading": "Garder les plus fortes, revendre les plus faibles, et recommencer la semaine suivante.",
+    {"key": "momentum-croise", "portfolio": True, "title": "Momentum croisé : garder les cryptos qui ont le plus monté",
+     "group": "Suivre une tendance",
+     "measures": "Chaque semaine, classer les cryptos selon leur hausse des 7, 14 ou 28 derniers jours.",
+     "reading": "Garder les 3 ou 5 plus fortes à parts égales, revendre celles qui sortent du classement, et recommencer "
+                "la semaine suivante. Le labo portefeuille la compare au panier de toutes les cryptos.",
      "research": "Avec la taille et le marché, le momentum est l'un des trois facteurs qui expliquent les rendements des "
                  "cryptos (Liu, Tsyvinski et Wu) ; une étude sur 100 cryptos compare momentum et contre-tendance selon "
-                 "la période et les frais (Kosc et al.). Il faut un labo qui compare les cryptos entre elles : c'est la "
-                 "prochaine piste à construire.",
+                 "la période et les frais (Kosc et al.). Limite : les cryptos testées sont celles qui existent "
+                 "aujourd'hui, ce qui embellit le passé.",
      "sources": ("liu_tsyvinski_wu", "kosc")},
 )
 
@@ -184,8 +189,26 @@ def lab_rows(data_dir: Path) -> list[dict]:
     return rows
 
 
-def evidence(entry: dict, rows: list[dict]) -> dict | None:
+def portfolio_rows(data_dir: Path) -> list[dict]:
+    """Les lignes du labo portefeuille de l'utilisateur."""
+    rows = (load_portfolio(data_dir / PORTFOLIO_LAB_FILE) or {}).get("rows") or []
+    return [r for r in rows if isinstance(r, dict) and r.get("variant") in PORTFOLIO_VARIANTS]
+
+
+def portfolio_evidence(rows: list[dict]) -> dict:
+    """Ce que le labo portefeuille dit : combien de variantes, combien retenues, et la meilleure après frais."""
+    scored = [r for r in rows if finite(r.get("mean_pct")) is not None]
+    best = max(scored, key=lambda r: finite(r["mean_pct"])) if scored else None
+    return {"kind": "portefeuille", "tested": len(rows),
+            "retained": sum(r.get("verdict") in PORTFOLIO_RETAINED for r in rows),
+            "best": {"variant": best["variant"], "mean": finite(best["mean_pct"]),
+                     "basket": finite(best.get("basket_pct")), "verdict": best.get("verdict")} if best else None}
+
+
+def evidence(entry: dict, rows: list[dict], prows: list[dict] | None = None) -> dict | None:
     """Ce que les labos de l'utilisateur disent de cette idée : combien d'essais, et la meilleure version après frais."""
+    if entry.get("portfolio"):
+        return portfolio_evidence(prows or [])
     family, uses = entry.get("family"), entry.get("uses")
     if not family and not uses:
         return None
@@ -195,19 +218,48 @@ def evidence(entry: dict, rows: list[dict]) -> dict | None:
     best = max(judged, key=lambda r: finite(r["expectancy_pct"])) if judged else None
     return {
         "tested": len(mine), "judged": len(judged),
-        "retained": sum(r.get("verdict") in ("prometteur", "à surveiller") for r in mine),
+        "retained": sum(r.get("verdict") in RETAINED for r in mine),
         "best": {"variant": best["variant"], "timeframe": best.get("timeframe"), "lab": best["lab"],
                  "net": finite(best["expectancy_pct"]), "gross": finite(best.get("gross_expectancy_pct")),
                  "verdict": best.get("verdict")} if best else None,
     }
 
 
-def knowledge(data_dir: Path) -> dict:
-    rows = lab_rows(data_dir)
+def idea_view(idea: Idea, rows: list[dict], prows: list[dict]) -> dict:
+    """Une idée de la base de recherche, et où elle en est sur le chemin étude → règle → labo → bots."""
+    mine = [r for r in rows if r["variant"] in idea.rules]
+    pmine = [r for r in prows if r["variant"] in idea.portfolio]
+    retained = sum(r.get("verdict") in RETAINED for r in mine) + sum(r.get("verdict") in PORTFOLIO_RETAINED
+                                                                      for r in pmine)
+    if not idea.rules and not idea.portfolio:
+        status, text = "defavorable", idea.caution
+    elif not mine and not pmine:
+        status, text = "a-tester", "Pas encore passée par ton labo : le pilote automatique la teste."
+    elif retained:
+        status, text = "retenue", (f"Retenue par ton labo ({retained} version(s)) : les bots la font tourner en argent "
+                                   "fictif (tournoi long terme ou portefeuille momentum).")
+    else:
+        status, text = "recalee", ("Ton labo l'a testée sur tes données : elle ne bat pas les frais pour l'instant, "
+                                   "donc aucun bot ne l'utilise.")
+    judged = [r for r in mine if (r.get("trades") or 0) >= MIN_TRADES and finite(r.get("expectancy_pct")) is not None]
+    best = max(judged, key=lambda r: finite(r["expectancy_pct"])) if judged else None
     return {
+        "key": idea.key, "title": idea.title, "finding": idea.finding, "status": status, "status_text": text,
+        "rules": [*idea.rules, *idea.portfolio], "tested": len(mine) + len(pmine), "retained": retained,
+        "sources": [{"title": SOURCES[s][0], "url": SOURCES[s][1]} for s in idea.sources],
+        "best_rule": {"variant": best["variant"], "timeframe": best.get("timeframe"), "lab": best["lab"],
+                      "net": finite(best["expectancy_pct"]), "verdict": best.get("verdict")} if best else None,
+        "best_portfolio": portfolio_evidence(pmine)["best"] if pmine else None,
+    }
+
+
+def knowledge(data_dir: Path) -> dict:
+    rows, prows = lab_rows(data_dir), portfolio_rows(data_dir)
+    return {
+        "ideas": [idea_view(idea, rows, prows) for idea in IDEAS],
         "entries": [{**{k: v for k, v in e.items() if k != "sources"},
                      "sources": [{"title": SOURCES[s][0], "url": SOURCES[s][1]} for s in e["sources"]],
-                     "lab": evidence(e, rows)} for e in ENTRIES],
+                     "lab": evidence(e, rows, prows)} for e in ENTRIES],
         "families_covered": sorted({e["family"] for e in ENTRIES if e.get("family")}),
         "all_families": list(STRATEGY_TYPES),
     }

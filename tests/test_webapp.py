@@ -27,7 +27,7 @@ if os.environ.get("FAKE_CHILD") and args[0] == "labo":
     print("petit-enfant", child.pid, flush=True)
 if args[0] == "labo":
     time.sleep(float(os.environ.get("FAKE_SLEEP", "0")))
-sys.exit(3 if "--echec" in args or os.environ.get("FAKE_FAIL") == args[0] else 0)
+sys.exit(3 if "--echec" in args or args[0] in os.environ.get("FAKE_FAIL", "").split(",") else 0)
 """
 
 
@@ -84,15 +84,17 @@ def test_an_action_runs_the_same_command_as_its_launcher_and_streams_its_journal
     assert task.to_dict()["status"] == "terminé" and task.to_dict()["last"] == "Terminé."
 
 
-def test_the_autopilot_runs_the_three_labs_then_starts_both_tournaments(tmp_path, fake_bot):
+def test_the_autopilot_runs_the_four_labs_then_starts_the_tournaments_and_the_portfolio(tmp_path, fake_bot):
     tasks = manager(tmp_path, fake_bot)
     pilot = tasks.start("pilote")
     assert wait(lambda: pilot.status != "en cours")
     lines, _ = pilot.read(0)
-    assert sum("=== Étape" in line for line in lines) == 3
+    steps = [line for line in lines if "=== Étape" in line]
+    assert len(steps) == 4 and steps[0].endswith(": labo-portefeuille")  # la plus rapide d'abord
     assert any("« Tournoi court terme » lancé automatiquement" in line for line in lines)
+    assert any("« Portefeuille momentum » lancé automatiquement" in line for line in lines)
     started = {t.action.key for t in tasks.tasks.values()}
-    assert {"tournoi-court", "tournoi-long"} <= started
+    assert {"tournoi-court", "tournoi-long", "portefeuille"} <= started
     tournament = next(t for t in tasks.tasks.values() if t.action.key == "tournoi-court")
     assert wait(lambda: tournament.status != "en cours")
     assert "--sans-navigateur" in tournament.read(0)[0][0]  # le site montre déjà le tableau de bord
@@ -102,11 +104,11 @@ def test_a_failing_step_does_not_stop_the_night_research(tmp_path, fake_bot):
     (tmp_path / "actions").mkdir()
     (tmp_path / "actions" / "aapl.csv").write_text("ts,open,high,low,close,volume\n", encoding="utf-8")
     assert steps_for("labo-long", tmp_path) == [("labo", "--csv-dir", "actions")]
-    tasks = manager(tmp_path, fake_bot, FAKE_FAIL="labo")
+    tasks = manager(tmp_path, fake_bot, FAKE_FAIL="labo,labo-portefeuille")
     research = tasks.start("recherche")
     assert wait(lambda: research.status != "en cours")
-    assert research.status == "échec" and research.to_dict()["failed"] == 3
-    assert sum("on passe à la suivante" in line for line in research.read(0)[0]) == 3
+    assert research.status == "échec" and research.to_dict()["failed"] == 4
+    assert sum("on passe à la suivante" in line for line in research.read(0)[0]) == 4
     pilot = tasks.start("pilote")
     assert wait(lambda: pilot.status != "en cours")
     assert {t.action.key for t in tasks.tasks.values()} == {"recherche", "pilote"}  # rien n'a marché : pas de tournoi
@@ -191,9 +193,15 @@ def test_the_home_page_always_says_what_to_do_next():
     nothing = next_step([{**lab, "retained": 0} for lab in labs], [], [])
     assert "Aucune stratégie ne gagne après frais" in nothing["title"]
     running = [SimpleNamespace(action=ACTIONS["pilote"])]
-    assert "tournois démarreront tout seuls" in next_step(labs, running, [])["text"]
+    assert "tournois et le portefeuille démarreront tout seuls" in next_step(labs, running, [])["text"]
     tournament = [SimpleNamespace(action=ACTIONS["tournoi-court"])]
     assert next_step(labs, tournament, [{"running": True}])["view"] == "tableau"
+    retained = {"lab": {"done": True, "retained": 2}, "books": [], "running": False}
+    assert next_step(labs, tournament, [{"running": True}], retained)["action"] == "portefeuille"
+    only_portfolio = [{**lab, "done": False} for lab in labs]
+    assert next_step(only_portfolio, [], [], retained)["action"] == "portefeuille"  # son labo a suffi
+    alone = [SimpleNamespace(action=ACTIONS["portefeuille"])]
+    assert next_step(labs[1:], alone, [{"running": False}], {**retained, "running": True})["view"] == "tableau"
 
 
 def test_lab_results_are_summarised_for_the_home_page(tmp_path):
@@ -374,3 +382,30 @@ def test_the_site_explains_each_technique_with_its_sources(server):
     assert status == 200 and len(data["entries"]) >= 10
     assert set(data["families_covered"]) == set(data["all_families"])
     assert all(src["url"].startswith("https://scispace.com/papers/") for e in data["entries"] for src in e["sources"])
+
+
+def test_the_portfolio_is_summarised_for_the_home_page(tmp_path):
+    from tradingbot.webapp import portfolio_summary
+    empty = portfolio_summary(tmp_path, False)
+    assert empty == {"lab": {"done": False, "date": None, "tested": 0, "retained": 0, "coins": 0, "names": [],
+                             "best": None}, "books": [], "running": False}
+    rows = [{"variant": "Momentum croisé 28 j, 5 cryptos", "verdict": "perd de l'argent", "mean_pct": 0.9,
+             "basket_pct": 0.2},
+            {"variant": "Momentum croisé 14 j, 3 cryptos", "verdict": "à surveiller", "mean_pct": 0.4,
+             "basket_pct": float("nan")}]
+    (tmp_path / "laboratoire-portefeuille.json").write_text(json.dumps(
+        {"date": "2026-11-06T02:00:00+00:00", "rows": rows, "univers": ["A/USDT", "B/USDT"]}), encoding="utf-8")
+    (tmp_path / "portefeuille").mkdir()
+    (tmp_path / "portefeuille" / "momentum.json").write_text(json.dumps(
+        {"variant": "Momentum croisé 14 j, 3 cryptos", "start": 1000, "value": 1012.5, "holdings": {"SOL/USDT": 2.0},
+         "next": "2026-11-13T00:10:00+00:00", "since": "2026-11-06T09:00:00+00:00", "rotations": [{}]}),
+        encoding="utf-8")
+    (tmp_path / "portefeuille" / "abime.json").write_text("{pas du json", encoding="utf-8")
+    summary = portfolio_summary(tmp_path, True)
+    assert summary["lab"]["retained"] == 1 and summary["lab"]["coins"] == 2
+    assert summary["lab"]["best"] == {"variant": "Momentum croisé 14 j, 3 cryptos", "mean": 0.4, "basket": None,
+                                      "verdict": "à surveiller"}  # la meilleure des retenues, sans NaN
+    [book] = summary["books"]
+    assert book["holdings"] == ["SOL"] and book["pnl_pct"] == pytest.approx(1.25) and book["rotations"] == 1
+    assert book["retained"]  # toujours retenue par le dernier labo
+    json.dumps(summary, allow_nan=False)
