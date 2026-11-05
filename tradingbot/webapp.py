@@ -311,13 +311,17 @@ class Task:
                         self.emit(f"Étape {i + 1} en échec (code {process.returncode}) : on passe à la suivante.")
         finally:
             self.finished = datetime.now(timezone.utc)
-            self.status = STOPPED if self.stop_requested else FAILED if self.failed else DONE
+            status = STOPPED if self.stop_requested else FAILED if self.failed else DONE
             self.emit({STOPPED: "Arrêté. Les positions éventuelles sont reprises au prochain lancement.",
                        FAILED: "Terminé avec une erreur : lis les lignes au-dessus.",
-                       DONE: "Terminé."}[self.status])
+                       DONE: "Terminé."}[status])
             self.group.close()
             if self.on_done:
-                self.on_done(self)
+                try:
+                    self.on_done(self, status)
+                except Exception as exc:  # la suite (tournois du pilote) ne doit jamais bloquer la fin de la tâche
+                    self.emit(f"Suite impossible : {exc}")
+            self.status = status  # en dernier : qui attend la fin de la tâche voit tout son journal
 
     def stop(self) -> None:
         self.stop_requested = True
@@ -376,8 +380,8 @@ class TaskManager:
                 del self.tasks[old.id]
         return task.start()
 
-    def _finished(self, task: Task) -> None:
-        if task.status == STOPPED or len(task.failed) == len(task.steps):
+    def _finished(self, task: Task, status: str) -> None:
+        if status == STOPPED or len(task.failed) == len(task.steps):
             return
         for key in task.action.then:  # le pilote automatique enchaîne sur les tournois
             try:
