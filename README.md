@@ -147,6 +147,11 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765) :
   opportunité. Achat au prix réel, frais et glissement compris ; taille calculée pour risquer environ 1 % du compte
   au stop, 1/5 du compte au plus par essai, 5 essais au plus ; revente automatique par les règles de l'option
   (stop, essoufflement, temps maximum) ou à la main ; résultats, courbe et historique.
+- **Comprendre** (`tradingbot/knowledge.py`) : chaque technique du bot, ce qu'elle mesure et comment la lire, ce
+  qu'en dit la recherche publiée (études relues par des pairs, liens SciSpace) et ce qu'en dit le labo de
+  l'utilisateur (meilleure version après frais, versions retenues). Une idée tirée d'une étude entre dans le bot
+  comme une règle de plus à tester : le momentum sur 7 et 28 bougies d'un jour (1 et 4 semaines, Liu et Tsyvinski
+  2021) a ainsi rejoint le labo.
 - **Prix** (plusieurs plateformes côte à côte), **Tableau de bord** (mes bots et les labos, chaque tournoi),
   **Journal** (la sortie des commandes, en direct) et **Réglages** (bots, capital fictif, frais, Telegram,
   Obsidian).
@@ -212,7 +217,7 @@ python main.py labo --csv-dir actions     # + des actions : CSV quotidiens Date,
 ```
 
 Le laboratoire calcule sur tous les cœurs du processeur sauf un (`--coeurs N` pour choisir).
-Il essaie 24 variantes des huit familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
+Il essaie 26 variantes des huit familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
 l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour), soit 96
 combinaisons. Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la chance :
 
@@ -223,9 +228,9 @@ combinaisons. Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la ch
    sur les mêmes données finirait toujours par en trouver une qui a gagné par hasard.
 2. **Tous les marchés à la fois** : une structure qui marche doit marcher un peu partout, pas sur un seul
    marché choisi après coup.
-3. **Seuil durci par le nombre d'essais** : 96 combinaisons testées, donc un seuil 96 fois plus exigeant
+3. **Seuil durci par le nombre d'essais** : 104 combinaisons testées, donc un seuil 104 fois plus exigeant
    (correction de Bonferroni). Plus on ajoute de variantes, plus il est dur d'être retenu : c'est voulu.
-   Sur des prix purement aléatoires, aucune des 96 ne sort « prometteur ».
+   Sur des prix purement aléatoires, aucune des 104 ne sort « prometteur ».
 4. **Comparaison au buy & hold** : la stratégie doit faire mieux, ou risquer bien moins, que garder l'actif.
 
 Verdicts : **prometteur** (tout est réuni), **à surveiller** (positif, mais le hasard peut l'expliquer),
@@ -270,7 +275,7 @@ bougie précédente parmi les 20 % les plus serrées des 120 dernières : un mar
 sont fixés d'avance, pas ajustés sur les données. S'y ajoutent 4 **impulsions**, qui sautent sur un mouvement
 soudain comme ceux du radar : +1 % en 5 bougies (avec ou sans volume triplé), +0,5 % en une seule bougie avec
 volume triplé, +3 % en 15 bougies avec volume triplé ; revente sous le plus bas des 5 bougies précédentes, stop à
-2 ATR, 20 bougies au plus. Les 45 variantes passent par la même validation, le même seuil durci et le même test
+2 ATR, 20 bougies au plus. Les 47 variantes passent par la même validation, le même seuil durci et le même test
 final. Les filtres existent aussi dans `.env` (`MIN_ATR_PCT`, `VOLUME_MULT`,
 `VOLUME_PERIOD`, `ACTIVE_HOURS`, `SQUEEZE_QUANTILE`, `SQUEEZE_PERIOD`) et le bot en direct les applique exactement
 comme le backtest (tests de parité).

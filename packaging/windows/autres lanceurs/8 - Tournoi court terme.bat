@@ -6,6 +6,6 @@ echo l'unite de temps ou le labo l'a trouvee, avec les memes ordres et les memes
 echo Chaque bot a 1000 USDT fictifs. Une strategie qui perd nettement est eliminee toute seule.
 echo Le tableau de bord s'ouvre dans ton navigateur. Fermer cette fenetre arrete le tournoi.
 echo.
-tradingbot\tradingbot.exe tournoi --labo laboratoire-court-terme.json,laboratoire-court-terme-limites.json
+tradingbot\tradingbot.exe tournoi --labo laboratoire-court-terme.json,laboratoire-court-terme-limites.json --top 20
 echo.
 pause

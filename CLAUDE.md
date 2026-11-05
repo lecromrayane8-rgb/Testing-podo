@@ -30,6 +30,7 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   `MODE=live`, le formulaire (`FIELDS`, liste blanche) ne touche ni à MODE, ni aux clés, ni à CONFIRM_LIVE_TRADING, ni
   à MAX_CAPITAL. Sécurité : 127.0.0.1, en-tête `X-Demande` exigé pour toute action, contrôle de Host et d'Origin ;
   `--ipad` ouvre au Wi-Fi avec un code à 6 chiffres (`data/site-code.txt`, cookie). Page vérifiée à 1280, 820 et 390 px.
+  Les deux tournois du site (et lanceurs 8 et 9) suivent 20 cryptos agitées (`--top 20`) en plus des memecoins.
 - `tradingbot/radar.py` : radar des mouvements (onglet du site, allumé dès l'ouverture : `Site.start_background`) :
   tickers complets toutes les 5 min (`update_info` : paires `scanner.tradable` à plus de 5 M$/jour), puis derniers prix
   seulement toutes les 10 s (`fetch_last_prices`, `add_prices`) ; variation sur 1, 5 et 15 min ; une coupure réseau ne
@@ -40,6 +41,10 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   (signal de la famille impulsion), courbe médiane et quartiles sur 60 min, trois sorties `OPTIONS` (rapide, normale,
   laisser courir) passées par `run_backtest`, verdict franc (`bad`, `neutral`, `good` = piste à confirmer, `few`),
   `trade_plan` = stop et perte si le stop est touché.
+- `tradingbot/knowledge.py` : onglet « Comprendre » du site (`/api/savoir`) : une fiche par technique (toutes les
+  familles de `STRATEGY_TYPES`, plus figures chartistes et momentum croisé), ce que dit la recherche (`SOURCES`,
+  pages SciSpace d'études relues par des pairs) et ce qu'en dit le labo de l'utilisateur (`evidence`). Une idée tirée
+  d'une étude entre comme une règle à tester dans le labo, jamais comme un ordre.
 - `tradingbot/desk.py` : « Mes essais », compte fictif à part (`data/essais.json`, 1000 USDT) : achat au prix réel,
   frais et glissement compris, taille par le risque (1 %), au plus 1/5 du compte par essai et 5 essais ; revente par
   les règles de l'option (stop au prix du moment, puis temps maximum et essoufflement sur les bougies de 1 min
@@ -54,13 +59,14 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   Filtres d'achat optionnels pour toutes : volatilité (`min_atr_pct`), volume (`volume_mult`, `volume_period`),
   heures actives UTC (`active_hours`, « 13-21 ») et compression de Bollinger (`squeeze_quantile`, `squeeze_period`).
   Chaque trade du backtest garde le prix du graphique (`entry_mark`, `exit_mark`) : `gross_return` = avant frais.
-- `tradingbot/lab.py` : commande `labo`, 24 variantes × 7 marchés × 4 unités = 96 combinaisons, étude 50 % /
+- `tradingbot/lab.py` : commande `labo`, 26 variantes × 7 marchés × 4 unités = 104 combinaisons, étude 50 % /
   validation 30 % / test final 20 % (jamais regardé pour choisir : « prometteur » exige un test final positif,
   sinon « instable »), Bonferroni (approximation normale) sur le nombre d'essais, comparaison au buy & hold.
   Études sans garde-fous live ni élimination (`research_risk`). Pas de levier dans le labo (choix de l'utilisateur,
   à revoir). `--scanner N` / `--memecoins` ajoutent des cryptos ; sous 15 min, historique plafonné (60 j en 1m).
   `--combinaisons` ajoute `COMBOS` (17 variantes avec filtres) et `IMPULSES` (4 impulsions), seuils fixés d'avance :
-  `SHORT_TERM_VARIANTS` (45) ; `ALL_VARIANTS` sert à retrouver une variante par son nom. `run_lab` répartit le calcul par (unité, marché) sur plusieurs
+  `SHORT_TERM_VARIANTS` (47) ; `ALL_VARIANTS` sert à retrouver une variante par son nom. « Momentum 7 » et
+  « Momentum 28 » viennent de la recherche (momentum de 1 à 8 semaines en crypto), pas de nos données. `run_lab` répartit le calcul par (unité, marché) sur plusieurs
   cœurs (`--coeurs`, repli en série si le parallèle échoue ; `multiprocessing.freeze_support()` dans `main.py`). Le labo affiche l'espérance avant frais
   (`gross_expectancy_pct`) et `cost_diagnosis` dit si ce sont les frais qui font perdre.
 - `tradingbot/prices.py` + commande `prix` (lanceur 11) : prix publics de plusieurs plateformes côte à côte (USDT,
@@ -157,3 +163,9 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   trucs sur le site » sans préciser : radar rendu toujours allumé et léger ; lui demander des captures de ce qui ne va
   pas. Cette session cloud n'a pas accès à son PC (aucun dossier partagé) : une session Claude Code locale sur le
   dossier du bot le peut.
+- Nuit du 05 au 06/11/2026 : réel sur le PC de l'utilisateur : le labo court terme n'a rien retenu (donc pas de tournoi
+  court terme : comportement voulu) ; tournoi long terme avec une seule position et zéro trade après quelques heures,
+  et « Mes bots » (BTC seul, 15m/1h/1d) qui ont tradé puis plus rien : normal (stratégies longues et rares). Il veut
+  plein de cryptos → tournois en `--top 20` ; et une « base comme un livre d'expert » → onglet Comprendre sourcé
+  (SciSpace) + variantes Momentum 7/28 issues de la recherche. Prochaine piste : momentum croisé entre cryptos
+  (Liu, Tsyvinski et Wu), qui demande un labo de portefeuille.

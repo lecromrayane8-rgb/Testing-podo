@@ -32,18 +32,20 @@ LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordina
   avant de confirmer) ; il se revend tout seul (stop, essoufflement, temps maximum) ou à la main. Les
   résultats, la courbe et l'historique de tes essais sont là.
 - Prix : les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte, et l'écart entre eux.
+- Comprendre : chaque technique du bot expliquée (ce qu'elle mesure, comment la lire), ce qu'en dit la
+  recherche publiée, avec les liens des études, et ce qu'en dit ton propre labo sur tes données.
 - Tableau de bord : tes bots, les labos et les deux tournois.
 - Journal : ce que disent les commandes lancées depuis le site, en direct.
 - Réglages : tes bots, le capital fictif, les frais, Telegram, Obsidian. Le mode (testnet, réel) et les
   clés API ne se changent que dans le fichier .env : le site ne passe jamais en argent réel.
 
 LES LABOS
-- Labo court terme : 24 variantes de 8 techniques, 17 combinaisons (filtres de volatilité, de volume,
+- Labo court terme : 26 variantes de 8 techniques, 17 combinaisons (filtres de volatilité, de volume,
   d'heures actives et de compression) et 4 impulsions (sauter sur un mouvement soudain), en bougies de
   1, 5 et 15 minutes, sur BTC, ETH, SOL, les 8 cryptos les plus agitées du moment et les memecoins
   assez échangés (DOGE, SHIB, PEPE, FLOKI, BONK, WIF). Environ 1 heure.
 - Le même en ordres limites : le bot attend son prix au lieu de payer l'écart et le glissement.
-- Labo long terme : les 24 variantes de 15 minutes à 1 jour, sur cryptos, or et euro (et tes actions,
+- Labo long terme : les 26 variantes de 15 minutes à 1 jour, sur cryptos, or et euro (et tes actions,
   voir le dossier « actions »). 10 à 20 minutes.
 Chaque labo a son fichier de résultats : l'un n'efface jamais l'autre.
 
@@ -72,7 +74,10 @@ DANS L'ORDRE
 1. Le soir : « Ouvrir le bot », puis « Pilote automatique ». Le lendemain, regarde l'accueil du
    site (ou envoie à Claude une photo des « Résultats » ou du tableau de bord).
 2. Si un labo a retenu une stratégie, le pilote a déjà lancé son tournoi en argent fictif : laisse-le
-   tourner plusieurs semaines, PC allumé et fenêtre du bot ouverte.
+   tourner plusieurs semaines, PC allumé et fenêtre du bot ouverte. Chaque tournoi suit les 20 cryptos
+   les plus agitées, les memecoins et les marchés du labo. En long terme (bougies de 4 h ou 1 jour), une
+   stratégie de tendance achète rarement et garde sa position des jours, voire des semaines : un trade
+   n'est compté qu'à la revente. Une seule position et zéro trade après quelques heures, c'est normal.
 3. Dans le tableau de bord, une stratégie n'est marquée « candidate au testnet » qu'après 30 trades
    nettement positifs, frais compris, avec un seuil d'autant plus dur qu'il y a de bots en
    compétition (sinon la chance en ferait gagner).

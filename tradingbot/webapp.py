@@ -49,6 +49,7 @@ from .data import load_or_fetch, ohlcv_to_frame, timeframe_to_ms
 from .desk import DESK_FILE, Desk
 from .lab import LAB_FILE, LAB_FILES, LIMIT_LAB_FILE, PROMISING, SHORT_LAB_FILE, load_lab
 from .prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, board_to_dict, connect, label, short_error, snapshot
+from .knowledge import knowledge
 from .moves import OPTIONS, STUDY_DAYS, round_trip_cost, study
 from .radar import JOURNAL_FILE, STRONG, WINDOWS, MoveJournal, Radar, journal_stats
 from .robustness import MIN_TRADES
@@ -84,8 +85,9 @@ class Action:
 SHORT_LAB = ("labo", "--symbols", "BTC/USDT,ETH/USDT,SOL/USDT", "--timeframes", "1m,5m,15m", "--scanner", "8",
              "--memecoins", "--combinaisons", "--resultats", SHORT_LAB_FILE)
 LIMIT_LAB = (*SHORT_LAB[:-2], "--ordres-limites", "--resultats", LIMIT_LAB_FILE)
-SHORT_TOURNAMENT = ("tournoi", "--labo", f"{SHORT_LAB_FILE},{LIMIT_LAB_FILE}", "--sans-navigateur")
-LONG_TOURNAMENT = ("tournoi", "--avec-marches-du-labo", "--sans-navigateur")
+# Beaucoup de cryptos : plus de trades, donc un verdict plus rapide (les stratégies retenues achètent rarement).
+SHORT_TOURNAMENT = ("tournoi", "--labo", f"{SHORT_LAB_FILE},{LIMIT_LAB_FILE}", "--top", "20", "--sans-navigateur")
+LONG_TOURNAMENT = ("tournoi", "--avec-marches-du-labo", "--top", "20", "--sans-navigateur")
 
 GROUPS = ("Le plus simple", "Chercher une stratégie", "Faire tourner en argent fictif", "Vérifier")
 ACTIONS = {a.key: a for a in (
@@ -1096,6 +1098,8 @@ class Handler(BaseHTTPRequestHandler):
             self.json(self.site.studies.get(symbol, window, self.site.radar.price(symbol)))
         elif url.path == "/api/essais":
             self.json(self.site.trials())
+        elif url.path == "/api/savoir":
+            self.json(knowledge(self.site.data_dir()))
         elif url.path == "/api/prix":
             data, error, updated = self.site.prices_poller.get()
             self.json({"board": data, "error": error, "updated": iso(updated)})

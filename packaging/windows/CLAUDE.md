@@ -27,8 +27,8 @@ place, puis lui dises en quelques lignes ce qui en ressort.
 | labo court terme | `tradingbot\tradingbot.exe labo --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --timeframes "1m,5m,15m" --scanner 8 --memecoins --combinaisons --resultats laboratoire-court-terme.json` | ~1 h |
 | le même en ordres limites | la même ligne avec `--ordres-limites --resultats laboratoire-court-terme-limites.json` | ~1 h |
 | labo long terme | `tradingbot\tradingbot.exe labo` (ajoute `--csv-dir actions` s'il y a des CSV dans `actions\`) | 10 à 20 min |
-| tournoi court terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --labo laboratoire-court-terme.json,laboratoire-court-terme-limites.json --sans-navigateur` | jusqu'à l'arrêt |
-| tournoi long terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --avec-marches-du-labo --sans-navigateur` | jusqu'à l'arrêt |
+| tournoi court terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --labo laboratoire-court-terme.json,laboratoire-court-terme-limites.json --top 20 --sans-navigateur` | jusqu'à l'arrêt |
+| tournoi long terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --avec-marches-du-labo --top 20 --sans-navigateur` | jusqu'à l'arrêt |
 | prix en direct, une fois | `tradingbot\tradingbot.exe prix --une-fois` | quelques secondes |
 | vérifier la connexion | `tradingbot\tradingbot.exe check` | quelques secondes |
 | régénérer le tableau de bord | `tradingbot\tradingbot.exe tableau --no-open` | quelques secondes |

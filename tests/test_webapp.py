@@ -365,3 +365,12 @@ def test_trials_are_opened_watched_and_sold_through_the_site(server, monkeypatch
     assert request(base, "/api/essais/zero", {}, ok)[0] == 200
     assert json.loads(request(base, "/api/essais")[1])["equity"] == 1000.0
     assert request(base, "/api/essais/zero", {})[0] == 403  # comme toute action : seulement depuis la page du site
+
+
+def test_the_site_explains_each_technique_with_its_sources(server):
+    s, base = server
+    status, body, _ = request(base, "/api/savoir")
+    data = json.loads(body)
+    assert status == 200 and len(data["entries"]) >= 10
+    assert set(data["families_covered"]) == set(data["all_families"])
+    assert all(src["url"].startswith("https://scispace.com/papers/") for e in data["entries"] for src in e["sources"])

@@ -75,6 +75,10 @@ VARIANTS: dict[str, StrategyParams] = {
                                            trend_period=0, **TREND),
     "MACD 12/26/9": StrategyParams(strategy_type="macd", trend_period=0, **TREND),
     "MACD 12/26/9 + MM200": StrategyParams(strategy_type="macd", **TREND),
+    # Momentum de 1 et 4 semaines en bougies d'un jour : les horizons où la recherche trouve un effet de tendance en
+    # crypto (Liu et Tsyvinski 2021, Hong 2017 ; voir tradingbot/knowledge.py). Choisis d'après elle, pas d'après nos données.
+    "Momentum 7": StrategyParams(strategy_type="momentum", momentum_period=7, trend_period=0, **TREND),
+    "Momentum 28": StrategyParams(strategy_type="momentum", momentum_period=28, trend_period=0, **TREND),
     "Momentum 50": StrategyParams(strategy_type="momentum", momentum_period=50, trend_period=0, **TREND),
     "Momentum 100": StrategyParams(strategy_type="momentum", momentum_period=100, trend_period=0, **TREND),
     "Momentum 200": StrategyParams(strategy_type="momentum", momentum_period=200, trend_period=0, **TREND),

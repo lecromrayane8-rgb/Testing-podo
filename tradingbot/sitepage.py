@@ -98,6 +98,13 @@ dialog.sheet::backdrop { background: rgba(0, 0, 0, 0.6); }
 .trial-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 760px) { .trial-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .small-print { color: var(--text-secondary); font-size: 12px; }
+.cards.wide { grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); }
+.card.know p { font-size: 14px; }
+.card.know.full { grid-column: 1 / -1; }
+.card.know.full p { max-width: 900px; }
+.card.know .sources { font-size: 12px; color: var(--text-secondary); }
+.card.know .sources a { color: var(--text-secondary); text-underline-offset: 2px; }
+.card.know .lab-says { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--grid); }
 #journal-intro { margin-bottom: 10px; }
 #study-windows button { white-space: nowrap; }
 table.options td:first-child { white-space: normal; min-width: 200px; }
@@ -133,6 +140,7 @@ BODY = """
     <a href="#radar" data-view="radar">Radar<span class="long"> des mouvements</span></a>
     <a href="#prix" data-view="prix">Prix</a>
     <a href="#essais" data-view="essais"><span class="long">Mes </span>essais</a>
+    <a href="#savoir" data-view="savoir">Comprendre</a>
     <a href="#tableau" data-view="tableau">Tableau<span class="long"> de bord</span></a>
     <a href="#journal" data-view="journal">Journal</a>
     <a href="#reglages" data-view="reglages">Réglages</a>
@@ -198,6 +206,13 @@ BODY = """
         Un écart de 0,1 % ne couvre même pas les frais d'un aller-retour (environ 0,3 %).</p>
       <ul class="note" id="prices-errors"></ul>
     </section>
+  </div>
+  <div id="view-savoir" class="view" hidden>
+    <h1>Comprendre les courbes</h1>
+    <p class="meta">Technique par technique : ce qu'elle mesure, comment la lire, ce que dit la recherche publiée (études
+      relues par des pairs, avec leurs liens) et ce qu'en dit ton propre labo, sur tes données. Rien ici n'est un conseil
+      d'achat : la recherche donne des pistes, seul le test tranche.</p>
+    <div id="savoir-cards"><p class="muted">Chargement…</p></div>
   </div>
   <div id="view-tableau" class="view" hidden>
     <div class="controls">
@@ -316,7 +331,7 @@ JS = r"""
   function cls(v) { return v > 0 ? 'up' : v < 0 ? 'down' : ''; }
 
   // --- navigation ---
-  const VIEWS = ['accueil', 'radar', 'prix', 'essais', 'tableau', 'journal', 'reglages'];
+  const VIEWS = ['accueil', 'radar', 'prix', 'essais', 'savoir', 'tableau', 'journal', 'reglages'];
   let view = 'accueil';
   function show(name) {
     view = VIEWS.includes(name) ? name : 'accueil';
@@ -326,6 +341,7 @@ JS = r"""
     });
     if (view === 'tableau') showBoard(currentBoard);
     if (view === 'reglages') loadSettings();
+    if (view === 'savoir') loadKnowledge();
     last.radar = last.prices = last.journal = last.trials = 0;
   }
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
@@ -754,6 +770,37 @@ JS = r"""
       toast('Essai lancé en argent fictif : ' + r.symbol);
       location.hash = '#essais';
     } catch (e) { toast(e.message, true); }
+  }
+
+  // --- comprendre : la base de connaissances, reliée aux résultats des labos ---
+  async function loadKnowledge() {
+    let data;
+    try { data = await getJSON('/api/savoir'); } catch (e) { toast(e.message, true); return; }
+    const box = $('#savoir-cards'); box.replaceChildren();
+    for (const group of [...new Set(data.entries.map(e => e.group))]) {
+      const cards = el('div', {class: 'cards wide'});
+      for (const e of data.entries.filter(x => x.group === group)) {
+        const lab = e.lab;
+        let says = null;
+        if (lab) {
+          if (!lab.tested) says = 'pas encore testée dans tes labos.';
+          else if (!lab.best) says = lab.tested + ' essais, trop peu de trades pour juger.';
+          else says = 'meilleure version ' + lab.best.variant + ' en ' + lab.best.timeframe + ' : ' + pctPoints(lab.best.net) +
+            ' par trade après frais (' + lab.best.verdict + ', ' + lab.best.lab.toLowerCase() + '). ' +
+            (lab.retained ? lab.retained + ' version(s) retenue(s) sur ' + lab.tested + ' essais.' :
+              'Aucune des ' + lab.tested + ' versions essayées n\'est retenue.');
+        }
+        cards.append(el('article', {class: 'card know' + (e.key === 'recherche' ? ' full' : '')},
+          el('h3', {text: e.title}),
+          el('p', {}, el('strong', {text: 'Ce que ça mesure. '}), e.measures),
+          el('p', {}, el('strong', {text: 'Comment le lire. '}), e.reading),
+          el('p', {}, el('strong', {text: 'Ce que dit la recherche. '}), e.research),
+          el('p', {class: 'sources'}, ...e.sources.flatMap((src, i) => [i ? ' · ' : null,
+            el('a', {href: src.url, target: '_blank', rel: 'noopener', text: src.title})])),
+          says ? el('p', {class: 'lab-says'}, el('strong', {text: 'Dans ton labo : '}), says) : null));
+      }
+      box.append(el('h3', {class: 'group-title', text: group}), cards);
+    }
   }
 
   // --- mes essais ---
