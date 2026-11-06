@@ -14,6 +14,9 @@ place, puis lui dises en quelques lignes ce qui en ressort.
 - `data\` : résultats des labos (`laboratoire.json`, `laboratoire-court-terme.json`,
   `laboratoire-court-terme-limites.json`), tournois (`data\tournoi\`, `data\tournoi-court-terme\`, chacun avec son
   `tableau-de-bord.html`), tableau de bord des bots (`data\tableau-de-bord.html`), journal (`data\bot.log`).
+- `data\trader\compte.json` : le trader fictif (`positions`, `trades` avec `why`, `reading` et `diagnosis`, `stats`,
+  `eliminated`, `playbook`, `history`) ; `data\trader\rejeu.json` : ses règles rejouées sur l'historique (pas une preuve).
+- `data\laboratoire-futures.json` : le labo scalping avec les frais des contrats à terme.
 - `data\laboratoire-portefeuille.json` : le labo portefeuille (momentum croisé) ; `data\portefeuille\` : un fichier
   par portefeuille fictif (`value`, `holdings`, `rotations`, `next` = prochaine rotation).
 - `data\essais.json` : « Mes essais », le compte fictif des essais lancés depuis le radar du site (positions,
@@ -30,16 +33,20 @@ place, puis lui dises en quelques lignes ce qui en ressort.
 | le même en ordres limites | la même ligne avec `--ordres-limites --resultats laboratoire-court-terme-limites.json` | ~1 h |
 | labo long terme | `tradingbot\tradingbot.exe labo` (ajoute `--csv-dir actions` s'il y a des CSV dans `actions\`) | 10 à 20 min |
 | labo portefeuille | `tradingbot\tradingbot.exe labo-portefeuille` | 2 à 5 min |
+| labo scalping, frais futures | la ligne du labo court terme avec `--futures --resultats laboratoire-futures.json` | ~1 h |
+| rejouer le trader sur l'historique | `tradingbot\tradingbot.exe trader --rejouer` | 1 à 5 min |
 | tournoi court terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --labo laboratoire-court-terme.json,laboratoire-court-terme-limites.json --top 20 --sans-navigateur` | jusqu'à l'arrêt |
 | tournoi long terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --avec-marches-du-labo --top 20 --sans-navigateur` | jusqu'à l'arrêt |
 | portefeuille momentum (argent fictif) | `tradingbot\tradingbot.exe portefeuille` | jusqu'à l'arrêt |
+| mon trader (argent fictif) | `tradingbot\tradingbot.exe trader` | jusqu'à l'arrêt |
 | prix en direct, une fois | `tradingbot\tradingbot.exe prix --une-fois` | quelques secondes |
 | vérifier la connexion | `tradingbot\tradingbot.exe check` | quelques secondes |
 | régénérer le tableau de bord | `tradingbot\tradingbot.exe tableau --no-open` | quelques secondes |
 
 Le plus simple pour l'utilisateur reste le site (« Ouvrir le bot.bat ») et son bouton « Pilote automatique » : les
-quatre labos (portefeuille d'abord), puis les deux tournois et le portefeuille. Un seul labo à la fois : ils se
-partagent le processeur.
+cinq labos (portefeuille d'abord), puis le trader, son rejeu, les deux tournois et le portefeuille. Un seul labo à la
+fois : ils se partagent le processeur. Pour expliquer un trade du trader à l'utilisateur, lis son `why`, son `reading`
+et son `diagnosis` dans `data\trader\compte.json`. Le levier du trader n'existe qu'en argent fictif.
 
 ## Lire les résultats d'un labo
 

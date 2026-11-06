@@ -19,15 +19,19 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 
 ## Architecture
 
-- `main.py` : ligne de commande (`site`, `backtest`, `robustesse`, `labo`, `labo-portefeuille`, `tournoi`,
+- `main.py` : ligne de commande (`site`, `trader`, `backtest`, `robustesse`, `labo`, `labo-portefeuille`, `tournoi`,
   `portefeuille`, `prix`, `telegram`, `check`, `run`, `tableau`, `reset-guard`). Sans argument (double-clic sur
   l'exécutable Windows), `site`. `NothingRetained` : un labo qui ne retient rien n'est pas une panne (code 0).
 - `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
   Chaque bouton (`ACTIONS`, `steps_for`) lance la même commande que son lanceur .bat (test `test_packaging`) dans un
   sous-processus (`TaskManager`, `Task`) dont le journal s'affiche en direct ; un seul calcul lourd à la fois (`CALCUL`) ;
-  « Pilote automatique » = 4 labos (`PORTFOLIO_LAB` d'abord, le plus rapide) puis les 2 tournois et le portefeuille
-  (`then`) ; une étape en échec n'arrête pas les suivantes. Accueil : `next_step`, `lab_summaries`,
-  `tournament_summaries`, `portfolio_summary`. Sous Windows, un job `KILL_ON_JOB_CLOSE` par tâche : fermer
+  « Pilote automatique » = 5 labos (`PORTFOLIO_LAB` d'abord, le plus rapide, puis court terme, limites, `FUTURES_LAB`,
+  long terme) puis le trader, son rejeu, les 2 tournois et le portefeuille (`then` ; `TaskManager.start(finishing=)` :
+  la tâche qui finit ne bloque pas le calcul qu'elle enchaîne) ; une étape en échec n'arrête pas les suivantes.
+  Onglets : Accueil (prochaine étape + le trader : `/api/trader`), Graphiques (`Charts`, `/api/graphique`,
+  `/api/marches`), École (`/api/ecole`), Actualité (`/api/actualite`, `news_poller`), et sous « Plus » les anciens
+  (Labos et actions, Radar, Prix, Mes essais, Comprendre, Tableau de bord, Journal, Réglages). Accueil : `next_step`
+  (le trader d'abord), `lab_summaries`, `tournament_summaries`, `portfolio_summary`. Sous Windows, un job `KILL_ON_JOB_CLOSE` par tâche : fermer
   le site arrête tout. Les commandes reçoivent l'environnement d'avant `.env` (`args.pristine_env`) et relisent `.env` ;
   `TRADINGBOT_SITE=1` passe leur sortie en UTF-8 ligne par ligne. Jamais d'argent réel : « Mes bots » refuse
   `MODE=live`, le formulaire (`FIELDS`, liste blanche) ne touche ni à MODE, ni aux clés, ni à CONFIRM_LIVE_TRADING, ni
@@ -44,10 +48,32 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   (signal de la famille impulsion), courbe médiane et quartiles sur 60 min, trois sorties `OPTIONS` (rapide, normale,
   laisser courir) passées par `run_backtest`, verdict franc (`bad`, `neutral`, `good` = piste à confirmer, `few`),
   `trade_plan` = stop et perte si le stop est touché.
+- `tradingbot/levels.py` : supports et résistances comme un trader les trace : pivots (plus haut ou plus bas de
+  `window` bougies de chaque côté, connus `window` bougies plus tard), zones regroupées (écart < `tol_mult` × taille
+  moyenne d'une bougie, `candle_size` = moyenne simple du true range : pas d'EMA, donc identique sur la fenêtre du
+  live), touches ; `level_series` (support/resistance « pas encore franchis » à moins d'une largeur de zone,
+  next_support/next_resistance au-delà) ; `levels_now`, `nearest`, `round_levels` (chiffres ronds).
+- `tradingbot/explain.py` : `read_chart` (tendance MM200 et sa pente, support et résistance avec touches, RSI,
+  bougie moyenne face aux frais, chiffres ronds, `scenario` gain/risque d'un trader : une lecture, jamais un ordre),
+  `rule_sentence` (pourquoi une règle a acheté), `diagnose` (gagne, gain_partiel, frais, faux_depart, gain_rendu, stop,
+  temps, sortie_regle, liquidation, à partir du MFE/MAE et du risque), `lessons` (chiffrées, avec mises en garde).
+- `tradingbot/trader.py` : le trader fictif (commande `trader`, lanceurs 17 et 18, action « Mon trader »). Un compte
+  (`Account`, `data/trader/compte.json`), les stratégies retenues par les labos (`choose_playbook` : « prometteur » ou
+  « à surveiller », frais du trader <= frais du test, pas de labo futures en profil spot), les cryptos `by_volume`,
+  risque 1 % par trade (`TRADER_RISK`), levier en argent fictif seulement (profil `futures` : `FUTURES`, levier max
+  `TRADER_LEVERAGE`, liquidation sous `MAINTENANCE`), gardien par stratégie et crypto, labos et cryptos relus chaque
+  heure (`run(refresh=)`), explications à l'entrée et diagnostic à la sortie. `replay` (`trader --rejouer`,
+  `rejeu.json`) : backtests `explain=True` fusionnés en un compte ; test de parité live/rejeu. Le bot en argent réel
+  reste au comptant et sans levier.
+- `tradingbot/school.py` : l'école (12 leçons, `FIGURES` : candle, chart, risk, leverage, fees, diagnoses ; quiz
+  expliqués ; sources ; `examples` = vrais trades du trader). `tradingbot/news.py` : flux RSS (CoinDesk, Cointelegraph,
+  Decrypt), `mentions`, `reaction` (mouvement depuis la publication), indice peur et avidité (alternative.me,
+  `fng_study` sur 30 jours, épisodes comptés) ; information seulement, jamais d'ordre.
 - `tradingbot/research.py` : la base de recherche des bots. `IDEAS` : une idée par effet documenté (clés de
   `knowledge.SOURCES`), avec ses règles fixées d'avance d'après l'étude (`rules` → `RESEARCH_VARIANTS`, ajoutées au
-  labo : Momentum 7/28, Prix au-dessus de la MM 20/50) ou ses variantes de portefeuille (`portfolio`), ou `caution`
-  quand la recherche est défavorable (surréaction, intraday). Chemin : étude → règle → labo → tournoi/portefeuille →
+  labo : Momentum 7/28, Prix au-dessus de la MM 20/50, Rebond sur support ± MM200, Cassure de résistance ± volume)
+  ou ses variantes de portefeuille (`portfolio`), ou `caution` quand la recherche est défavorable (surréaction,
+  intraday) ou que l'idée est seulement informative (`unfavorable=False` : chiffres ronds). Chemin : étude → règle → labo → tournoi/portefeuille →
   testnet ; un bot n'agit jamais « parce qu'une étude le dit ».
 - `tradingbot/portfolio.py` : momentum croisé (Liu, Tsyvinski et Wu). `PORTFOLIO_VARIANTS` (7/14/28 j × 3/5 cryptos,
   rotation tous les 7 jours), `simulate` (classement sur la clôture du jour i, achat à l'ouverture de i+1, frais sur
@@ -68,21 +94,24 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   clôturées) ou à la main. Surveillé par le site toutes les 15 s (`Site.check_trials`). Jamais d'ordre réel.
 - `BOTS=PAIRE@UNITE,...` : plusieurs bots dans une boucle (`live.run_bots`). En paper, un compte fictif par bot ;
   sur un vrai compte, `MAX_CAPITAL` est le montant de chaque bot (validé dans `config.py`).
-- `tradingbot/strategy.py` : neuf familles (`STRATEGY_TYPE`) : retour_moyenne (RSI, défaut), bollinger, cassure
-  (Donchian), bollinger_cassure, croisement, macd, momentum, supertrend, impulsion (hausse d'au moins `impulse_pct`
+- `tradingbot/strategy.py` : onze familles (`STRATEGY_TYPE`) : retour_moyenne (RSI, défaut), bollinger, cassure
+  (Donchian), bollinger_cassure, croisement, macd, momentum, supertrend, support (rebond venu d'au-dessus sur
+  `next_support`, sortie à `next_resistance` ou support cassé), resistance (clôture > résistance + largeur, sortie
+  sous le niveau ; niveaux de la bougie précédente), impulsion (hausse d'au moins `impulse_pct`
   en `impulse_bars` bougies, seulement la bougie où elle apparaît ; sortie « essoufflement » sous le plus bas des
   `breakout_exit_period` bougies). `compute_signals` produit `entry`/`exit`
   pour le backtest ET le live (tests de parité par famille). Le backtest respecte le même temps de chauffe que le live.
   Filtres d'achat optionnels pour toutes : volatilité (`min_atr_pct`), volume (`volume_mult`, `volume_period`),
   heures actives UTC (`active_hours`, « 13-21 ») et compression de Bollinger (`squeeze_quantile`, `squeeze_period`).
   Chaque trade du backtest garde le prix du graphique (`entry_mark`, `exit_mark`) : `gross_return` = avant frais.
-- `tradingbot/lab.py` : commande `labo`, 28 variantes × 4 unités = 112 combinaisons (7 marchés réunis), étude 50 % /
+- `tradingbot/lab.py` : commande `labo`, 32 variantes × 4 unités = 128 combinaisons (7 marchés réunis), étude 50 % /
   validation 30 % / test final 20 % (jamais regardé pour choisir : « prometteur » exige un test final positif,
   sinon « instable »), Bonferroni (approximation normale) sur le nombre d'essais, comparaison au buy & hold.
   Études sans garde-fous live ni élimination (`research_risk`). Pas de levier dans le labo (choix de l'utilisateur,
   à revoir). `--scanner N` / `--memecoins` ajoutent des cryptos ; sous 15 min, historique plafonné (60 j en 1m).
   `--combinaisons` ajoute `COMBOS` (17 variantes avec filtres) et `IMPULSES` (4 impulsions), seuils fixés d'avance :
-  `SHORT_TERM_VARIANTS` (49) ; `ALL_VARIANTS` sert à retrouver une variante par son nom. `VARIANTS` se termine par
+  `SHORT_TERM_VARIANTS` (53) ; `ALL_VARIANTS` sert à retrouver une variante par son nom. `labo --futures` : frais
+  `execution.FUTURES` (0,05 % taker, 0,02 % maker, financement `funding_rate_8h` payé dans le backtest). `VARIANTS` se termine par
   `research.RESEARCH_VARIANTS` (réglages tirés des études, pas de nos données). `run_lab` répartit le calcul par (unité, marché) sur plusieurs
   cœurs (`--coeurs`, repli en série si le parallèle échoue ; `multiprocessing.freeze_support()` dans `main.py`). Le labo affiche l'espérance avant frais
   (`gross_expectancy_pct`) et `cost_diagnosis` dit si ce sont les frais qui font perdre.
@@ -92,12 +121,12 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   TELEGRAM_CHAT_ID), envoyées d'un fil à part ; `run` envoie les logs JOURNAL, ALERT et ERROR ; un tournoi
   seulement ALERT (départ, éliminations, résumé horaire) et ERROR.
 - Labos (`lab.LAB_FILES`) : `laboratoire.json` (long terme), `laboratoire-court-terme.json` (lanceur 7),
-  `laboratoire-court-terme-limites.json` (lanceur 10) ; une section par labo sur le tableau de bord ; `tournoi --labo`
+  `laboratoire-court-terme-limites.json` (lanceur 10), `laboratoire-futures.json` (lanceur 16, scalping futures) ; une section par labo sur le tableau de bord ; `tournoi --labo`
   accepte plusieurs fichiers (`merge_picks` : meilleure version de chaque stratégie, avec les ordres de son labo).
-  Lanceur 13 « Recherche de nuit » : les quatre labos à la suite (portefeuille d'abord). `awake.keep_awake()` empêche la veille Windows
+  Lanceur 13 « Recherche de nuit » : les cinq labos à la suite (portefeuille d'abord). `awake.keep_awake()` empêche la veille Windows
   pendant `labo`, `run` et `tournoi` ; le verdict d'un labo part en alerte Telegram.
 - `packaging/windows/` : à la racine du ZIP, `Ouvrir le bot.bat` (`site`) et `Ouvrir le bot sur iPad ou telephone.bat`
-  (`site --ipad`) ; les 17 anciens lanceurs (dont `0 - Menu.bat`) dans `autres lanceurs/`, qui remontent d'un dossier
+  (`site --ipad`) ; les 20 anciens lanceurs (dont `0 - Menu.bat`) dans `autres lanceurs/`, qui remontent d'un dossier
   (`cd /d "%~dp0.."`). Le workflow vérifie que le site de l'exécutable répond et lance une commande.
   `packaging/windows/CLAUDE.md` : consignes pour une session Claude ouverte sur le dossier du ZIP, sur le PC de
   l'utilisateur (commandes de l'exécutable, lecture des résultats, règles non négociables ; test de cohérence).
@@ -191,3 +220,11 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   labo portefeuille + portefeuille momentum en argent fictif (`portfolio.py`), branchés au pilote, à l'accueil, à
   « Comprendre » et aux lanceurs 13/14/15. Aucun résultat réel encore : tout dépend du prochain pilote sur son PC.
   Avant toute idée nouvelle : attendre les verdicts réels (photo de l'accueil et du journal du pilote).
+- Journée du 06/11/2026 (session autonome) : l'utilisateur veut un « trader » qui analyse chaque graphique (supports,
+  tendance), entre avec la meilleure stratégie du labo et laisse tourner ; du levier (« c'est de l'argent fictif,
+  donc c'est ok » : autorisé en argent fictif seulement), l'actualité, apprendre de ses pertes « jusqu'à ce qu'on
+  gagne », le scalping, un site plus simple et une école pour se former. Fait : levels.py, familles support et
+  resistance (sourcées : Osler, Kavajecz, Brock), explain.py, trader.py (+ rejeu), labo scalping futures, news.py,
+  school.py, site à 4 onglets. Dit franchement : aucun gain promis ; « apprendre » = le labo et le gardien, jamais des
+  réglages changés après une perte ; chercher longtemps finit par trouver un gagnant par chance ; pas de trading sur
+  les titres. Toujours aucun résultat réel : tout dépend du prochain pilote sur son PC.

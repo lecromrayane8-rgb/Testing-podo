@@ -13,11 +13,21 @@ Si tu avais une version précédente : recopie ton fichier .env et ton dossier �
 nouveau dossier (ils gardent tes réglages, tes bots et les résultats du labo).
 
 LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordinateur)
-- Accueil : la prochaine étape en une phrase, ce qui tourne (avec son journal et un bouton Arrêter),
-  les résultats des labos et des tournois, et toutes les actions.
-- Pilote automatique : le bouton du haut. Il lance les quatre labos à la suite (1 à 3 heures selon le
-  PC), puis, tout seul, les deux tournois et le portefeuille momentum en argent fictif avec ce qui a
-  été retenu. Lance-le le soir et laisse le PC allumé.
+Quatre onglets simples : Accueil, Graphiques, École, Actualité. Le reste est sous « Plus ».
+- Accueil : la prochaine étape en une phrase, puis TON TRADER FICTIF : la valeur du compte, ses
+  positions avec leur stop, ses derniers trades expliqués (pourquoi il est entré, ce qui s'est passé,
+  la leçon), ce qu'il a appris et ses stratégies. « Rejeu sur l'historique » montre ce qu'il aurait
+  fait ces derniers mois (flatteur par nature : ce n'est pas une preuve).
+- Pilote automatique : le bouton du haut. Il lance les cinq labos à la suite (2 à 4 heures selon le
+  PC), puis, tout seul, ton trader, son rejeu, les tournois et le portefeuille momentum en argent
+  fictif avec ce qui a été retenu. Lance-le le soir et laisse le PC allumé.
+- Graphiques : chaque crypto en bougies, avec ses supports et ses résistances, ses moyennes, ce
+  qu'un trader y lirait en mots simples, et ce que disent les règles de ton trader.
+- École : douze leçons courtes pour apprendre (le trading, une crypto, les bougies, les supports, le
+  stop, le levier, les frais et le scalping…), avec des simulateurs et un mini-quiz par leçon.
+- Actualité : les derniers titres crypto, ce que le prix des cryptos citées a fait depuis, et
+  l'indice peur et avidité. Pour comprendre : le bot ne trade jamais sur les titres.
+- Plus > Labos et actions : les résultats des labos et des tournois, et toutes les actions.
 - Radar des mouvements : toutes les cryptos de Binance cotées en USDT et échangées à plus de 5 M$ par
   jour, et celles qui bougent le plus sur 1, 5 et 15 minutes, relevées toutes les 10 secondes dès que le
   site est ouvert. Le radar ne passe aucun ordre : un mouvement affiché a déjà eu lieu.
@@ -46,14 +56,25 @@ LES LABOS
   les 3 ou 5 cryptos qui ont le plus monté parmi les 30 plus échangées, à parts égales. Testée sur des
   années de bougies d'un jour, frais compris, contre le panier de toutes les cryptos à parts égales :
   une variante n'est retenue que si elle fait mieux que ce panier. 2 à 5 minutes.
-- Labo court terme : 28 variantes de 8 techniques, 17 combinaisons (filtres de volatilité, de volume,
+- Labo court terme : 32 variantes de 10 techniques (dont les supports et résistances), 17 combinaisons (filtres de volatilité, de volume,
   d'heures actives et de compression) et 4 impulsions (sauter sur un mouvement soudain), en bougies de
   1, 5 et 15 minutes, sur BTC, ETH, SOL, les 8 cryptos les plus agitées du moment et les memecoins
   assez échangés (DOGE, SHIB, PEPE, FLOKI, BONK, WIF). Environ 1 heure.
 - Le même en ordres limites : le bot attend son prix au lieu de payer l'écart et le glissement.
-- Labo long terme : les 28 variantes de 15 minutes à 1 jour, sur cryptos, or et euro (et tes actions,
+- Labo scalping, frais futures : le même labo court terme avec les frais des contrats à terme (deux
+  fois moins chers qu'au comptant), pour savoir si c'est tout ce qui manquait au scalping.
+- Labo long terme : les 32 variantes de 15 minutes à 1 jour, sur cryptos, or et euro (et tes actions,
   voir le dossier « actions »). 10 à 20 minutes.
 Chaque labo a son fichier de résultats : l'un n'efface jamais l'autre.
+
+TON TRADER (argent fictif)
+Il suit les 20 cryptos les plus échangées et joue les stratégies que les labos ont retenues, avec un
+stop à chaque trade (perte d'environ 1 % du compte si le stop est touché). Levier possible, en argent
+fictif seulement : jusqu'à 3 par défaut, réglable de 1 à 20 dans les Réglages du site (section
+« Mon trader »). Le levier ne crée aucun gain : il grossit gains et pertes. Chaque heure, il relit
+les labos : une stratégie nouvellement retenue entre dans son jeu ; une stratégie qui perd nettement
+sur une crypto n'y est plus jouée. Il ne change jamais ses réglages tout seul. Si les labos n'ont
+rien retenu, il attend et le dit : c'est ce que ferait un bon trader.
 
 LE PORTEFEUILLE MOMENTUM (argent fictif)
 Si le labo portefeuille a retenu une variante, le pilote lance le portefeuille : 1000 USDT fictifs,

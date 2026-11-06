@@ -1,17 +1,18 @@
 # Testing-podo : bot de trading spot
 
 Bot de trading automatique en Python, connecté aux plateformes d'échange via [ccxt](https://github.com/ccxt/ccxt)
-(Binance par défaut, plus de 100 plateformes possibles). Il trade uniquement à l'achat (spot, **sans levier**),
-avec neuf familles de stratégies testées hors échantillon, des garde-fous de risque, un laboratoire qui cherche
-ce qui tient après frais, des tournois en argent fictif, un radar des mouvements, un tableau de bord, des alertes
-sur le téléphone, et un site qui réunit tout dans le navigateur.
+(Binance par défaut, plus de 100 plateformes possibles). Il trade uniquement à l'achat, au comptant (spot) et
+**sans levier en argent réel**, avec onze familles de stratégies testées hors échantillon (dont les supports et
+résistances), des garde-fous de risque, un laboratoire qui cherche ce qui tient après frais, un **trader fictif** qui
+joue les stratégies retenues sur beaucoup de cryptos et explique chaque trade (levier possible en argent fictif), des
+tournois, un radar des mouvements, l'actualité, une école du trading pour débutant, et un site qui réunit tout.
 
 **Démarrage rapide (Windows, sans Python)** : télécharge le
 [ZIP](https://github.com/lecromrayane8-rgb/Testing-podo/releases/download/windows-dev/tradingbot-windows.zip),
 extrais-le et double-clique sur `Ouvrir le bot.bat` : le site du bot s'ouvre dans ton navigateur. Le soir, clique
-sur « Pilote automatique » : les quatre labos tournent à la suite (dont le labo portefeuille, une règle issue de
-la recherche), puis les tournois et le portefeuille en argent fictif démarrent tout seuls avec ce qui a été retenu ;
-l'accueil du site dit le lendemain ce qui gagne, ou non, après frais.
+sur « Pilote automatique » : les cinq labos tournent à la suite (dont le scalping avec les frais des futures et le
+labo portefeuille), puis ton trader, son rejeu, les tournois et le portefeuille démarrent tout seuls en argent fictif
+avec ce qui a été retenu ; l'accueil du site montre le lendemain ce que fait ton trader, trade par trade, et pourquoi.
 
 > **À lire avant tout.** Aucun bot ne garantit un profit régulier. Un **taux de réussite élevé ne veut pas
 > dire rentable** : une stratégie qui gagne 70 % du temps 0,5 % et perd 30 % du temps 2 % perd de l'argent.
@@ -21,8 +22,8 @@ l'accueil du site dit le lendemain ce qui gagne, ou non, après frais.
 
 ## Les stratégies
 
-Le bot connaît neuf familles de règles, choisies avec `STRATEGY_TYPE` dans `.env`. Deux achètent un repli,
-six suivent une tendance, une saute sur un mouvement soudain :
+Le bot connaît onze familles de règles, choisies avec `STRATEGY_TYPE` dans `.env`. Deux achètent un repli,
+six suivent une tendance, une saute sur un mouvement soudain, deux tradent les supports et résistances :
 
 | Famille | `STRATEGY_TYPE` | Achète quand… | Revend quand… |
 |---|---|---|---|
@@ -35,6 +36,14 @@ six suivent une tendance, une saute sur un mouvement soudain :
 | Momentum | `momentum` | le prix repasse au-dessus de son niveau d'il y a N bougies | il retombe dessous |
 | Supertrend | `supertrend` | la tendance Supertrend devient haussière | elle redevient baissière |
 | Impulsion | `impulsion` | le prix vient de prendre au moins `IMPULSE_PCT` en `IMPULSE_BARS` bougies (seulement la bougie où le mouvement apparaît) | il passe sous le plus bas des M bougies précédentes (le mouvement s'essouffle) |
+| Rebond sur support | `support` | venue d'au-dessus, la bougie touche un support solide (touché au moins 2 fois) puis clôture au-dessus, en hausse | le prix touche la résistance suivante, ou le support cède |
+| Cassure de résistance | `resistance` | la clôture franchit nettement une résistance solide | le prix retombe sous l'ancien niveau, devenu support |
+
+Les supports et résistances (`tradingbot/levels.py`) sont trouvés comme un trader les trace : les sommets et creux
+nets (le plus haut ou le plus bas de 5 bougies de chaque côté, connus seulement 5 bougies plus tard), regroupés en
+zones larges d'une demi-bougie moyenne, parmi les 150 dernières bougies (`LEVEL_WINDOW`, `LEVEL_LOOKBACK`,
+`LEVEL_TOUCHES`, `LEVEL_TOL`). Ils ne dépendent que de cette fenêtre : le bot en direct trouve exactement les mêmes
+niveaux que le backtest (tests de parité).
 
 Toutes ont un stop-loss à k × ATR sous le prix d'achat et un filtre de tendance optionnel (`TREND_PERIOD`,
 0 = aucun). Les signaux sont identiques en backtest et en direct (`compute_signals`), et des tests le vérifient
@@ -129,12 +138,28 @@ python main.py site          # ou « Ouvrir le bot.bat » ; sans argument, le pr
 
 Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765) :
 
-- **Accueil** : la prochaine étape en une phrase (lancer le pilote, un tournoi, ou attendre), ce qui tourne avec
-  son journal et un bouton Arrêter, les résultats des labos et des tournois, et un bouton par action.
-- **Pilote automatique** : les quatre labos à la suite (portefeuille, court terme, court terme en ordres limites,
-  long terme), puis les deux tournois et le portefeuille momentum en argent fictif avec ce qui a été retenu. Ils
-  tournent ensuite tant que le site est ouvert. Si un labo ne retient rien, la suite correspondante ne démarre pas :
-  c'est voulu.
+Quatre onglets simples (Accueil, Graphiques, École, Actualité) ; le reste est sous « Plus ».
+
+- **Accueil** : la prochaine étape en une phrase, puis **ton trader fictif** : valeur du compte, résultat depuis le
+  départ, courbe, positions ouvertes avec leur stop, derniers trades expliqués (pourquoi il est entré, ce qui s'est
+  passé, la leçon), ce qu'il a appris, ses stratégies et celles que le gardien a coupées ; en direct, ou rejoué sur
+  l'historique. Puis ce qui tourne, avec son journal et un bouton Arrêter.
+- **Pilote automatique** : les cinq labos à la suite (portefeuille, court terme, court terme en ordres limites,
+  scalping avec les frais des futures, long terme), puis le trader, son rejeu, les deux tournois et le portefeuille
+  momentum en argent fictif avec ce qui a été retenu. Ils tournent ensuite tant que le site est ouvert. Si un labo ne
+  retient rien, la suite correspondante attend : c'est voulu.
+- **Graphiques** : chaque crypto en bougies (15 min, 1 h, 4 h, 1 jour) comme un trader la lit : supports et
+  résistances avec le nombre de touches, moyennes sur 50 et 200 bougies, l'achat et le stop du trader, ses derniers
+  achats et ventes, la lecture du graphique en mots simples (tendance, RSI, taille des bougies face aux frais,
+  chiffres ronds, scénario d'un trader) et le signal de chaque règle du trader.
+- **École** : douze leçons courtes pour débutant (`tradingbot/school.py`) : le trading, une crypto, les bougies, la
+  tendance, les supports, le stop et la taille de position, le levier, les frais et le scalping, les indicateurs,
+  l'actualité, tester avant de trader, lire les trades de son trader. Un schéma ou un simulateur quand l'idée a une
+  forme (levier, taille de position, frais), un mini-quiz dont chaque réponse est expliquée, les sources.
+- **Actualité** (`tradingbot/news.py`) : les derniers titres de CoinDesk, Cointelegraph et Decrypt, les cryptos citées
+  et ce que leur prix a fait depuis la publication ; l'indice peur et avidité, son année, et ce qui a suivi ses
+  extrêmes (une observation, pas une règle). Le bot ne trade jamais sur les titres.
+- **Plus › Labos et actions** : les résultats des labos, des tournois et du portefeuille, et un bouton par action.
 - **Radar des mouvements** : toutes les cryptos de la plateforme cotées en USDT et échangées à plus de 5 M$ par
   jour, classées par variation sur 1, 5 ou 15 minutes (barre jaune au-delà de 1 %, 2 % ou 4 %). Il tourne dès
   l'ouverture du site : la liste complète des paires toutes les 5 minutes, puis le dernier prix seulement toutes
@@ -220,10 +245,10 @@ python main.py labo --csv-dir actions     # + des actions : CSV quotidiens Date,
 ```
 
 Le laboratoire calcule sur tous les cœurs du processeur sauf un (`--coeurs N` pour choisir).
-Il essaie 28 variantes des huit familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
-l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour), soit 112
-combinaisons (chaque variante dans chaque unité, tous marchés réunis). Quatre de ces variantes viennent de la
-recherche (voir plus bas). Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la chance :
+Il essaie 32 variantes de dix familles, sur 7 marchés (BTC, ETH, SOL, BNB, XRP, l'or via PAXG,
+l'euro via EUR/USDT, plus tes CSV d'actions) et 4 unités de temps (15 min, 1 h, 4 h, 1 jour), soit 128
+combinaisons (chaque variante dans chaque unité, tous marchés réunis). Huit de ces variantes viennent de la
+recherche (voir plus bas), dont les quatre sur les supports et résistances. Compter 10 à 20 minutes. Pour ne pas se laisser tromper par la chance :
 
 1. **Étude, validation, puis test final** : chaque historique est coupé dans le temps. La première moitié sert
    d'étude, la tranche de 50 à 80 % de validation (c'est elle qui classe les variantes), et les 20 % les plus
@@ -232,7 +257,7 @@ recherche (voir plus bas). Compter 10 à 20 minutes. Pour ne pas se laisser trom
    sur les mêmes données finirait toujours par en trouver une qui a gagné par hasard.
 2. **Tous les marchés à la fois** : une structure qui marche doit marcher un peu partout, pas sur un seul
    marché choisi après coup.
-3. **Seuil durci par le nombre d'essais** : 112 combinaisons testées, donc un seuil 112 fois plus exigeant
+3. **Seuil durci par le nombre d'essais** : 128 combinaisons testées, donc un seuil 128 fois plus exigeant
    (correction de Bonferroni). Plus on ajoute de variantes, plus il est dur d'être retenu : c'est voulu.
    Sur des prix purement aléatoires, aucune ne sort « prometteur ».
 4. **Comparaison au buy & hold** : la stratégie doit faire mieux, ou risquer bien moins, que garder l'actif.
@@ -279,7 +304,7 @@ bougie précédente parmi les 20 % les plus serrées des 120 dernières : un mar
 sont fixés d'avance, pas ajustés sur les données. S'y ajoutent 4 **impulsions**, qui sautent sur un mouvement
 soudain comme ceux du radar : +1 % en 5 bougies (avec ou sans volume triplé), +0,5 % en une seule bougie avec
 volume triplé, +3 % en 15 bougies avec volume triplé ; revente sous le plus bas des 5 bougies précédentes, stop à
-2 ATR, 20 bougies au plus. Les 49 variantes passent par la même validation, le même seuil durci et le même test
+2 ATR, 20 bougies au plus. Les 53 variantes passent par la même validation, le même seuil durci et le même test
 final. Les filtres existent aussi dans `.env` (`MIN_ATR_PCT`, `VOLUME_MULT`,
 `VOLUME_PERIOD`, `ACTIVE_HOURS`, `SQUEEZE_QUANTILE`, `SQUEEZE_PERIOD`) et le bot en direct les applique exactement
 comme le backtest (tests de parité).
@@ -302,11 +327,52 @@ passé le labo.
 |---|---|---|
 | La tendance des dernières semaines continue | fort momentum en crypto sur 1 à 8 semaines (Liu et Tsyvinski 2021 ; Hong 2017) | Momentum 7 et 28 (bougies d'un jour) |
 | Le prix au-dessus de sa moyenne mobile | l'écart prix/moyennes prévoit les rendements journaliers du Bitcoin (Detzel, Liu et Strauss 2021) | Prix au-dessus de la MM 20, de la MM 50 |
+| Les supports et les résistances | ils annoncent des arrêts de tendance ; les ordres s'y accumulent, surtout aux chiffres ronds (Osler 2000 et 2003 ; Kavajecz et Odders-White 2004 ; Brock, Lakonishok et LeBaron 1992) | Rebond sur support (avec ou sans MM 200), Cassure de résistance (avec ou sans volume x2) |
+| Les chiffres ronds | les prix du Bitcoin s'y accumulent, sans rendement particulier ensuite (Urquhart 2017) | montrés sur les graphiques, pas de règle à part |
 | Garder les cryptos qui ont le plus monté | le momentum entre cryptos est un des trois facteurs de leurs rendements (Liu, Tsyvinski et Wu ; Kosc et al. 2019) | labo portefeuille : 6 variantes |
 | Parier contre un excès | défavorable : le retournement après un jour excessif n'a pas rapporté (Caporale et Plastun 2019) | aucune nouvelle règle |
-| Trader en minutes plutôt qu'en jours | défavorable : en 5 minutes, le Bitcoin se trade moins bien qu'en jours (Resta et al. 2020) | aucune nouvelle règle |
+| Trader en minutes plutôt qu'en jours | défavorable : en 5 minutes, le Bitcoin se trade moins bien qu'en jours (Resta et al. 2020) ; deux fois plus de day traders perdent qu'ils ne gagnent (Jordan et Diltz 2003) | aucune nouvelle règle |
 
 L'onglet « Comprendre » du site affiche ces idées, leurs sources et où chacune en est dans tes labos.
+
+### Ton trader fictif : un compte, beaucoup de cryptos, chaque trade expliqué
+
+```bash
+python main.py trader               # ou « 17 - Mon trader.bat » ; tourne jusqu'à l'arrêt, en argent fictif
+python main.py trader --rejouer     # ou « 18 - Rejouer mon trader.bat » : ses règles rejouées sur les derniers mois
+```
+
+Le trader (`tradingbot/trader.py`) fait ce que ferait un trader humain, avec des règles testées : il suit les 20
+cryptos les plus échangées, joue les stratégies que les labos ont retenues (« prometteur » ou « à surveiller »), et
+seulement si ses frais ne dépassent pas ceux du test. Chaque trade risque 1 % du compte si son stop est touché. Il
+note la lecture du graphique à l'achat ; à la vente, il écrit ce qui s'est passé (scénario réussi, faux départ, gain
+rendu, frais trop lourds, rien ne s'est passé…) et la leçon, à partir du plus haut et du plus bas atteints
+(`tradingbot/explain.py`). Ses leçons donnent toujours le nombre de trades derrière, et préviennent quand ils sont
+trop peu nombreux pour conclure.
+
+- **Il apprend sans tricher** : il relit les labos chaque heure. Une stratégie qu'une nouvelle recherche retient entre
+  dans son jeu ; une stratégie qui perd nettement sur une crypto n'y est plus jouée (le gardien). Il ne change jamais
+  ses réglages tout seul.
+- **Levier, en argent fictif seulement** (choix de l'utilisateur) : profil `futures` par défaut, levier jusqu'à 3
+  (`TRADER_LEVERAGE`, de 1 à 20), frais des contrats à terme, financement toutes les 8 heures, liquidation simulée.
+  Le levier ne crée aucun gain : il permet la taille voulue quand le stop est proche. Profil `spot` : sans levier.
+  Les réglages (`TRADER_CAPITAL`, `TRADER_PROFILE`, `TRADER_LEVERAGE`, `TRADER_RISK`, `TRADER_POSITIONS`,
+  `TRADER_COINS`) se changent dans les Réglages du site. Le bot en argent réel, lui, reste au comptant et sans levier.
+- **Le rejeu** montre tout de suite des trades expliqués, mais il est flatteur par nature (les stratégies ont été
+  choisies sur ce passé) : ce n'est pas une preuve.
+- Si le labo n'a rien retenu, le trader attend et le dit : c'est ce que ferait un bon trader.
+
+### Le scalping avec les frais des futures
+
+```bash
+python main.py labo --symbols BTC/USDT,ETH/USDT,SOL/USDT --timeframes 1m,5m,15m --scanner 8 --memecoins \
+    --combinaisons --futures --resultats laboratoire-futures.json      # « 16 - Labo scalping futures.bat »
+```
+
+Le même labo court terme, avec les frais des contrats à terme : 0,05 % par ordre au marché, 0,02 % en limite, un
+glissement plus faible et le financement toutes les 8 heures. Un aller-retour coûte environ 0,14 %, contre 0,30 % au
+comptant : de quoi savoir si c'est la seule chose qui manquait au scalping. Argent fictif seulement ; en vrai, vérifie
+ce qui t'est autorisé en France.
 
 ### Le labo portefeuille : le momentum croisé
 
@@ -521,8 +587,9 @@ tail -f data/bot.log
 | `python main.py site [--port 8765] [--sans-navigateur] [--ipad]` | ouvrir le site du bot (le programme Windows sans argument fait de même) |
 | `python main.py backtest [--days N] [--capital X] [--csv fichier]` | tester la stratégie sur l'historique |
 | `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
-| `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins] [--combinaisons] [--ordres-limites] [--resultats fichier]` | comparer les stratégies, validées hors échantillon |
+| `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins] [--combinaisons] [--ordres-limites] [--futures] [--resultats fichier]` | comparer les stratégies, validées hors échantillon |
 | `python main.py tournoi [--labo fichier] [--unite 1m] [--avec-marches-du-labo] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X] [--sans-navigateur]` | faire s'affronter en argent fictif les stratégies retenues par un labo |
+| `python main.py trader [--rejouer] [--une-fois]` | le trader fictif : les stratégies retenues sur beaucoup de cryptos, chaque trade expliqué |
 | `python main.py labo-portefeuille [--cryptos 30] [--days N]` | tester le momentum croisé (garder chaque semaine les cryptos qui ont le plus monté) contre le panier |
 | `python main.py portefeuille [--capital X] [--variantes 2] [--une-fois]` | les variantes retenues par le labo portefeuille, en argent fictif, une rotation par semaine |
 | `python main.py check` | vérifier la connexion, le prix et les soldes de chaque bot |
@@ -537,7 +604,8 @@ Fichiers produits dans `data/` : `bot.log` (journal), `state_*.json` (position e
 (dernier test), `laboratoire.json` (dernier labo long terme), `laboratoire-court-terme.json`,
 `laboratoire-portefeuille.json` et `tableau-de-bord.html`. Les tournois rangent les leurs dans `data/tournoi/` et
 `data/tournoi-court-terme/`, avec `tournoi.json` (cryptos et stratégies en compétition) ; les portefeuilles fictifs
-dans `data/portefeuille/`.
+dans `data/portefeuille/` ; le trader dans `data/trader/` (`compte.json` en direct, `rejeu.json`) ; le labo scalping
+futures dans `laboratoire-futures.json`.
 
 ## Limites connues
 
