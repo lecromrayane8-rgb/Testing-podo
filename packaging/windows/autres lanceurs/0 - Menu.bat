@@ -8,6 +8,10 @@ echo   BOT DE TRADING - MENU          (argent fictif tant que tu ne changes rien
 echo ==========================================================================
 echo   Le plus simple : ferme ce menu et ouvre "Ouvrir le bot" (le site du bot).
 echo.
+echo   LES 15 BOTS (argent fictif : long terme, court terme, scalping)
+echo    20  Mes 15 bots en direct (le site les montre : ecran Direct)
+echo    21  Choisir les 15 bots par backtest (15 a 40 min)
+echo.
 echo   VOIR
 echo     1  Prix en direct : Binance, OKX, Kraken, Coinbase, Bybit cote a cote
 echo     2  Tableau de bord : tes bots, tes tournois, le labo
@@ -60,6 +64,8 @@ if "%choix%"=="16" goto choix16
 if "%choix%"=="17" goto choix17
 if "%choix%"=="18" goto choix18
 if "%choix%"=="19" goto choix19
+if "%choix%"=="20" goto choix20
+if "%choix%"=="21" goto choix21
 if "%choix%"=="0" exit /b
 goto menu
 :choix1
@@ -118,4 +124,10 @@ call "%~dp017 - Mon trader.bat"
 goto menu
 :choix19
 call "%~dp018 - Rejouer mon trader.bat"
+goto menu
+:choix20
+call "%~dp020 - Mes 15 bots.bat"
+goto menu
+:choix21
+call "%~dp019 - Choisir les 15 bots.bat"
 goto menu

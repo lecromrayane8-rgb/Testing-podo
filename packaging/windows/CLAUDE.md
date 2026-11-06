@@ -14,6 +14,10 @@ place, puis lui dises en quelques lignes ce qui en ressort.
 - `data\` : résultats des labos (`laboratoire.json`, `laboratoire-court-terme.json`,
   `laboratoire-court-terme-limites.json`), tournois (`data\tournoi\`, `data\tournoi-court-terme\`, chacun avec son
   `tableau-de-bord.html`), tableau de bord des bots (`data\tableau-de-bord.html`), journal (`data\bot.log`).
+- `data\bots\selection.json` : le choix des 15 bots (par équipe `long`, `court`, `scalping` : `bots`, `bench` =
+  remplaçants, `top` = les mieux classées, `tested`, `eligible`) ; `data\bots\etat.json` : les bots en direct (`slots`,
+  chacun avec son `bot` : `spec`, `book` = argent, position, trades avec `diagnosis`, `reading` = lecture de sa crypto,
+  `backtest`, et `retired` = les bots remplacés) et `events` (achats, ventes, remplacements).
 - `data\trader\compte.json` : le trader fictif (`positions`, `trades` avec `why`, `reading` et `diagnosis`, `stats`,
   `eliminated`, `playbook`, `history`) ; `data\trader\rejeu.json` : ses règles rejouées sur l'historique (pas une preuve).
 - `data\laboratoire-futures.json` : le labo scalping avec les frais des contrats à terme.
@@ -38,15 +42,19 @@ place, puis lui dises en quelques lignes ce qui en ressort.
 | tournoi court terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --labo laboratoire-court-terme.json,laboratoire-court-terme-limites.json --top 20 --sans-navigateur` | jusqu'à l'arrêt |
 | tournoi long terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --avec-marches-du-labo --top 20 --sans-navigateur` | jusqu'à l'arrêt |
 | portefeuille momentum (argent fictif) | `tradingbot\tradingbot.exe portefeuille` | jusqu'à l'arrêt |
+| choisir les 15 bots par backtest | `tradingbot\tradingbot.exe flotte --choisir` | 15 à 40 min |
+| les 15 bots (argent fictif) | `tradingbot\tradingbot.exe flotte` | jusqu'à l'arrêt |
 | mon trader (argent fictif) | `tradingbot\tradingbot.exe trader` | jusqu'à l'arrêt |
 | prix en direct, une fois | `tradingbot\tradingbot.exe prix --une-fois` | quelques secondes |
 | vérifier la connexion | `tradingbot\tradingbot.exe check` | quelques secondes |
 | régénérer le tableau de bord | `tradingbot\tradingbot.exe tableau --no-open` | quelques secondes |
 
-Le plus simple pour l'utilisateur reste le site (« Ouvrir le bot.bat ») et son bouton « Pilote automatique » : les
-cinq labos (portefeuille d'abord), puis le trader, son rejeu, les deux tournois et le portefeuille. Un seul labo à la
-fois : ils se partagent le processeur. Pour expliquer un trade du trader à l'utilisateur, lis son `why`, son `reading`
-et son `diagnosis` dans `data\trader\compte.json`. Le levier du trader n'existe qu'en argent fictif.
+Le plus simple pour l'utilisateur reste le site (« Ouvrir le bot.bat ») : l'écran « Direct » montre les 15 bots
+(bouton « Choisir les 15 bots » la première fois ; ensuite le site les relance tout seul à chaque ouverture). Le bouton
+« Pilote automatique » (Labos) lance les cinq labos (portefeuille d'abord), puis le trader, son rejeu, les deux
+tournois et le portefeuille. Un seul calcul lourd à la fois : ils se partagent le processeur. Pour expliquer un trade
+du trader à l'utilisateur, lis son `why`, son `reading` et son `diagnosis` dans `data\trader\compte.json`. Le levier
+et la vente à découvert n'existent qu'en argent fictif.
 
 ## Lire les résultats d'un labo
 
@@ -60,6 +68,18 @@ Dans `data\laboratoire-portefeuille.json` : `rows`, une ligne par variante : `me
 après frais, en %), `basket_pct` (le panier de toutes les cryptos à parts égales), `excess_pct` (l'écart : ce qui
 compte), `test_mean_pct` et `test_excess_pct` (test final), `verdict`. Une variante n'est retenue que si elle bat le
 panier ; « ne bat pas le panier » veut dire que garder toutes les cryptos aurait rapporté autant sans rien choisir.
+
+## Lire les 15 bots
+
+Trois équipes de cinq : long terme (4 h et 1 jour, levier ×1 par défaut), court terme (15 min et 1 h, ×3), scalping (1
+et 5 min, ×5). Chaque bot met tout son capital fictif à chaque trade, avec le levier de son équipe (réduit si le stop
+est loin, pour que le stop passe avant la liquidation), à l'achat (`side` = `long`) ou à la vente à découvert
+(`short`), avec ou sans objectif (`target_r` = 2 : à 2 fois la distance du stop). Dans `etat.json`, un trade a `roi`
+(résultat sur le capital du bot, levier compris), `net` (sur la position, frais compris, sans levier), `reason` et
+`diagnosis`. Le `label` du choix : `3` = gagnant sur les trois périodes du backtest, `2` = sur l'étude et la
+validation, `essai` = rien de mieux. Un bot liquidé, qui a perdu la moitié de son capital ou nettement perdant après 20
+trades est remplacé par le suivant de `bench`. Tout cela est de l'argent fictif : le meilleur de milliers de backtests
+est souvent chanceux, c'est le direct qui tranche.
 
 ## Règles non négociables
 

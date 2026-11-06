@@ -48,6 +48,10 @@ from .dashboard import FILENAME as DASHBOARD_FILE, write_dashboard
 from .data import load_or_fetch, ohlcv_to_frame, timeframe_to_ms
 from .desk import DESK_FILE, Desk
 from .explain import read_chart
+from .fleet import (
+    FLEET_DIR, SELECTION_FILE as FLEET_SELECTION, STATE_FILE as FLEET_STATE, chart_view as fleet_chart, fleet_running,
+    fleet_view, load_json as load_fleet_json,
+)
 from .indicators import sma
 from .lab import ALL_VARIANTS, FUTURES_LAB_FILE, LAB_FILE, LAB_FILES, LIMIT_LAB_FILE, PROMISING, SHORT_LAB_FILE, load_lab
 from .prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, board_to_dict, connect, label, short_error, snapshot
@@ -102,9 +106,20 @@ PORTFOLIO = ("portefeuille",)
 FUTURES_LAB = (*SHORT_LAB[:-2], "--futures", "--resultats", FUTURES_LAB_FILE)  # scalping, frais des futures
 TRADER = ("trader",)
 TRADER_REPLAY = ("trader", "--rejouer")
+FLEET = ("flotte",)
+FLEET_CHOICE = ("flotte", "--choisir")
 
 GROUPS = ("Le plus simple", "Chercher une stratégie", "Faire tourner en argent fictif", "Vérifier")
 ACTIONS = {a.key: a for a in (
+    Action("flotte-choix", "Choisir les 15 bots", GROUPS[0],
+           "Backteste toutes les combinaisons (15 techniques par équipe, à l'achat et à la vente à découvert, avec ou "
+           "sans objectif, sur les cryptos les plus échangées et les plus agitées), garde les 5 meilleures par équipe "
+           "(long terme, court terme, scalping), puis les lance en argent fictif.", "15 à 40 min de calcul, puis ils "
+           "tournent", CALCUL, then=("flotte",)),
+    Action("flotte", "Mes 15 bots", GROUPS[0],
+           "Les 15 bots choisis, en argent fictif : chacun sur sa crypto, avec tout son capital et le levier de son "
+           "équipe. Un bot liquidé ou nettement perdant est remplacé par le suivant du classement.",
+           "tourne jusqu'à ce que tu l'arrêtes", endless=True),
     Action("pilote", "Pilote automatique", GROUPS[0],
            "Cherche des stratégies sur l'historique réel (les cinq labos, dont le scalping avec les frais des futures "
            "et la règle de portefeuille issue de la recherche), puis lance tout seul, en argent fictif, ton trader, "
@@ -172,6 +187,8 @@ def steps_for(key: str, root: Path) -> list[tuple[str, ...]]:
     return {
         "pilote": [PORTFOLIO_LAB, SHORT_LAB, LIMIT_LAB, FUTURES_LAB, long_lab],
         "recherche": [PORTFOLIO_LAB, SHORT_LAB, LIMIT_LAB, FUTURES_LAB, long_lab],
+        "flotte-choix": [FLEET_CHOICE],
+        "flotte": [FLEET],
         "trader": [TRADER],
         "trader-rejeu": [TRADER_REPLAY],
         "labo-futures": [FUTURES_LAB],
@@ -684,6 +701,18 @@ FIELDS = (
           "chat"),
     Field("OBSIDIAN_VAULT", "Coffre Obsidian (facultatif)", "Dossier où le bot écrit aussi son journal en notes. "
           "Vide = pas de notes.", "path"),
+    Field("FLOTTE_CAPITAL", "Les 15 bots : capital fictif de chaque bot", "En USDT. Pris en compte au prochain choix "
+          "des bots.", "money", "1000"),
+    Field("FLOTTE_LEVIER_LONG", "Les 15 bots : levier du long terme", "De 1 à 20, pour les bougies de 4 h et d'un jour. "
+          "Réduit pour un trade dont le stop est loin (le stop passe toujours avant la liquidation). Pris en compte au "
+          "prochain choix des bots.", "number", "1", (1, 20)),
+    Field("FLOTTE_LEVIER_COURT", "Les 15 bots : levier du court terme", "De 1 à 20, pour les bougies de 15 min et "
+          "d'une heure.", "number", "3", (1, 20)),
+    Field("FLOTTE_LEVIER_SCALPING", "Les 15 bots : levier du scalping", "De 1 à 20, pour les bougies de 1 et 5 min.",
+          "number", "5", (1, 20)),
+    Field("FLOTTE_CRYPTOS", "Les 15 bots : cryptos les plus échangées testées", "De 1 à 50.", "count", "15", (1, 50)),
+    Field("FLOTTE_AGITEES", "Les 15 bots : cryptos agitées testées en plus", "Les plus agitées du moment (celles qui "
+          "prennent 20 ou 50 % dans la journée), de 0 à 30.", "count", "10", (0, 30)),
     Field("TRADER_CAPITAL", "Mon trader : capital fictif", "En USDT. Change-le avant le premier lancement (le compte "
           "garde ensuite son histoire).", "money", "1000"),
     Field("TRADER_PROFILE", "Mon trader : type de compte", "futures (frais des contrats à terme, levier possible) ou "
@@ -863,7 +892,8 @@ def next_step(labs: list[dict], running: list[Task], tournaments: list[dict], po
     trader = trader or {"plays": 0}
     computing = next((t for t in running if t.action.slot == CALCUL), None)
     if computing:
-        then = " Les tournois et le portefeuille démarreront tout seuls à la fin." if computing.action.then else ""
+        then = (" Les 15 bots démarreront tout seuls à la fin." if computing.action.key == "flotte-choix" else
+                " Les tournois et le portefeuille démarreront tout seuls à la fin." if computing.action.then else "")
         return {"title": f"{computing.action.title} : le bot calcule",
                 "text": "Il teste les stratégies sur l'historique réel. Tu peux fermer le navigateur, mais garde la "
                         f"fenêtre noire ouverte et l'ordinateur allumé.{then}", "view": "journal"}
@@ -904,6 +934,30 @@ def next_step(labs: list[dict], running: list[Task], tournaments: list[dict], po
             "action": "pilote"}
 
 
+def fleet_step(ready: bool, running: bool, choosing: bool, computing: str | None, positions: int = 0,
+               bots: int = 0) -> dict:
+    """Ce que dit le haut de l'écran « Direct » : où en sont les 15 bots, et le bouton utile."""
+    if choosing:
+        return {"title": "Le bot choisit tes 15 bots",
+                "text": "Il backteste toutes les combinaisons sur l'historique réel (15 à 40 min), puis les lance tout "
+                        "seul en argent fictif. Garde la fenêtre noire ouverte et l'ordinateur allumé.", "view": "journal"}
+    if not ready:
+        text = ("Un clic : le bot backteste des milliers de combinaisons (techniques, cryptos, unités de temps, à "
+                "l'achat et à la vente à découvert), garde les 5 meilleures de chaque équipe, puis les fait tourner en "
+                "argent fictif, en direct. Aucun argent réel.")
+        if computing:
+            text += f" Il attend d'abord la fin de « {computing} » (un seul calcul à la fois)."
+        return {"title": "Choisis tes 15 bots", "text": text, "action": "flotte-choix"}
+    if not running:
+        return {"title": "Tes bots sont à l'arrêt",
+                "text": "Relance-les : ils reprennent exactement où ils en étaient (positions, capital, trades).",
+                "action": "flotte"}
+    return {"title": f"{bots} bots tournent en argent fictif",
+            "text": (f"{positions} en position. " if positions else "Aucun en position : ils attendent leurs signaux. ")
+            + "Chaque bot met tout son capital fictif à chaque trade, avec le levier de son équipe ; son stop et son "
+              "objectif sont surveillés en continu. Rien ne part jamais sur une plateforme.", "view": None}
+
+
 # --- Le site ------------------------------------------------------------------------------------------------------
 
 class Site:
@@ -934,11 +988,76 @@ class Site:
         self.news_poller = Poller(self.news.fetch, every=600.0, idle=900.0)  # tant que la page Actualité est ouverte
         self.pub_prices: dict[tuple[str, str], float | None] = {}
         self.code = self._code() if lan_address else None
+        self.fleet_stopped = False  # arrêtés à la main : le site ne les relance plus tout seul
+        self.fleet_files: dict[str, dict] = {}  # dernière lecture réussie (un fichier remplacé à l'instant reste lisible)
 
     def start_background(self) -> None:
-        """Ce qui tourne tant que le site est ouvert : le radar (et son journal) et la surveillance des essais."""
+        """Ce qui tourne tant que le site est ouvert : le radar (et son journal), la surveillance des essais, et les
+        15 bots (relancés tout seuls s'ils ont déjà été choisis)."""
         self.radar_poller.get()
         threading.Thread(target=self._watch_trials, name="essais", daemon=True).start()
+        threading.Thread(target=self._watch_fleet, name="bots", daemon=True).start()
+
+    def _watch_fleet(self) -> None:
+        while True:
+            try:
+                self.keep_fleet_running()
+            except Exception as exc:  # jamais fatal : le bouton « Mes 15 bots » reste là
+                log.warning("Relance des bots : %s", short_error(exc))
+            time.sleep(20)
+
+    def keep_fleet_running(self) -> Task | None:
+        """Les bots choisis tournent tant que le site est ouvert, sauf si on les a arrêtés à la main."""
+        if self.fleet_stopped or self.settings() is None or self.fleet_running():
+            return None
+        if self.fleet_file(FLEET_SELECTION) is None:
+            return None
+        if any(t.action.key == "flotte-choix" for t in self.tasks.running()):
+            return None
+        return self.tasks.start("flotte")
+
+    def fleet_folder(self) -> Path:
+        return self.data_dir() / FLEET_DIR
+
+    def fleet_file(self, name: str) -> dict | None:
+        """Le choix ou l'état des bots ; si le fichier est en train d'être remplacé, la dernière version lue."""
+        path = self.fleet_folder() / name
+        data = load_fleet_json(path, tries=3)
+        if data is not None:
+            self.fleet_files[name] = data
+            return data
+        return self.fleet_files.get(name) if path.exists() else None
+
+    def fleet_running(self) -> bool:
+        return any(t.action.key == "flotte" for t in self.tasks.running()) or fleet_running(self.fleet_folder())
+
+    def fleet_data(self, slot: int | None = None) -> dict:
+        selection = self.fleet_file(FLEET_SELECTION)
+        state = self.fleet_file(FLEET_STATE)
+        running = self.fleet_running()
+        view = fleet_view(selection, state, running, full_slot=slot)
+        tasks = self.tasks.running()
+        choosing = any(t.action.key == "flotte-choix" for t in tasks)
+        computing = next((t.action.title for t in tasks if t.action.slot == CALCUL), None)
+        totals = view.get("totals") or {}
+        view["step"] = fleet_step(view["ready"], running, choosing, computing, totals.get("positions", 0),
+                                  totals.get("bots", 0))
+        settings = self.settings()
+        mode = settings.mode if settings else "?"
+        view["actions"] = {key: {"key": key, "title": ACTIONS[key].title, "duration": ACTIONS[key].duration,
+                                 "blocked": self.blocked(key, mode)} for key in ("flotte-choix", "flotte")}
+        return view
+
+    def fleet_chart(self, slot_no: int) -> dict:
+        state = self.fleet_file(FLEET_STATE) or {}
+        slot = next((s for s in state.get("slots") or [] if s.get("slot") == slot_no), None)
+        if slot is None or not slot.get("bot"):
+            raise ValueError("Bot inconnu")
+        spec = slot["bot"]["spec"]
+        try:
+            return fleet_chart(self.charts.candles(spec["symbol"], spec["timeframe"]), slot)
+        except KeyError as exc:  # une technique d'une ancienne version
+            raise ValueError(f"Bot illisible : {exc}") from None
 
     def _watch_trials(self) -> None:
         while True:
@@ -1172,6 +1291,11 @@ class Site:
         }
 
     def blocked(self, key: str, mode: str) -> str | None:
+        if key == "flotte" and self.fleet_file(FLEET_SELECTION) is None:
+            return "Choisis d'abord tes 15 bots (bouton « Choisir les 15 bots »)."
+        if key == "flotte" and not any(t.action.key == "flotte" for t in self.tasks.running()) \
+                and fleet_running(self.fleet_folder()):
+            return "Les 15 bots tournent déjà (lancés par un lanceur) : regarde l'écran Direct."
         if key == "bots" and mode == "live":
             return ("MODE=live dans les réglages : le site ne lance jamais de bot en argent réel. "
                     "Utilise « 4 - Lancer le bot » si tu l'as vraiment décidé.")
@@ -1187,6 +1311,8 @@ class Site:
             raise ValueError(f"Action inconnue : {key}")
         if reason := self.blocked(key, settings.mode):
             raise ValueError(reason)
+        if key in ("flotte", "flotte-choix"):
+            self.fleet_stopped = False
         return self.tasks.start(key).to_dict()
 
     def dashboard(self, which: str) -> str | None:
@@ -1379,6 +1505,17 @@ class Handler(BaseHTTPRequestHandler):
             self.json(self.site.trials())
         elif url.path == "/api/savoir":
             self.json(knowledge(self.site.data_dir()))
+        elif url.path == "/api/bots":
+            raw = (query.get("bot") or [""])[0]
+            self.json(self.site.fleet_data(int(raw) if raw.isdigit() else None))
+        elif url.path == "/api/bot-graphique":
+            if self.headers.get(HEADER) != HEADER_VALUE:  # un graphique télécharge : seulement à la demande de la page
+                self.fail(403, "Graphique refusé : il doit venir de la page du site.")
+                return
+            raw = (query.get("bot") or [""])[0]
+            if not raw.isdigit():
+                raise ValueError("Bot inconnu")
+            self.json(self.site.fleet_chart(int(raw)))
         elif url.path == "/api/trader":
             self.json(self.site.trader_view())
         elif url.path == "/api/ecole":
@@ -1434,6 +1571,8 @@ class Handler(BaseHTTPRequestHandler):
                 if task is None:
                     self.fail(404, "Tâche introuvable")
                     return
+                if task.action.key == "flotte":
+                    self.site.fleet_stopped = True  # arrêtés à la main : le site ne les relance plus tout seul
                 task.stop()
                 self.json({"ok": True})
             elif path == "/api/reglages":

@@ -19,19 +19,38 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 
 ## Architecture
 
-- `main.py` : ligne de commande (`site`, `trader`, `backtest`, `robustesse`, `labo`, `labo-portefeuille`, `tournoi`,
-  `portefeuille`, `prix`, `telegram`, `check`, `run`, `tableau`, `reset-guard`). Sans argument (double-clic sur
-  l'exécutable Windows), `site`. `NothingRetained` : un labo qui ne retient rien n'est pas une panne (code 0).
+- `main.py` : ligne de commande (`site`, `flotte`, `trader`, `backtest`, `robustesse`, `labo`, `labo-portefeuille`,
+  `tournoi`, `portefeuille`, `prix`, `telegram`, `check`, `run`, `tableau`, `reset-guard`). Sans argument (double-clic
+  sur l'exécutable Windows), `site`. `NothingRetained` : un labo qui ne retient rien n'est pas une panne (code 0).
+- `tradingbot/fleet.py` : les 15 bots (commande `flotte`, lanceurs 19 et 20, actions « Choisir les 15 bots » et
+  « Mes 15 bots »). `SECTIONS` : long (4h, 1d, levier ×1), court (15m, 1h, ×3), scalping (1m, 5m, ×5), 15 techniques
+  chacune (toutes les familles ; `EXTRA` = impulsion du long terme), historique propre (`days`). `Spec` = crypto,
+  unité, technique, sens (`long`, ou `short` = même règle sur le graphique retourné, `mirror`), objectif (`target_r`
+  0 ou 2R), levier. `Book` : le moteur commun au backtest et au direct (`open_bar`, `range_bar` stop d'abord puis
+  objectif au prix limite, `close_bar`) ; tout le capital × levier, levier réduit pour que le stop passe avant la
+  liquidation (`LIQ_SAFETY`), frais `execution.FUTURES`, financement compté comme un coût dans les deux sens, liquidation
+  = toute la mise. `simulate` (saute les bougies sans rien), `judge` (étude/validation/test comme le labo, `score` =
+  moyenne / dispersion sur étude + validation), `tiers`/`choose` (gagnantes sur étude ET validation d'abord, cryptos
+  différentes, familles variées, puis `BENCH` remplaçants ; étiquettes `3`, `2`, `essai`), `select` (en parallèle,
+  `run_jobs`), `fleet_universe` (15 plus échangées + 10 plus agitées + memecoins). `Fleet` : le direct (bougies
+  clôturées d'abord, puis le prix du moment pour stop et objectif ; reprise de l'état ; remplacement d'un bot liquidé,
+  à moitié ruiné ou éliminé par le gardien après `ELIMINATE_AFTER` trades ; nouvelle sélection → ancienne équipe
+  archivée `etat-<date>.json`), verrou `en-cours.json` (dernier tour < `HEARTBEAT_S`), `fleet_view`, `chart_view`
+  (lignes de la technique `overlays`, trades réels, trades de la règle simulée sur les bougies affichées, position).
+  Test de parité direct/backtest par famille et par sens. Argent fictif seulement.
 - `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
   Chaque bouton (`ACTIONS`, `steps_for`) lance la même commande que son lanceur .bat (test `test_packaging`) dans un
   sous-processus (`TaskManager`, `Task`) dont le journal s'affiche en direct ; un seul calcul lourd à la fois (`CALCUL`) ;
   « Pilote automatique » = 5 labos (`PORTFOLIO_LAB` d'abord, le plus rapide, puis court terme, limites, `FUTURES_LAB`,
   long terme) puis le trader, son rejeu, les 2 tournois et le portefeuille (`then` ; `TaskManager.start(finishing=)` :
   la tâche qui finit ne bloque pas le calcul qu'elle enchaîne) ; une étape en échec n'arrête pas les suivantes.
-  Onglets : Accueil (prochaine étape + le trader : `/api/trader`), Graphiques (`Charts`, `/api/graphique`,
-  `/api/marches`), École (`/api/ecole`), Actualité (`/api/actualite`, `news_poller`), et sous « Plus » les anciens
-  (Labos et actions, Radar, Prix, Mes essais, Comprendre, Tableau de bord, Journal, Réglages). Accueil : `next_step`
-  (le trader d'abord), `lab_summaries`, `tournament_summaries`, `portfolio_summary`. Sous Windows, un job `KILL_ON_JOB_CLOSE` par tâche : fermer
+  Onglets (site refait le 06/11/2026) : Direct (`/api/bots`, `fleet_step`, cartes des bots, fil des événements), Long
+  terme, Court terme, Scalping (vue `equipe` : un panneau par bot avec `/api/bot-graphique`), page d'un bot (`#bot/N`,
+  `/api/bots?bot=N`), Labos (choix des bots + anciens labos et actions) ; sous « Plus » : Mon trader (l'ancien accueil,
+  `#accueil`), Graphiques, École, Actualité, Radar, Prix, Mes essais, Comprendre, Tableau de bord, Journal, Réglages.
+  `Site.start_background` relance « Mes 15 bots » toutes les 20 s s'ils ont été choisis et ne tournent pas
+  (`keep_fleet_running`), sauf arrêtés à la main (`fleet_stopped`). Mon trader : `next_step` (le trader d'abord),
+  `lab_summaries`, `tournament_summaries`, `portfolio_summary`. Sous Windows, un job `KILL_ON_JOB_CLOSE` par tâche : fermer
   le site arrête tout. Les commandes reçoivent l'environnement d'avant `.env` (`args.pristine_env`) et relisent `.env` ;
   `TRADINGBOT_SITE=1` passe leur sortie en UTF-8 ligne par ligne. Jamais d'argent réel : « Mes bots » refuse
   `MODE=live`, le formulaire (`FIELDS`, liste blanche) ne touche ni à MODE, ni aux clés, ni à CONFIRM_LIVE_TRADING, ni
@@ -65,7 +84,7 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   heure (`run(refresh=)`), explications à l'entrée et diagnostic à la sortie. `replay` (`trader --rejouer`,
   `rejeu.json`) : backtests `explain=True` fusionnés en un compte ; test de parité live/rejeu. Le bot en argent réel
   reste au comptant et sans levier.
-- `tradingbot/school.py` : l'école (12 leçons, `FIGURES` : candle, chart, risk, leverage, fees, diagnoses ; quiz
+- `tradingbot/school.py` : l'école (13 leçons, dont la vente à découvert et l'objectif des 15 bots, `FIGURES` : candle, chart, risk, leverage, fees, diagnoses ; quiz
   expliqués ; sources ; `examples` = vrais trades du trader). `tradingbot/news.py` : flux RSS (CoinDesk, Cointelegraph,
   Decrypt), `mentions`, `reaction` (mouvement depuis la publication), indice peur et avidité (alternative.me,
   `fng_study` sur 30 jours, épisodes comptés) ; information seulement, jamais d'ordre.
@@ -123,7 +142,8 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - Labos (`lab.LAB_FILES`) : `laboratoire.json` (long terme), `laboratoire-court-terme.json` (lanceur 7),
   `laboratoire-court-terme-limites.json` (lanceur 10), `laboratoire-futures.json` (lanceur 16, scalping futures) ; une section par labo sur le tableau de bord ; `tournoi --labo`
   accepte plusieurs fichiers (`merge_picks` : meilleure version de chaque stratégie, avec les ordres de son labo).
-  Lanceur 13 « Recherche de nuit » : les cinq labos à la suite (portefeuille d'abord). `awake.keep_awake()` empêche la veille Windows
+  Lanceur 13 « Recherche de nuit » : les cinq labos à la suite (portefeuille d'abord). Lanceurs 19 (choisir les 15
+  bots) et 20 (les 15 bots en direct) ; menu jusqu'au choix 21. `awake.keep_awake()` empêche la veille Windows
   pendant `labo`, `run` et `tournoi` ; le verdict d'un labo part en alerte Telegram.
 - `packaging/windows/` : à la racine du ZIP, `Ouvrir le bot.bat` (`site`) et `Ouvrir le bot sur iPad ou telephone.bat`
   (`site --ipad`) ; les 20 anciens lanceurs (dont `0 - Menu.bat`) dans `autres lanceurs/`, qui remontent d'un dossier
@@ -228,3 +248,12 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   school.py, site à 4 onglets. Dit franchement : aucun gain promis ; « apprendre » = le labo et le gardien, jamais des
   réglages changés après une perte ; chercher longtemps finit par trouver un gagnant par chance ; pas de trading sur
   les titres. Toujours aucun résultat réel : tout dépend du prochain pilote sur son PC.
+- Soir du 06/11/2026 : l'utilisateur veut tout reprendre de zéro : 15 bots sur différentes cryptos (dont les très
+  agitées) et techniques, trois sections (long terme, court terme, scalping), du risque assumé (« arrête avec tes
+  1 % »), du levier, des TP, un écran en direct, un graphique par bot avec entrées, sorties et signaux, très peu
+  d'items, et les labos gardés. Fait : `fleet.py` (choix par backtest, vente à découvert, objectif 2R, tout le capital
+  × levier réduit avant liquidation, direct identique au backtest, remplacements), site refait (Direct, 3 équipes, page
+  d'un bot, Labos), leçon « vendre à découvert », lanceurs 19/20, réglages `FLOTTE_*`. Dit franchement : le meilleur de
+  milliers d'essais est souvent chanceux, le direct tranche ; un bot peut être liquidé. Démo vérifiée avec une
+  plateforme fictive ; aucun choix réel encore : il se fait au premier clic sur son PC (les plateformes sont bloquées
+  depuis le cloud).

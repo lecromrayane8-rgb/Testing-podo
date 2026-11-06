@@ -128,7 +128,7 @@ table.options td:first-child { white-space: normal; min-width: 200px; }
   font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
 .tabs .more[aria-expanded="true"] { color: var(--text-primary); }
 .tabs .more::after { content: " ▾"; }
-.tabs-more { margin-top: 0; padding-bottom: 2px; }
+.tabs-more { margin-top: 0; padding-bottom: 2px; flex-wrap: wrap; }
 .tabs[hidden] { display: none; }
 .tabs-more a { font-size: 13px; }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -189,6 +189,58 @@ select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid
   vertical-align: 0.05em; }
 .dot-live { animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.35; } }
+.fleet-kpis { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); gap: 12px; }
+.fleet-kpis .tile-hero { grid-column: auto; }
+@media (max-width: 760px) { .fleet-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fleet-kpis .tile-hero { grid-column: span 2; } }
+.pill { display: inline-flex; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px;
+  color: var(--text-primary); white-space: nowrap; }
+.botcard .big .delta { font-size: 14px; margin-left: 6px; }
+@media (max-width: 600px) { .tabs a, .tabs .more { padding: 8px 9px; } }
+.warn-top { margin: 0 0 16px; }
+.squad { margin-top: 28px; }
+.squad-head { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
+.squad-head h2 { margin: 0; }
+.squad-head h2 a { color: var(--text-primary); text-decoration: none; }
+.squad-head h2 a:hover { text-decoration: underline; text-decoration-color: var(--accent); }
+.bot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px;
+  margin-top: 10px; }
+.botcard { gap: 4px; }
+.botcard h3 a { color: var(--text-primary); text-decoration: none; }
+.botcard .big { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; margin: 2px 0 0; }
+.spark svg { display: block; width: 100%; height: 56px; }
+.spark.muted { height: 56px; display: flex; align-items: center; }
+.pos-line { font-size: 14px; font-variant-numeric: tabular-nums; }
+.events { list-style: none; margin: 0; padding: 0; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 12px; }
+.events li { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 10px; padding: 8px 14px;
+  border-bottom: 1px solid var(--grid); font-size: 14px; }
+.events li:last-child { border-bottom: 0; }
+.events time { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.events .ev-sortie span, .events .ev-remplacement span { color: var(--text-primary); }
+@media (max-width: 600px) { .events li { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+.panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px;
+  margin-top: 16px; }
+.panel > p { margin: 6px 0 0; max-width: 900px; }
+.panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px 16px; flex-wrap: wrap; }
+.panel-head h2 { margin: 2px 0 0; font-size: 20px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.bot-chart { margin-top: 12px; }
+.bot-chart .mini-chart { margin: 0; }
+.position-box { margin-top: 12px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--page); }
+.position-box p { margin: 0; }
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)); gap: 8px 16px;
+  margin-top: 8px; }
+.fact .k { margin: 0; color: var(--text-secondary); font-size: 12px; }
+.fact .v { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.compare .tile { background: var(--page); }
+@media (max-width: 600px) { .compare { grid-template-columns: minmax(0, 1fr); } }
+.panel .trade { background: var(--page); }
+.crumb { margin: 0 0 8px; }
+.choice-team { margin-top: 18px; }
+.choice-team h3 { margin: 0 0 6px; font-size: 16px; }
 @media (prefers-reduced-motion: reduce) { .dot-live { animation: none; } }
 """
 
@@ -199,15 +251,19 @@ BODY = """
     <button id="theme-toggle" class="theme" type="button">Clair / sombre</button>
   </div>
   <nav class="tabs" aria-label="Pages du site">
-    <a href="#accueil" data-view="accueil">Accueil</a>
-    <a href="#graphiques" data-view="graphiques">Graphiques</a>
-    <a href="#ecole" data-view="ecole">École</a>
-    <a href="#actualite" data-view="actualite">Actualité</a>
+    <a href="#direct" data-view="direct">Direct</a>
+    <a href="#long" data-view="long"><span class="long">Long terme</span><span class="short">Long</span></a>
+    <a href="#court" data-view="court"><span class="long">Court terme</span><span class="short">Court</span></a>
+    <a href="#scalping" data-view="scalping">Scalping</a>
+    <a href="#labos" data-view="labos">Labos</a>
     <button type="button" class="more" id="more-toggle" aria-expanded="false" aria-controls="more-tabs">Plus</button>
   </nav>
   <nav class="tabs tabs-more" id="more-tabs" aria-label="Autres pages" hidden>
-    <a href="#labos" data-view="labos">Labos<span class="long"> et actions</span></a>
-    <a href="#radar" data-view="radar">Radar<span class="long"> des mouvements</span></a>
+    <a href="#accueil" data-view="accueil">Mon trader</a>
+    <a href="#graphiques" data-view="graphiques">Graphiques</a>
+    <a href="#ecole" data-view="ecole">École</a>
+    <a href="#actualite" data-view="actualite">Actualité</a>
+    <a href="#radar" data-view="radar">Radar</a>
     <a href="#prix" data-view="prix">Prix</a>
     <a href="#essais" data-view="essais"><span class="long">Mes essais</span><span class="short">Essais</span></a>
     <a href="#savoir" data-view="savoir">Comprendre</a>
@@ -217,14 +273,38 @@ BODY = """
   </nav>
 </div></header>
 <main class="site">
-  <div id="view-accueil" class="view">
+  <div id="settings-warning" class="warn warn-top" hidden></div>
+  <div id="view-direct" class="view">
+    <div class="hero" aria-live="polite">
+      <p class="eyebrow">En direct · argent fictif</p>
+      <h1 id="fleet-title">Chargement…</h1>
+      <p id="fleet-text"></p>
+      <div class="row" id="fleet-actions"></div>
+    </div>
+    <section><div class="fleet-kpis" id="fleet-kpis"></div></section>
+    <div id="fleet-teams"></div>
+    <section><h2>Ce qui vient de se passer</h2><ol class="events" id="fleet-events"></ol></section>
+    <p class="note">Chaque bot a 1000 USDT fictifs (réglable) et met tout son capital à chaque trade, avec le levier de son
+      équipe : un stop touché peut coûter plusieurs pourcents de son capital, et un bot peut être liquidé. Il est alors
+      remplacé par le suivant du classement. Le meilleur de milliers de backtests est souvent chanceux : c'est le direct
+      qui tranche.</p>
+  </div>
+  <div id="view-equipe" class="view" hidden>
+    <h1 id="team-title">…</h1>
+    <p class="meta" id="team-intro"></p>
+    <div id="team-bots"></div>
+  </div>
+  <div id="view-bot" class="view" hidden>
+    <p class="crumb"><a class="link" href="#direct" id="bot-back">← Tous les bots</a></p>
+    <div id="bot-page"><p class="muted">Chargement…</p></div>
+  </div>
+  <div id="view-accueil" class="view" hidden>
     <div class="hero" aria-live="polite">
       <p class="eyebrow">Prochaine étape</p>
       <h1 id="next-title">Chargement…</h1>
       <p id="next-text"></p>
       <div class="row" id="next-actions"></div>
     </div>
-    <div id="settings-warning" class="warn" hidden></div>
     <section id="trader-section">
       <div class="section-head"><h2>Ton trader fictif</h2>
         <div class="seg" role="group" aria-label="Compte affiché" id="trader-mode">
@@ -242,10 +322,11 @@ BODY = """
     <section><h2>En cours et récent</h2><div id="tasks" class="cards"></div></section>
   </div>
   <div id="view-labos" class="view" hidden>
-    <h1>Labos et actions</h1>
-    <p class="meta">Ce que les labos ont trouvé sur l'historique réel, ce qui tourne en argent fictif, et toutes les actions
-      du bot. Le plus simple reste le pilote automatique, sur l'accueil.</p>
-    <section><h2>Résultats</h2><div id="results" class="cards"></div></section>
+    <h1>Labos et tests</h1>
+    <p class="meta">Comment tes 15 bots ont été choisis, ce que les autres labos ont trouvé sur l'historique réel, et
+      toutes les actions du bot.</p>
+    <section><h2>Le choix des 15 bots</h2><div id="fleet-choice"><p class="muted">Chargement…</p></div></section>
+    <section><h2>Les autres labos</h2><div id="results" class="cards"></div></section>
     <section><h2>Toutes les actions</h2><div id="actions"></div></section>
   </div>
   <div id="view-graphiques" class="view" hidden>
@@ -457,16 +538,24 @@ JS = r"""
   function cls(v) { return v > 0 ? 'up' : v < 0 ? 'down' : ''; }
 
   // --- navigation ---
-  const VIEWS = ['accueil', 'graphiques', 'ecole', 'actualite', 'labos', 'radar', 'prix', 'essais', 'savoir', 'tableau',
-    'journal', 'reglages'];
-  let view = 'accueil';
+  const VIEWS = ['direct', 'equipe', 'bot', 'accueil', 'graphiques', 'ecole', 'actualite', 'labos', 'radar', 'prix',
+    'essais', 'savoir', 'tableau', 'journal', 'reglages'];
+  const TEAMS = {long: 'Long terme', court: 'Court terme', scalping: 'Scalping'};
+  let view = 'direct', team = 'long', botSlot = null;
+  function markTab() {
+    const key = view === 'equipe' ? team : view === 'bot' ? (botSection() || 'direct') : view;
+    document.querySelectorAll('.tabs a').forEach(a => {
+      if (a.dataset.view === key) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
   function show(name) {
     const parts = String(name || '').split('/'), sub = parts[1];
-    view = VIEWS.includes(parts[0]) ? parts[0] : 'accueil';
+    if (TEAMS[parts[0]]) { view = 'equipe'; team = parts[0]; }
+    else if (parts[0] === 'bot' && /^\d+$/.test(sub || '')) { view = 'bot'; botSlot = Number(sub); }
+    else view = VIEWS.includes(parts[0]) && parts[0] !== 'equipe' && parts[0] !== 'bot' ? parts[0] : 'direct';
     for (const v of VIEWS) $('#view-' + v).hidden = v !== view;
-    document.querySelectorAll('.tabs a').forEach(a => {
-      if (a.dataset.view === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
-    });
+    markTab();
+    if (view === 'equipe' || view === 'bot' || view === 'direct') { renderFleet(); window.scrollTo(0, 0); }
     if (view === 'tableau') showBoard(currentBoard);
     if (view === 'reglages') loadSettings();
     if (view === 'savoir') loadKnowledge();
@@ -476,7 +565,7 @@ JS = r"""
       chartControls();
       loadMarkets().then(loadChart).catch(e => { $('#chart-status').textContent = e.message; });
     }
-    last.radar = last.prices = last.journal = last.trials = last.trader = last.news = 0;
+    last.radar = last.prices = last.journal = last.trials = last.trader = last.news = last.fleet = last.charts = 0;
     last.chart = Date.now();
   }
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
@@ -484,7 +573,7 @@ JS = r"""
   // --- état général (accueil) ---
   let state = null;
   const RUNNING = 'en cours';
-  const LONG = {pilote: 1, recherche: 1, 'labo-court': 1, 'labo-limites': 1, 'labo-long': 1};
+  const LONG = {pilote: 1, recherche: 1, 'labo-court': 1, 'labo-limites': 1, 'labo-long': 1, 'flotte-choix': 1};
   async function launch(action) {
     if (LONG[action.key] && !confirm(action.title + ' : ' + action.duration +
         '. Garde l\'ordinateur allumé et la fenêtre noire ouverte. Lancer ?')) return;
@@ -492,7 +581,8 @@ JS = r"""
       const data = await post('/api/lancer', {action: action.key});
       toast('Lancé : ' + action.title);
       journalTask = data.task.id; journalNext = 0; logLines = [];
-      location.hash = '#journal';
+      if (action.key === 'flotte') { location.hash = '#direct'; last.fleet = 0; }
+      else location.hash = '#journal';
       refreshState();
     } catch (e) { toast(e.message, true); }
   }
@@ -1350,23 +1440,25 @@ JS = r"""
   function tri(x, y, dir) { return 'M' + x + ',' + (y - 5 * dir) + 'L' + (x + 5) + ',' + (y + 4 * dir) + 'L' + (x - 5) + ',' + (y + 4 * dir) + 'Z'; }
   function candleChart(o) {
     const W = Math.max(300, Math.round(o.width)), small = W < 560;
-    const H = small ? 300 : 400, ML = small ? 50 : 62, MR = small ? 84 : 190, MT = 12, MB = 26;
+    const H = small ? 300 : 400, MR = small ? 84 : 190, MT = 12, MB = 26;
     const c = o.candles, n = c.length;
     let lo = Math.min(...c.map(k => k[3])), hi = Math.max(...c.map(k => k[2]));
     const span0 = hi - lo || hi * 0.01 || 1;
     const zones = o.levels.filter(z => z.high >= lo - 0.25 * span0 && z.low <= hi + 0.25 * span0);
     for (const z of zones) { lo = Math.min(lo, z.low); hi = Math.max(hi, z.high); }
     if (o.position) { lo = Math.min(lo, o.position.stop); hi = Math.max(hi, o.position.entry_price); }
-    const pad = (hi - lo) * 0.04 || 1;
+    const pad = (hi - lo) * 0.04 || Math.abs(hi) * 0.01 || 1;
     lo -= pad; hi += pad;
+    const ticks = niceTicks(lo, hi, small ? 5 : 6), step = ticks.length > 1 ? ticks[1] - ticks[0] : 1;
+    const tickText = ticks.map(t => tickPrice(t, step));
+    const ML = Math.max(small ? 40 : 50, 14 + 6.8 * Math.max(...tickText.map(x => x.length)));
     const slot = (W - ML - MR) / n, body = Math.max(1, Math.min(8, slot * 0.66));
     const X = i => ML + slot * (i + 0.5), Y = v => MT + (hi - v) / (hi - lo) * (H - MT - MB);
     const root = svg('svg', {viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': o.label, tabindex: '0'});
-    const ticks = niceTicks(lo, hi, small ? 5 : 6), step = ticks.length > 1 ? ticks[1] - ticks[0] : 1;
-    for (const t of ticks) {
+    ticks.forEach((t, k) => {
       root.append(svg('line', {x1: ML, x2: W - MR, y1: Y(t), y2: Y(t), class: 'grid'}));
-      root.append(svg('text', {x: ML - 6, y: Y(t) + 4, 'text-anchor': 'end', class: 'tick'}, tickPrice(t, step)));
-    }
+      root.append(svg('text', {x: ML - 6, y: Y(t) + 4, 'text-anchor': 'end', class: 'tick'}, tickText[k]));
+    });
     const labels = [];
     for (const z of zones) {
       const color = z.kind === 'support' ? 'var(--series-3)' : 'var(--series-2)', top = Y(z.high), bottom = Y(z.low);
@@ -1449,6 +1541,465 @@ JS = r"""
     return wrap;
   }
 
+  // --- les 15 bots ---
+  let fleetData = null;
+  const botCharts = {};  // bot -> {at, data, error}
+  function botSection() {
+    const b = fleetData && fleetData.bot;
+    return b ? b.section : null;
+  }
+  async function refreshFleet() {
+    fleetData = await getJSON('/api/bots' + (view === 'bot' && botSlot ? '?bot=' + botSlot : ''));
+    renderFleet();
+  }
+  function renderFleet() {
+    if (!fleetData) return;
+    if (view === 'direct') renderDirect();
+    if (view === 'equipe') keepOpen($('#team-bots'), renderTeam);
+    if (view === 'bot') keepOpen($('#bot-page'), renderBotPage);
+    if (view === 'labos') renderChoice();
+    markTab();
+  }
+  function sideText(side) { return side === 'long' ? '▲ acheteur' : '▼ vendeur à découvert'; }
+  function bigPct(v) {  // un résultat total, parfois énorme avec le levier : « +12 345 % »
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    const x = Math.round(100 * v);
+    return (x > 0 ? '+' : x < 0 ? MINUS : '') + Math.abs(x).toLocaleString('fr-FR') + ' %';
+  }
+  function tradesText(n) { return !n ? 'aucun trade terminé' : n === 1 ? '1 trade' : n + ' trades'; }
+  function tag(text) { return el('span', {class: 'pill', text: text}); }
+  function days(a, b) {
+    const d = Math.round((b - a) / 86400000);
+    return d >= 1 ? ' en ' + d + (d > 1 ? ' jours' : ' jour') : '';
+  }
+  function teamBots() {
+    const sec = fleetData && fleetData.ready ? fleetData.sections.find(x => x.key === team) : null;
+    return sec ? sec.bots.filter(b => !b.empty) : [];
+  }
+  function renderDirect() {
+    const d = fleetData, step = d.step;
+    $('#fleet-title').textContent = step.title;
+    $('#fleet-text').textContent = step.text;
+    const row = $('#fleet-actions'); row.replaceChildren();
+    const action = step.action && d.actions[step.action];
+    if (action) row.append(actionButton(action, true, action.title));
+    if (step.view === 'journal') row.append(el('a', {class: 'btn', href: '#journal', text: 'Voir le journal'}));
+    const kpis = $('#fleet-kpis'), teams = $('#fleet-teams'), events = $('#fleet-events');
+    kpis.replaceChildren(); teams.replaceChildren(); events.replaceChildren();
+    if (!d.ready) {
+      teams.append(el('p', {class: 'empty-box', text: 'Trois équipes de cinq bots : long terme (bougies de 4 h et d\'un jour), '
+        + 'court terme (15 min et 1 h) et scalping (1 et 5 min). Chacun sur sa crypto, avec sa technique, choisie par '
+        + 'backtest parmi des milliers de combinaisons. Ils apparaîtront ici, en direct, avec leurs positions et leurs trades.'}));
+      events.append(el('li', {}, el('span', {class: 'muted', text: 'Rien encore.'})));
+      return;
+    }
+    const t = d.totals;
+    kpis.append(
+      tile('Valeur de tous les bots', usdt(t.value), 'pour ' + usdt(t.start) + ' fictifs au départ', true),
+      tile('Résultat', signed(100 * t.pnl_pct), usdt(t.pnl, true) + (t.retired ? ' · bots remplacés compris' : '')),
+      tile('En position', t.positions + ' / ' + t.bots, t.positions ? 'bots dans un trade' : 'ils attendent leurs signaux'),
+      tile('Trades terminés', String(t.count), t.win_rate === null ? 'aucun encore' : Math.round(100 * t.win_rate) + ' % gagnants'));
+    for (const sec of d.sections) {
+      teams.append(el('section', {class: 'squad'},
+        el('div', {class: 'squad-head'}, el('h2', {}, el('a', {href: '#' + sec.key, text: sec.title})),
+          el('span', {class: 'muted', text: sec.tf_labels.join(' et ') + ' · levier jusqu\'à ×' + dec(sec.leverage)})),
+        el('div', {class: 'bot-grid'}, ...sec.bots.map(botCard))));
+    }
+    if (!d.events.length) events.append(el('li', {}, el('span', {class: 'muted', text: 'Rien encore : les bots démarrent.'})));
+    for (const e of d.events.slice(0, 25)) {
+      events.append(el('li', {class: 'ev-' + e.kind}, el('time', {datetime: e.t, text: ago(e.t)}), el('span', {text: e.text})));
+    }
+  }
+  function statusChip(b) {
+    if (b.position) return chip('live', 'en position');
+    if (b.dead) return chip('bad', 'arrêté');
+    if (b.pending && b.pending.kind === 'entry') return chip('warn', 'entre maintenant');
+    return chip('idle', 'attend son signal');
+  }
+  function botCard(b) {
+    if (b.empty) return el('article', {class: 'card botcard'}, el('h3', {text: b.name}),
+      el('p', {class: 'muted', text: 'Plus de remplaçant : refais le choix des bots (page Labos).'}));
+    const p = b.position;
+    return el('article', {class: 'card botcard'},
+      el('div', {class: 'card-head'}, el('h3', {}, el('a', {href: '#bot/' + b.slot, text: b.name + ' · ' + b.coin + ' · ' + b.tf_label})),
+        statusChip(b)),
+      el('p', {class: 'muted', text: b.technique + ' · ' + sideText(b.side) + ' · levier ×' + dec(b.leverage)
+        + (b.target_r ? ' · objectif ' + dec(b.target_r) + 'R' : '')}),
+      spark(b),
+      el('p', {class: 'big'}, usdt(b.value), el('span', {class: 'delta ' + cls(b.pnl), text: signed(100 * b.pnl_pct)})),
+      el('p', {class: 'muted', text: tradesText(b.count) + (b.win_rate === null ? '' : ' · '
+        + Math.round(100 * b.win_rate) + ' % gagnants')}),
+      p ? el('p', {class: 'pos-line'}, (p.side === 'long' ? 'Acheté ' : 'Vendu ') + price(p.price) + ' → ' + price(p.last) + ' · ',
+        el('span', {class: cls(p.pnl), text: signed(100 * p.roi, 1) + ' du capital'})) : null,
+      p ? el('p', {class: 'muted', text: 'Stop ' + price(p.stop) + (p.target ? ' · objectif ' + price(p.target) : '')
+        + (p.leverage > 1 ? ' · liquidation ' + price(p.liquidation) : '')}) : null,
+      el('div', {class: 'row'}, el('a', {class: 'btn', href: '#bot/' + b.slot, text: 'Voir le bot'})));
+  }
+  function spark(b) {
+    const pts = b.closes || [];
+    if (pts.length < 2) return el('div', {class: 'spark muted', text: 'Son graphique arrive à la prochaine bougie…'});
+    const W = 300, H = 56, P = 4, ys = pts.map(x => x[1]), pos = b.position;
+    const refs = pos ? [[pos.price, 'var(--text-secondary)'], [pos.stop, 'var(--critical)']]
+      .concat(pos.target ? [[pos.target, 'var(--good)']] : []) : [];
+    const all = ys.concat(refs.map(r => r[0]));
+    let lo = Math.min(...all), hi = Math.max(...all);
+    if (hi === lo) { hi += 1; lo -= 1; }
+    const X = i => P + i / (pts.length - 1) * (W - 2 * P), Y = v => P + (hi - v) / (hi - lo) * (H - 2 * P);
+    const root = svg('svg', {viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'none', role: 'img',
+      'aria-label': 'Prix de ' + b.coin + ' sur les ' + pts.length + ' dernières bougies de ' + b.tf_label});
+    for (const [v, color] of refs) root.append(svg('line', {x1: P, x2: W - P, y1: Y(v), y2: Y(v), stroke: color,
+      'stroke-width': 1, 'stroke-dasharray': '4 3', 'vector-effect': 'non-scaling-stroke'}));
+    root.append(svg('polyline', {points: ys.map((v, i) => X(i) + ',' + Y(v)).join(' '), class: 'line',
+      stroke: 'var(--series-1)', 'vector-effect': 'non-scaling-stroke'}));
+    return el('div', {class: 'spark'}, root);
+  }
+  function fact(k, v, klass) { return el('div', {class: 'fact'}, el('p', {class: 'k', text: k}), el('p', {class: 'v ' + (klass || ''), text: v})); }
+  function positionBox(b) {
+    const p = b.position;
+    if (!p) {
+      const sig = b.pending && b.pending.kind === 'entry' ? ' Son signal vient de tomber : il entre au prochain tour.' : '';
+      return el('div', {class: 'position-box'}, el('p', {class: 'muted', text: b.dead ? 'Arrêté : ' + b.dead + '. Il va être remplacé.'
+        : 'Pas de position : il attend son signal.' + sig}));
+    }
+    const long = p.side === 'long';
+    return el('div', {class: 'position-box'},
+      el('p', {}, el('strong', {text: (long ? '▲ Acheté' : '▼ Vendu à découvert') + ' le ' + when(p.entry_at) + ' à ' + price(p.price)}),
+        ' · maintenant ' + price(p.last)),
+      el('div', {class: 'facts'},
+        fact('Résultat latent', usdt(p.pnl, true) + ' (' + signed(100 * p.roi, 1) + ' du capital)', cls(p.pnl)),
+        fact('Stop', price(p.stop) + ' (' + signed((long ? -100 : 100) * p.risk, 1) + ')'),
+        fact('Objectif', p.target ? price(p.target) + ' (' + signed(100 * (p.target / p.price - 1), 1) + ')' : 'sortie par sa règle'),
+        fact('Liquidation', p.leverage > 1 ? price(p.liquidation) + ' (' + signed(100 * (p.liquidation / p.price - 1), 0) + ')'
+          : 'trop loin pour compter (sans levier)'),
+        fact('Levier', '×' + dec(p.leverage) + ' · ' + usdt(p.notional) + ' en jeu'),
+        fact('Depuis', p.bars + (p.bars > 1 ? ' bougies' : ' bougie'))));
+  }
+  function compareBox(b) {
+    const bt = b.backtest || {};
+    const test = bt.test_n ? signed(100 * bt.test_mean, 3) + ' par trade sur ' + bt.test_n + ' trades' : 'trop peu de trades';
+    return el('div', {class: 'compare'},
+      el('div', {class: 'tile'}, el('p', {class: 'tile-label', text: 'En direct, depuis le ' + when(b.started)}),
+        el('p', {class: 'tile-value', text: usdt(b.value)}),
+        el('p', {class: 'tile-sub'}, el('span', {class: cls(b.pnl), text: signed(100 * b.pnl_pct)}), ' · ' + tradesText(b.count)
+          + (b.win_rate === null ? '' : ' · ' + Math.round(100 * b.win_rate) + ' % gagnants')
+          + ' · pire baisse ' + signed(100 * b.drawdown, 0))),
+      el('div', {class: 'tile'}, el('p', {class: 'tile-label', text: 'Dans le backtest (historique réel), avec levier'}),
+        el('p', {class: 'tile-value', text: bigPct(bt.total_return) + days(bt.start_ts, bt.end_ts)}),
+        el('p', {class: 'tile-sub', text: (bt.trades || 0) + ' trades · ' + signed(100 * bt.mean, 3) + ' par trade, frais compris · pire baisse '
+          + signed(100 * bt.drawdown, 0)}),
+        el('p', {class: 'tile-sub', text: 'Test final, jamais regardé pour choisir : ' + test}),
+        el('p', {class: 'tile-sub', text: b.label_text || ''})));
+  }
+  function tradeItem(t) {
+    const d = t.diagnosis || {};
+    const long = t.side === 'long';
+    return el('article', {class: 'trade'},
+      el('div', {class: 'head'}, el('h3', {text: (long ? '▲ Achat ' : '▼ Vente à découvert ') + price(t.price) + ' → ' + price(t.exit_price)}),
+        el('span', {class: 'result ' + cls(t.pnl), text: signed(100 * t.roi, 1) + ' du capital · ' + (d.title || t.reason)})),
+      el('p', {class: 'muted', text: when(t.entry_at || new Date(t.entry_ts).toISOString()) + ' → '
+        + when(t.exit_at || new Date(t.exit_ts).toISOString()) + ' · sortie : ' + t.reason + ' · levier ×' + dec(t.leverage)
+        + ' · ' + signed(100 * t.net, 2) + ' sur la position, frais compris'}),
+      d.text ? el('p', {text: d.text}) : null,
+      d.lesson ? el('p', {class: 'muted'}, el('strong', {text: 'La leçon : '}), d.lesson) : null);
+  }
+  function botPanel(b, full) {
+    if (b.empty) return el('article', {class: 'panel'}, el('h2', {text: b.name}),
+      el('p', {class: 'muted', text: 'Plus de remplaçant : refais le choix des bots (page Labos).'}));
+    const label = {'3': ['ok', 'gagnant sur 3 périodes'], '2': ['warn', 'gagnant sur 2 périodes'], essai: ['idle', 'à l\'essai']}[b.label] || ['idle', b.label || ''];
+    const box = el('article', {class: 'panel'},
+      el('div', {class: 'panel-head'},
+        el('div', {}, el('p', {class: 'eyebrow', text: b.name + ' · ' + (TEAMS[b.section] || '')}),
+          el('h2', {}, full ? b.coin + ' · ' + b.tf_label + ' · ' + b.technique
+            : el('a', {class: 'link', href: '#bot/' + b.slot, text: b.coin + ' · ' + b.tf_label + ' · ' + b.technique}))),
+        el('div', {class: 'chips'}, statusChip(b), tag(sideText(b.side)), tag('levier ×' + dec(b.leverage)),
+          b.target_r ? tag('objectif ' + dec(b.target_r) + 'R') : null, chip(label[0], label[1]))),
+      el('p', {text: b.rule + ' ' + b.side_hint.charAt(0).toUpperCase() + b.side_hint.slice(1) + '.'}),
+      el('p', {class: 'muted', text: b.exit_rule}));
+    const chartBox = el('div', {class: 'bot-chart', 'data-bot': String(b.slot)});
+    box.append(chartBox);
+    drawBotChart(chartBox, b.slot);
+    box.append(positionBox(b), compareBox(b));
+    const trades = full ? b.trades : b.trades.slice(0, 3);
+    box.append(el('h3', {class: 'group-title', text: full ? 'Tous ses trades' : 'Ses derniers trades'}));
+    if (!trades.length) box.append(el('p', {class: 'muted', text: 'Pas encore de trade terminé.'}));
+    for (const t of trades) box.append(tradeItem(t));
+    if (!full) box.append(el('div', {class: 'row'}, el('a', {class: 'btn', href: '#bot/' + b.slot, text: 'Tout voir sur ' + b.name})));
+    return box;
+  }
+  function renderTeam() {
+    const d = fleetData, box = $('#team-bots');
+    $('#team-title').textContent = TEAMS[team];
+    const sec = d.ready ? d.sections.find(x => x.key === team) : null;
+    if (!sec) {
+      $('#team-intro').textContent = 'Pas encore de bots : choisis-les sur l\'écran Direct.';
+      box.replaceChildren();
+      return;
+    }
+    $('#team-intro').textContent = sec.blurb + ' Levier jusqu\'à ×' + dec(sec.leverage) + '. Ces bots ont été choisis parmi '
+      + sec.tested + ' combinaisons backtestées (' + sec.eligible + ' gagnantes, frais compris, sur l\'étude et la validation).';
+    box.replaceChildren(...sec.bots.map(b => botPanel(b, false)));
+    for (const b of sec.bots) if (!b.empty && !botCharts[b.slot]) loadBotChart(b.slot);
+  }
+  function renderBotPage() {
+    const d = fleetData, box = $('#bot-page'), b = d.bot;
+    box.replaceChildren();
+    if (!b) { box.append(el('p', {class: 'empty-box', text: d.ready ? 'Ce bot n\'existe pas (ou plus).' : 'Pas encore de bots : choisis-les sur l\'écran Direct.'})); return; }
+    $('#bot-back').setAttribute('href', '#' + b.section);
+    $('#bot-back').textContent = '← ' + (TEAMS[b.section] || 'Tous les bots');
+    box.append(botPanel(b, true));
+    const r = b.reading;
+    const coinBox = el('section', {}, el('h2', {text: 'La crypto ' + b.coin + ' en ' + b.tf_label + ', comme un trader la lit'}));
+    if (r) {
+      coinBox.append(el('div', {class: 'facts'},
+        fact('Prix', price(r.price)), fact('Tendance de fond', r.trend || '—'),
+        fact('RSI (14)', r.rsi === null || r.rsi === undefined ? '—' : String(Math.round(r.rsi))),
+        fact('Bougie moyenne', r.candle_pct === null || r.candle_pct === undefined ? '—' : signed(100 * r.candle_pct, 2).replace('+', '')),
+        fact('Sur 24 bougies', signed(100 * r.change, 1)),
+        fact('Support', r.support ? price(r.support.price) + ' (' + signed(100 * r.support.distance, 1) + ')' : 'aucun proche'),
+        fact('Résistance', r.resistance ? price(r.resistance.price) + ' (' + signed(100 * r.resistance.distance, 1) + ')' : 'aucune proche')),
+        el('ul', {class: 'reading'}, ...(r.sentences || []).map(x => el('li', {text: x}))));
+    } else coinBox.append(el('p', {class: 'muted', text: 'Sa lecture arrive à la prochaine bougie clôturée.'}));
+    box.append(coinBox);
+    const done = (b.trades || []).slice().reverse();  // du plus ancien au plus récent
+    if (done.length >= 2) {
+      const whole = b.count <= done.length;  // sinon, seulement les derniers trades gardés
+      const xs = (whole ? [Date.parse(b.started)] : []).concat(done.map(t => t.exit_ts));
+      const ys = (whole ? [b.start] : []).concat(done.map(t => t.equity));
+      box.append(el('section', {}, el('h2', {text: 'Son capital en direct, trade après trade'}),
+        lineChart({width: box.clientWidth || 700, xs: xs, ys: ys,
+          refs: [{y: b.start, label: 'Départ : ' + usdt(b.start), short: 'Départ'}], label: 'Capital du bot en direct',
+          xTicks: spreadTicks(xs, 4), xTicksSmall: spreadTicks(xs, 3), xTick: dayLabel,
+          yTick: v => Math.round(v).toLocaleString('fr-FR'), endLabel: usdt(ys[ys.length - 1]),
+          endShort: Math.round(ys[ys.length - 1]).toLocaleString('fr-FR'),
+          tip: i => [when(new Date(xs[i]).toISOString()), usdt(ys[i])]})));
+    }
+    const bt = b.backtest || {};
+    const back = el('section', {}, el('h2', {text: 'Son backtest'}),
+      el('p', {class: 'meta', text: 'Sur ' + (bt.trades || 0) + ' trades de l\'historique réel : étude ' + signed(100 * bt.study_mean, 3) + ' par trade ('
+        + (bt.study_n || 0) + ' trades), validation ' + signed(100 * bt.valid_mean, 3) + ' (' + (bt.valid_n || 0) + '), test final '
+        + (bt.test_n ? signed(100 * bt.test_mean, 3) + ' (' + bt.test_n + ')' : '— (trop peu)') + '. Avec son levier et tout son capital : '
+        + bigPct(bt.total_return) + days(bt.start_ts, bt.end_ts) + ', pire baisse ' + signed(100 * bt.drawdown, 0) + '.'}));
+    if (bt.curve && bt.curve.length >= 2) {
+      const xs = bt.curve.map(x => x[0]), ys = bt.curve.map(x => x[1]);
+      back.append(lineChart({width: box.clientWidth || 700, xs: xs, ys: ys,
+        refs: [{y: ys[0], label: 'Départ : ' + usdt(ys[0]), short: 'Départ'}], label: 'Capital du bot dans le backtest',
+        xTicks: spreadTicks(xs, 4), xTicksSmall: spreadTicks(xs, 3), xTick: dayLabel,
+        yTick: v => Math.round(v).toLocaleString('fr-FR'), endLabel: usdt(ys[ys.length - 1]),
+        endShort: Math.round(ys[ys.length - 1]).toLocaleString('fr-FR'),
+        tip: i => [when(new Date(xs[i]).toISOString()), usdt(ys[i])]}));
+    }
+    back.append(el('p', {class: 'note', text: 'Choisi parmi beaucoup d\'essais : le meilleur de milliers de backtests est souvent chanceux. '
+      + 'Le test final, jamais regardé pour choisir, et surtout le direct disent s\'il tient.'}));
+    box.append(back);
+    if (b.retired && b.retired.length) {
+      box.append(el('section', {}, el('h2', {text: 'Les bots qui ont eu cette place avant lui'}),
+        ...b.retired.map(x => el('p', {class: 'muted', text: x.spec.symbol.split('/')[0] + ' · ' + x.spec.technique + ' : '
+          + x.reason + ' (' + usdt(x.start) + ' → ' + usdt(x.end) + ', ' + x.count + ' trades), arrêté le ' + when(x.until)}))));
+    }
+    if (!botCharts[b.slot]) loadBotChart(b.slot);
+  }
+  async function loadBotChart(slot) {
+    const cached = botCharts[slot];
+    if (cached && cached.busy) return;
+    botCharts[slot] = {...(cached || {}), busy: true};
+    try {
+      const data = await getJSON('/api/bot-graphique?bot=' + slot);
+      botCharts[slot] = {at: Date.now(), data: data};
+    } catch (e) {
+      botCharts[slot] = {...(cached || {}), at: Date.now(), error: e.message};
+    }
+    document.querySelectorAll('.bot-chart[data-bot="' + slot + '"]').forEach(box => drawBotChart(box, slot));
+  }
+  async function refreshCharts() {
+    const slots = view === 'bot' ? [botSlot] : view === 'equipe' ? teamBots().map(b => b.slot) : [];
+    for (const slot of slots) if (slot) await loadBotChart(slot);
+  }
+  function drawBotChart(box, slot) {
+    const c = botCharts[slot];
+    if (!c || (!c.data && !c.error)) { box.replaceChildren(el('p', {class: 'muted', text: 'Chargement du graphique…'})); return; }
+    if (!c.data) { box.replaceChildren(el('p', {class: 'muted', text: c.error + ' Nouvel essai dans quelques secondes…'})); return; }
+    const d = c.data;
+    box.replaceChildren(botChart({...d, width: box.clientWidth || 860, label: 'Graphique de ' + coin(d.symbol) + ' et de son bot'}),
+      el('div', {class: 'legend'}, ...botLegend(d).filter(Boolean)));
+  }
+  function botLegend(d) {
+    const item = (cls_, color, text, dashed) => el('span', {}, el('span', {class: 'swatch ' + cls_, style: 'background:' + color
+      + (dashed ? ';opacity:0.7' : '')}), text);
+    const out = [item('', 'var(--up)', 'bougie en hausse'), item('', 'var(--down)', 'bougie en baisse')];
+    for (const ln of d.lines) if (!ln.key.startsWith('bb-') || ln.key === 'bb-mid') out.push(item('line', ln.color,
+      ln.key === 'bb-mid' ? 'bandes de Bollinger' : ln.label, ln.dash));
+    if (d.levels.some(z => z.kind === 'support')) out.push(item('', 'var(--series-3)', 'support'));
+    if (d.levels.some(z => z.kind === 'resistance')) out.push(item('', 'var(--series-2)', 'résistance'));
+    if (d.trades.length) out.push(el('span', {text: '▲▼ pleins : les vrais trades du bot'}));
+    if (d.rule_trades.length) out.push(el('span', {text: '△▽ vides : ce que sa règle aurait fait sur ces bougies'}));
+    if (d.position) out.push(item('line', 'var(--critical)', 'stop'), d.position.target ? item('line', 'var(--good)', 'objectif') : null);
+    return out;
+  }
+  function botChart(o) {
+    const W = Math.max(300, Math.round(o.width)), small = W < 560;
+    const H = small ? 300 : 380, MR = small ? 92 : 178, MT = 12, MB = 26;
+    const c = o.candles, n = c.length;
+    let lo = Math.min(...c.map(k => k[3])), hi = Math.max(...c.map(k => k[2]));
+    const span0 = hi - lo || hi * 0.01 || 1;
+    const near = v => v !== null && v !== undefined && isFinite(v) && v >= lo - 0.6 * span0 && v <= hi + 0.6 * span0;
+    const zones = o.levels.filter(z => z.high >= lo - 0.25 * span0 && z.low <= hi + 0.25 * span0);
+    const pos = o.position, marks = [];
+    if (pos) {
+      marks.push([pos.price, 'var(--text-secondary)', (pos.side === 'long' ? 'Achat ' : 'Vente ') + price(pos.price), '']);
+      marks.push([pos.stop, 'var(--critical)', 'Stop ' + price(pos.stop), '']);
+      if (pos.target) marks.push([pos.target, 'var(--good)', 'Objectif ' + price(pos.target), '']);
+      if (pos.leverage > 1 && near(pos.liquidation)) marks.push([pos.liquidation, 'var(--critical)', 'Liquidation ' + price(pos.liquidation), '5 4']);
+    }
+    for (const z of zones) { lo = Math.min(lo, z.low); hi = Math.max(hi, z.high); }
+    for (const m of marks) { lo = Math.min(lo, m[0]); hi = Math.max(hi, m[0]); }
+    for (const ln of o.lines) for (const v of ln.values) if (near(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    const pad = (hi - lo) * 0.05 || Math.abs(hi) * 0.01 || 1;
+    lo -= pad; hi += pad;
+    const ticks = niceTicks(lo, hi, small ? 5 : 6), step = ticks.length > 1 ? ticks[1] - ticks[0] : 1;
+    const tickText = ticks.map(t => tickPrice(t, step));
+    const ML = Math.max(small ? 40 : 50, 14 + 6.8 * Math.max(...tickText.map(x => x.length)));  // les petits prix (PEPE) restent lisibles
+    const slot = (W - ML - MR) / n, body = Math.max(1, Math.min(8, slot * 0.66));
+    const X = i => ML + slot * (i + 0.5), Y = v => MT + (hi - v) / (hi - lo) * (H - MT - MB);
+    const root = svg('svg', {viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': o.label, tabindex: '0'});
+    ticks.forEach((t, k) => {
+      root.append(svg('line', {x1: ML, x2: W - MR, y1: Y(t), y2: Y(t), class: 'grid'}));
+      root.append(svg('text', {x: ML - 6, y: Y(t) + 4, 'text-anchor': 'end', class: 'tick'}, tickText[k]));
+    });
+    const labels = [];
+    for (const z of zones) {
+      const color = z.kind === 'support' ? 'var(--series-3)' : 'var(--series-2)', top = Y(z.high), bottom = Y(z.low);
+      root.append(svg('rect', {x: ML, width: W - MR - ML, y: top, height: Math.max(2, bottom - top), fill: color, opacity: 0.14}));
+      labels.push({y: Y(z.price), color: color, text: (small ? '' : z.kind === 'support' ? 'Support ' : 'Résistance ') + price(z.price)});
+    }
+    for (const ln of o.lines) {
+      let pts = [];
+      const flush = () => { if (pts.length > 1) root.append(svg('polyline', {points: pts.join(' '), class: 'line', stroke: ln.color,
+        'stroke-dasharray': ln.dash ? '5 4' : null, opacity: ln.dash ? 0.8 : null})); pts = []; };
+      ln.values.forEach((v, i) => { if (v === null || v === undefined || !near(v)) flush(); else pts.push(X(i) + ',' + Y(v)); });
+      flush();
+    }
+    c.forEach((k, i) => {
+      const color = k[4] >= k[1] ? 'var(--up)' : 'var(--down)';
+      root.append(svg('line', {x1: X(i), x2: X(i), y1: Y(k[2]), y2: Y(k[3]), stroke: color, 'stroke-width': 1}));
+      const top = Y(Math.max(k[1], k[4])), bottom = Y(Math.min(k[1], k[4]));
+      root.append(svg('rect', {x: X(i) - body / 2, width: body, y: top, height: Math.max(1, bottom - top), fill: color}));
+    });
+    for (const [v, color, text, dash] of marks) {
+      root.append(svg('line', {x1: ML, x2: W - MR, y1: Y(v), y2: Y(v), stroke: color, 'stroke-width': 1.5,
+        'stroke-dasharray': dash || null}));
+      labels.push({y: Y(v), color: color, text: text});
+    }
+    const ts = c.map(k => k[0]);
+    const at = t => { if (t === null || t === undefined || t < ts[0]) return -1; let i = 0; while (i + 1 < n && ts[i + 1] <= t) i++; return i; };
+    const marker = (i, up, fill, stroke) => {  // sous la bougie pour un achat, au-dessus pour une vente
+      const size = 6.5, y = up ? Y(c[i][3]) + 14 : Y(c[i][2]) - 14, dir = up ? 1 : -1;
+      root.append(svg('path', {d: 'M' + X(i) + ',' + (y - size * dir) + 'L' + (X(i) + size) + ',' + (y + 0.8 * size * dir)
+        + 'L' + (X(i) - size) + ',' + (y + 0.8 * size * dir) + 'Z', fill: fill, stroke: stroke,
+        'stroke-width': fill === 'none' ? 1.6 : 1.5}));
+    };
+    for (const tr of o.rule_trades) {  // ce que la règle aurait fait : triangles vides
+      const a = at(tr.entry), b = at(tr.exit), long = tr.side === 'long';
+      if (a >= 0) marker(a, long, 'none', 'var(--text-secondary)');
+      if (b >= 0) marker(b, !long, 'none', tr.net > 0 ? 'var(--up)' : 'var(--down)');
+    }
+    for (const tr of o.trades) {  // les vrais trades du bot : triangles pleins
+      const a = at(tr.entry), b = at(tr.exit), long = tr.side === 'long';
+      if (a >= 0) marker(a, long, 'var(--text-primary)', 'var(--surface-1)');
+      if (b >= 0) marker(b, !long, tr.net > 0 ? 'var(--up)' : 'var(--down)', 'var(--surface-1)');
+    }
+    if (pos) { const a = at(pos.entry_ts); if (a >= 0) marker(a, pos.side === 'long', 'var(--text-primary)', 'var(--surface-1)'); }
+    labels.sort((a, b) => a.y - b.y);
+    let lastY = -Infinity;
+    for (const l of labels) {
+      const y = Math.min(H - MB, Math.max(l.y, lastY + 15));
+      lastY = y;
+      root.append(svg('rect', {x: W - MR + 6, y: y - 5, width: 10, height: 10, rx: 2, fill: l.color}));
+      root.append(svg('text', {x: W - MR + 20, y: y + 4, class: 'tick'}, l.text));
+    }
+    const intraday = ts.length > 1 && ts[1] - ts[0] < 86400000, minutes = ts.length > 1 && ts[1] - ts[0] < 3600000;
+    const fmt = ms => {
+      const d = new Date(ms), hh = String(d.getHours()).padStart(2, '0') + 'h', mm = String(d.getMinutes()).padStart(2, '0');
+      if (!intraday) return dayLabel(ms);
+      if (small) return minutes ? hh + mm : dayLabel(ms) + ' ' + hh;
+      return dayLabel(ms) + ' ' + hh + (minutes ? mm : '');
+    };
+    for (let k = 0; k < (small ? 3 : 5); k++) {
+      const i = Math.round((n - 1) * (k + 0.5) / (small ? 3 : 5));
+      root.append(svg('text', {x: X(i), y: H - 8, 'text-anchor': 'middle', class: 'tick'}, fmt(ts[i])));
+    }
+    const cross = svg('line', {y1: MT, y2: H - MB, class: 'crosshair'});
+    root.append(cross);
+    const wrap = el('div', {class: 'mini-chart'}), tip = el('div', {class: 'tip', hidden: true});
+    wrap.append(root, tip);
+    let index = n - 1;
+    function showAt(i) {
+      index = Math.max(0, Math.min(n - 1, i));
+      const k = c[index], x = X(index);
+      cross.setAttribute('x1', x); cross.setAttribute('x2', x); cross.style.visibility = 'visible';
+      const rows = [el('div', {class: 'tip-date', text: new Date(k[0]).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}),
+        el('div', {class: 'tip-row', text: 'Ouverture ' + price(k[1]) + ' · clôture ' + price(k[4])}),
+        el('div', {class: 'tip-row', text: 'Plus haut ' + price(k[2]) + ' · plus bas ' + price(k[3])})];
+      for (const ln of o.lines) if (ln.values[index] !== null && ln.values[index] !== undefined)
+        rows.push(el('div', {class: 'tip-row', text: ln.label + ' : ' + price(ln.values[index])}));
+      tip.replaceChildren(...rows);
+      tip.hidden = false;
+      const r = root.getBoundingClientRect(), host = wrap.getBoundingClientRect();
+      const left = r.left - host.left + x / W * r.width;
+      tip.style.left = (left + tip.offsetWidth + 16 > host.width ? Math.max(4, left - tip.offsetWidth - 12) : left + 12) + 'px';
+      tip.style.top = '8px';
+    }
+    function hide() { cross.style.visibility = 'hidden'; tip.hidden = true; }
+    root.addEventListener('pointermove', e => {
+      const r = root.getBoundingClientRect();
+      showAt(Math.round(((e.clientX - r.left) / r.width * W - ML) / slot - 0.5));
+    });
+    root.addEventListener('pointerleave', hide);
+    root.addEventListener('focus', () => showAt(index));
+    root.addEventListener('blur', hide);
+    root.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft') { showAt(index - 1); e.preventDefault(); }
+      if (e.key === 'ArrowRight') { showAt(index + 1); e.preventDefault(); }
+    });
+    return wrap;
+  }
+  function renderChoice() {
+    const box = $('#fleet-choice'), d = fleetData;
+    box.replaceChildren();
+    const action = d && d.actions && d.actions['flotte-choix'];
+    if (!d || !d.ready) {
+      box.append(el('p', {class: 'empty-box', text: 'Pas encore de choix : « Choisir les 15 bots » backteste toutes les combinaisons '
+        + 'sur l\'historique réel et garde les meilleures de chaque équipe.'}));
+      if (action) box.append(el('div', {class: 'row'}, actionButton(action, true, action.title)));
+      return;
+    }
+    box.append(el('p', {class: 'meta', text: 'Fait le ' + when(d.selection.date) + ' : ' + d.selection.tested + ' combinaisons '
+      + 'backtestées sur ' + d.universe.length + ' cryptos (les plus échangées et les plus agitées du moment), avec les frais des '
+      + 'contrats à terme. Chaque historique est coupé en trois : étude (la première moitié), validation (jusqu\'à 80 %), test '
+      + 'final (le plus récent). Le classement ne regarde que l\'étude et la validation ; le test final dit si le choix tient.'}));
+    for (const sec of d.sections) {
+      const rows = (sec.top || []).slice(0, 12).map(r => el('tr', {},
+        el('td', {text: coin(r.symbol) + ' · ' + r.technique + (r.target_r ? ' · objectif ' + dec(r.target_r) + 'R' : '')}),
+        el('td', {text: (r.timeframe ? ({'1m': '1 min', '5m': '5 min', '15m': '15 min', '1h': '1 h', '4h': '4 h', '1d': '1 jour'}[r.timeframe] || r.timeframe) : '')
+          + ' · ' + (r.side === 'long' ? 'achat' : 'vente')}),
+        el('td', {class: 'n', text: String(r.sv_n)}),
+        el('td', {class: 'n ' + cls(r.sv_mean), text: signed(100 * r.sv_mean, 3)}),
+        el('td', {class: 'n ' + cls(r.test_mean), text: r.test_n ? signed(100 * r.test_mean, 3) : '—'}),
+        el('td', {class: 'n', text: bigPct(r.total_return)}),
+        el('td', {class: 'n', text: signed(100 * r.drawdown, 0)}),
+        el('td', {text: r.eligible ? '✓ oui' : '✕ non'})));
+      box.append(el('div', {class: 'choice-team'},
+        el('h3', {text: sec.title + ' : ' + sec.eligible + ' gagnantes sur ' + sec.tested + ' essais'}),
+        el('div', {class: 'table-wrap'}, el('table', {},
+          el('thead', {}, el('tr', {}, el('th', {text: 'Combinaison'}), el('th', {text: 'Unité · sens'}),
+            el('th', {class: 'n', text: 'Trades'}), el('th', {class: 'n', text: 'Par trade'}), el('th', {class: 'n', text: 'Test final'}),
+            el('th', {class: 'n', text: 'Avec levier'}), el('th', {class: 'n', text: 'Pire baisse'}), el('th', {text: 'Gagnante ?'}))),
+          el('tbody', {}, ...rows)))));
+    }
+    box.append(el('p', {class: 'note', text: 'Par trade : le gain moyen d\'un trade, frais et financement compris, sans levier (étude '
+      + '+ validation). Avec levier : ce qu\'aurait fait le capital du bot sur tout l\'historique, en misant tout à chaque trade. '
+      + 'Pire baisse : la plus forte chute de ce capital depuis un sommet.'}));
+    if (action) box.append(el('div', {class: 'row'}, actionButton(action, false, 'Refaire le choix des bots')));
+  }
   // --- l'école ---
   let schoolData = null;
   async function loadSchool(sub) {
@@ -1669,11 +2220,12 @@ JS = r"""
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (view === 'graphiques') renderChart(); if (view === 'accueil') renderTrader(); }, 250);
+    resizeTimer = setTimeout(() => { if (view === 'graphiques') renderChart(); if (view === 'accueil') renderTrader();
+      renderFleet(); }, 250);
   });
 
   // --- rythme : chaque source seulement quand sa page est affichée ---
-  const last = {state: 0, journal: 0, radar: 0, prices: 0, trials: 0, trader: 0, news: 0, chart: 0};
+  const last = {state: 0, journal: 0, radar: 0, prices: 0, trials: 0, trader: 0, news: 0, chart: 0, fleet: 0, charts: 0};
   const busy = {};
   async function every(name, ms, fn) {
     const now = Date.now();
@@ -1693,6 +2245,8 @@ JS = r"""
     if (view === 'accueil') every('trader', 15000, refreshTrader);
     if (view === 'actualite') every('news', newsReady ? 60000 : 2000, refreshNews);
     if (view === 'graphiques') every('chart', 60000, loadChart);
+    if (['direct', 'equipe', 'bot', 'labos'].includes(view)) every('fleet', view === 'labos' ? 15000 : 5000, refreshFleet);
+    if (view === 'equipe' || view === 'bot') every('charts', 30000, refreshCharts);
   }
   radarControls();
   show(location.hash.slice(1));

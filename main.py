@@ -1,4 +1,4 @@
-"""Point d'entrée : python main.py {site,trader,backtest,robustesse,labo,labo-portefeuille,tournoi,portefeuille,prix,telegram,check,run,tableau,reset-guard} --help
+"""Point d'entrée : python main.py {site,flotte,trader,backtest,robustesse,labo,labo-portefeuille,tournoi,portefeuille,prix,telegram,check,run,tableau,reset-guard} --help
 
 Sans argument (double-clic sur la version Windows), le site du bot s'ouvre dans le navigateur.
 """
@@ -26,6 +26,11 @@ from tradingbot.broker import CcxtBroker, PaperBroker, atomic_write
 from tradingbot.config import ConfigError, Settings, load_dotenv
 from tradingbot.dashboard import ROBUSTNESS_FILE, write_dashboard
 from tradingbot.execution import FUTURES, ExecutionParams
+from tradingbot.fleet import (
+    FLEET_DIR, SECTIONS as FLEET_SECTIONS, SELECTION_FILE as FLEET_SELECTION, Fleet, fleet_running, fleet_universe,
+    format_selection, load_json, run as run_fleet, save_json, select as select_fleet,
+    settings_from_env as fleet_settings,
+)
 from tradingbot.data import load_csv, load_or_fetch, make_exchange, ohlcv_to_frame, timeframe_to_ms
 from tradingbot.lab import (
     ALL_VARIANTS, LAB_FILE, PROMISING, SHORT_TERM_VARIANTS, VARIANTS, env_lines, format_lab, load_lab,
@@ -632,6 +637,50 @@ def cmd_trader(s: Settings, args: argparse.Namespace) -> None:
     run_trader(exchange, account, refresh, seconds=args.secondes, once=args.une_fois, initial=(plays, coins))
 
 
+def cmd_fleet(s: Settings, args: argparse.Namespace) -> None:
+    """Les 15 bots en argent fictif (long terme, court terme, scalping). La première fois, ou avec --choisir : ils sont
+    d'abord choisis par backtest parmi toutes les combinaisons, sur l'historique réel."""
+    settings = fleet_settings(os.environ)
+    folder = s.data_dir / FLEET_DIR
+    path = folder / FLEET_SELECTION
+    exchange = make_exchange(s.exchange)
+    if args.choisir or load_json(path) is None:
+        keep_awake()  # le choix télécharge l'historique et calcule longtemps : l'ordinateur doit rester éveillé
+        coins = fleet_universe(exchange, settings.coins, settings.hot)
+        if not coins:
+            raise ValueError("Aucune crypto assez échangée trouvée : vérifie la connexion, puis relance le choix.")
+        log.info("Choix des bots sur %d cryptos : %s", len(coins), ", ".join(r.symbol.split("/")[0] for r in coins))
+        datasets = {}
+        for section in FLEET_SECTIONS:
+            for tf in section.timeframes:
+                for r in coins:
+                    try:
+                        datasets[(section.key, r.symbol, tf)] = load_or_fetch(
+                            s.exchange, r.symbol, tf, section.history_days(tf), s.data_dir / "cache", exchange)
+                    except (ccxt.ExchangeError, ccxt.NetworkError) as exc:
+                        log.warning("%s %s ignorée : %s", r.symbol, tf, exc)
+        if not datasets:
+            raise ValueError("Aucune bougie téléchargée : vérifie la connexion, puis relance le choix des bots.")
+        selection = select_fleet(datasets, settings, coins, workers=args.coeurs, exchange_id=s.exchange)
+        save_json(path, selection)
+        print("\n" + format_selection(selection))
+        log.info("Choix des bots enregistré : %d combinaisons backtestées, %d bots choisis.", selection["tested"],
+                 sum(len(sec["bots"]) for sec in selection["sections"]), extra=ALERT)
+        if args.choisir:
+            return
+    if fleet_running(folder):
+        raise ValueError("Les 15 bots tournent déjà (lancés par le site ou par un autre lanceur) : un seul à la fois.")
+    selection = load_json(path)
+    fleet = Fleet(exchange, folder, selection)
+    keep_awake()  # les bots surveillent leurs stops : l'ordinateur doit rester éveillé
+    attach_telegram(s, journal=False)
+    count = sum(1 for slot in fleet.state["slots"] if slot.get("bot"))
+    log.info("%d bots en argent fictif, %g USDT chacun, levier jusqu'à x%g, x%g et x%g (long terme, court terme, "
+             "scalping). Rien ne part jamais sur une plateforme.", count, settings.capital, settings.leverage_long,
+             settings.leverage_court, settings.leverage_scalping, extra=ALERT)
+    run_fleet(fleet, seconds=args.secondes, once=args.une_fois, reload=lambda: load_json(path))
+
+
 HOT_REFRESH_S = 60  # la liste des cryptos agitées demande tout le marché : une fois par minute suffit
 
 
@@ -791,6 +840,12 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("--variantes", type=int, default=2, help="nombre de variantes retenues à faire tourner")
     pf.add_argument("--secondes", type=float, default=60.0, help="délai entre deux relevés de prix")
     pf.add_argument("--une-fois", action="store_true", help="un seul tour (rotation si elle est due), puis s'arrêter")
+    fl = sub.add_parser("flotte", help="les 15 bots en argent fictif : long terme, court terme et scalping")
+    fl.add_argument("--choisir", action="store_true",
+                    help="choisir les bots par backtest sur l'historique réel, puis s'arrêter")
+    fl.add_argument("--coeurs", type=int, default=None, help="cœurs du processeur pour le choix (par défaut : tous sauf un)")
+    fl.add_argument("--secondes", type=float, default=5.0, help="délai entre deux tours")
+    fl.add_argument("--une-fois", action="store_true", help="un seul tour, puis s'arrêter")
     tr = sub.add_parser("trader", help="le trader fictif : les stratégies du labo sur beaucoup de cryptos, expliquées")
     tr.add_argument("--rejouer", action="store_true", help="rejouer ses règles sur l'historique récent, puis s'arrêter")
     tr.add_argument("--secondes", type=float, default=20.0, help="délai entre deux tours")
@@ -825,6 +880,7 @@ def main(argv: list[str] | None = None) -> int:
         "labo-portefeuille": cmd_portfolio_lab,
         "portefeuille": cmd_portfolio,
         "trader": cmd_trader,
+        "flotte": cmd_fleet,
     }
     try:
         commands[args.command](settings, args)

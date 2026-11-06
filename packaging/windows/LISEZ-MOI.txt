@@ -12,9 +12,29 @@ Sinon Windows affichera un avertissement à chaque lancement. S'il apparaît qua
 Si tu avais une version précédente : recopie ton fichier .env et ton dossier « data » dans le
 nouveau dossier (ils gardent tes réglages, tes bots et les résultats du labo).
 
+LES 15 BOTS (argent fictif)
+Trois équipes de cinq bots : long terme (bougies de 4 h et d'un jour), court terme (15 min et 1 h) et
+scalping (1 et 5 min). Chaque bot a sa crypto et sa technique, choisies par backtest parmi des milliers
+de combinaisons (15 techniques par équipe, à l'achat ou à la vente à découvert, avec ou sans objectif,
+sur les cryptos les plus échangées et les plus agitées du moment). Il met tout son capital fictif (1000
+USDT) à chaque trade, avec le levier de son équipe (×1, ×3 et ×5 par défaut) : un stop touché peut
+coûter plusieurs pourcents de son capital, et un bot peut être liquidé. Il est alors remplacé par le
+suivant du classement. La première fois : écran « Direct », bouton « Choisir les 15 bots » (15 à 40 min).
+Ensuite, le site les relance tout seul chaque fois que tu l'ouvres. Le meilleur de milliers de
+backtests est souvent chanceux : chaque bot montre son backtest à côté de son direct. C'est le direct
+qui tranche.
+
 LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordinateur)
-Quatre onglets simples : Accueil, Graphiques, École, Actualité. Le reste est sous « Plus ».
-- Accueil : la prochaine étape en une phrase, puis TON TRADER FICTIF : la valeur du compte, ses
+Cinq onglets : Direct, Long terme, Court terme, Scalping et Labos. Le reste est sous « Plus ».
+- Direct : tous tes bots d'un coup d'œil (valeur, positions, trades), une carte par bot, et le fil de
+  ce qui vient de se passer (achats, ventes, remplacements).
+- Long terme, Court terme, Scalping : les cinq bots de l'équipe, chacun avec son graphique (ses
+  entrées et ses sorties, son stop, son objectif, les lignes de sa technique, les supports et
+  résistances), sa règle en mots simples, sa position, son direct face à son backtest et ses trades.
+  Touche un bot pour sa page complète (avec la lecture de sa crypto comme un trader la ferait).
+- Labos : comment les 15 bots ont été choisis, les résultats des autres labos et toutes les actions.
+Sous « Plus » :
+- Mon trader : la prochaine étape des labos en une phrase, puis TON TRADER FICTIF : la valeur du compte, ses
   positions avec leur stop, ses derniers trades expliqués (pourquoi il est entré, ce qui s'est passé,
   la leçon), ce qu'il a appris et ses stratégies. « Rejeu sur l'historique » montre ce qu'il aurait
   fait ces derniers mois (flatteur par nature : ce n'est pas une preuve).
@@ -23,11 +43,11 @@ Quatre onglets simples : Accueil, Graphiques, École, Actualité. Le reste est s
   fictif avec ce qui a été retenu. Lance-le le soir et laisse le PC allumé.
 - Graphiques : chaque crypto en bougies, avec ses supports et ses résistances, ses moyennes, ce
   qu'un trader y lirait en mots simples, et ce que disent les règles de ton trader.
-- École : douze leçons courtes pour apprendre (le trading, une crypto, les bougies, les supports, le
-  stop, le levier, les frais et le scalping…), avec des simulateurs et un mini-quiz par leçon.
+- École : treize leçons courtes pour apprendre (le trading, une crypto, les bougies, les supports, le
+  stop, le levier, la vente à découvert et l'objectif, les frais et le scalping…), avec des
+  simulateurs et un mini-quiz par leçon.
 - Actualité : les derniers titres crypto, ce que le prix des cryptos citées a fait depuis, et
   l'indice peur et avidité. Pour comprendre : le bot ne trade jamais sur les titres.
-- Plus > Labos et actions : les résultats des labos et des tournois, et toutes les actions.
 - Radar des mouvements : toutes les cryptos de Binance cotées en USDT et échangées à plus de 5 M$ par
   jour, et celles qui bougent le plus sur 1, 5 et 15 minutes, relevées toutes les 10 secondes dès que le
   site est ouvert. Le radar ne passe aucun ordre : un mouvement affiché a déjà eu lieu.
@@ -132,7 +152,8 @@ argent fictif et lire les résultats lui-même. Il n'y passe jamais en argent r�
 
 AUTRES LANCEURS
 Le dossier « autres lanceurs » garde les anciens fichiers (menu, labos, tournois, prix en direct,
-Telegram...) : ils font la même chose que les boutons du site, dans une fenêtre noire. « 4 - Lancer
+Telegram...) : ils font la même chose que les boutons du site, dans une fenêtre noire. « 19 - Choisir
+les 15 bots » et « 20 - Mes 15 bots » font comme les boutons de l'écran Direct. « 4 - Lancer
 le bot » est le seul moyen de lancer un bot en argent réel (MODE=live dans .env), après un verdict
 « prometteur » et plusieurs semaines de testnet. « Modifier les reglages » ouvre le fichier .env.
 

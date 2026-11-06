@@ -52,6 +52,30 @@ def supertrend(df: pd.DataFrame, period: int, mult: float) -> pd.Series:
     return pd.Series(up, index=df.index)
 
 
+def supertrend_line(df: pd.DataFrame, period: int, mult: float) -> pd.Series:
+    """La ligne du Supertrend, pour les graphiques : la bande basse quand la tendance monte, la haute sinon (mêmes
+    calculs que `supertrend`)."""
+    high, low, close = (df[k].to_numpy(float) for k in ("high", "low", "close"))
+    band = mult * atr(df, period).to_numpy(float)
+    upper_basic, lower_basic = (high + low) / 2 + band, (high + low) / 2 - band
+    up = np.zeros(len(close), dtype=bool)
+    line = np.full(len(close), math.nan)
+    final_upper = final_lower = math.nan
+    for i in range(len(close)):
+        if math.isnan(band[i]):
+            continue
+        if math.isnan(final_upper):
+            final_upper, final_lower = upper_basic[i], lower_basic[i]
+            continue
+        if upper_basic[i] < final_upper or close[i - 1] > final_upper:
+            final_upper = upper_basic[i]
+        if lower_basic[i] > final_lower or close[i - 1] < final_lower:
+            final_lower = lower_basic[i]
+        up[i] = close[i] >= final_lower if up[i - 1] else close[i] > final_upper
+        line[i] = final_lower if up[i] else final_upper
+    return pd.Series(line, index=df.index)
+
+
 def rsi(close: pd.Series, period: int) -> pd.Series:
     """RSI de Wilder. Vaut 100 si aucune baisse, 50 si le prix est parfaitement plat."""
     delta = close.diff()

@@ -223,6 +223,42 @@ LESSONS = (
           "why": "Une stratégie qui perd 0,1 % par trade perd 1 % par trade avec un levier de 10."},
      ],
      "sources": []},
+    {"id": "decouvert", "title": "Vendre à découvert, l'objectif et la liquidation : comment jouent tes 15 bots",
+     "minutes": 5,
+     "blocks": [
+         {"text": "Vendre à découvert, c'est parier sur la baisse : le bot vend d'abord, et rachète plus tard. Si le prix "
+                  "a baissé entre-temps, il gagne la différence. Avec les contrats à terme (futures), c'est aussi simple "
+                  "qu'acheter : chaque technique de tes bots a été testée dans les deux sens, et le backtest a gardé, "
+                  "pour chaque bot, le sens qui marchait le mieux."},
+         {"example": "Un bot vend à découvert SOL à 150 $. Le prix tombe à 145 $ (−3,3 %) : il rachète et gagne 3,3 %, "
+                     "moins les frais. Si le prix monte à 155 $, il perd 3,3 %."},
+         {"text": "Le stop d'un vendeur est donc au-dessus de son prix d'entrée : il coupe la perte si le prix monte. "
+                  "Attention : une baisse s'arrête à zéro, une hausse n'a pas de limite."},
+         {"text": "L'objectif (le « take-profit ») est un prix fixé d'avance où le bot encaisse. Ceux de tes bots qui en "
+                  "ont un le placent à 2 fois la distance de leur stop (« 2R ») : quand il est touché, le gain vaut deux "
+                  "fois la perte possible. Encaisser tôt évite de rendre un gain, mais coupe aussi les grands "
+                  "mouvements : le labo a testé chaque technique avec et sans objectif, et a gardé la meilleure."},
+         {"text": "Tes 15 bots misent tout leur capital fictif à chaque trade, avec le levier de leur équipe (×1 en long "
+                  "terme, ×3 en court terme, ×5 en scalping, par défaut). Un stop touché à 2 % du prix avec un levier "
+                  "de 5 coûte donc environ 10 % du capital du bot, frais compris."},
+         {"text": "La liquidation : avec un levier de 5, une baisse d'environ 20 % (pour un acheteur) fait perdre toute "
+                  "la mise. Tes bots réduisent leur levier quand leur stop est loin, pour que le stop passe toujours "
+                  "avant la liquidation ; seul un saut de prix brutal peut encore liquider un bot. Il est alors remplacé "
+                  "par le suivant du classement."},
+     ],
+     "remember": ["Vendeur à découvert : il gagne si le prix baisse ; son stop est au-dessus de son prix d'entrée.",
+                  "L'objectif « 2R » : encaisser quand le gain vaut 2 fois la distance du stop.",
+                  "Tout le capital × le levier : un stop à 2 % avec ×5 coûte environ 10 % du capital."],
+     "quiz": [
+         {"q": "Un bot vend à découvert à 100 $ avec un levier de 3. Le prix descend à 98 $. Son capital…",
+          "choices": ["gagne environ 6 %, moins les frais", "perd environ 6 %", "gagne 2 %"], "answer": 0,
+          "why": "Le prix baisse de 2 % : le vendeur gagne 2 % sur sa position, multipliés par 3 avec le levier."},
+         {"q": "Où se place le stop d'un vendeur à découvert ?",
+          "choices": ["Au-dessus de son prix d'entrée", "En dessous de son prix d'entrée", "Il n'en a pas besoin"],
+          "answer": 0,
+          "why": "Il perd quand le prix monte : son stop coupe la perte au-dessus."},
+     ],
+     "sources": []},
     {"id": "frais", "title": "Les frais et le scalping", "minutes": 5,
      "blocks": [
          {"text": "Le scalping, c'est viser de tout petits mouvements (0,1 à 0,5 %), des dizaines de fois par jour. Le "

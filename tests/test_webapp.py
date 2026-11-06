@@ -490,3 +490,68 @@ def test_the_school_and_the_news_are_served_to_the_page(server):
     assert any("Cointelegraph" in e for e in page["errors"])  # un site en panne est signalé, pas fatal
     btc = next(n for n in page["news"] if "BTC" in n["coins"])
     assert btc["moves"][0]["coin"] == "BTC"  # prix à la publication inconnu ici : le mouvement reste vide
+
+
+def fleet_files(root, df):
+    """Un choix de bots et leur état en direct, écrits par le vrai code sur une plateforme fictive."""
+    from tests.test_fleet import FakeMarket, one_bot_selection, spec
+    from tradingbot.fleet import SELECTION_FILE, Fleet, save_json
+    folder = root / "data" / "bots"
+    s = spec("Cassure 20/10", "short", 2.0)
+    selection = one_bot_selection(s)
+    save_json(folder / SELECTION_FILE, selection)
+    market = FakeMarket({s.symbol: df})
+    market.i = len(df) - 2
+    fleet = Fleet(market, folder, selection, clock=lambda: market.now_ms() / 1000, read=True)
+    fleet.cycle(market.now_ms())
+    fleet.release()
+    return fleet
+
+
+def test_the_fifteen_bots_are_chosen_shown_and_charted_by_the_site(server, random_walk):
+    s, base = server
+    view = json.loads(request(base, "/api/bots")[1])
+    assert view["ready"] is False and view["step"]["action"] == "flotte-choix"
+    assert "Choisis d'abord" in view["actions"]["flotte"]["blocked"]
+    assert steps_for("flotte", s.root) == [("flotte",)] and steps_for("flotte-choix", s.root) == [("flotte", "--choisir")]
+    assert ACTIONS["flotte-choix"].then == ("flotte",) and ACTIONS["flotte-choix"].slot == webapp.CALCUL
+    fleet_files(s.root, random_walk.iloc[:700])
+    view = json.loads(request(base, "/api/bots")[1])
+    assert view["ready"] and view["step"]["action"] == "flotte"  # choisis mais à l'arrêt : le bouton les relance
+    bot = view["sections"][0]["bots"][0]
+    assert bot["coin"] == "X" and bot["side"] == "short" and "vend à découvert" in bot["rule"]
+    assert view["totals"]["bots"] == 1 and view["actions"]["flotte"]["blocked"] is None
+    full = json.loads(request(base, "/api/bots?bot=1")[1])["bot"]
+    assert full["slot"] == 1 and full["reading"]["sentences"]
+    assert request(base, "/api/bot-graphique?bot=1")[0] == 403  # un graphique télécharge : seulement pour la page
+    s.charts.exchange = ChartExchange(random_walk.iloc[:700])
+    status, body, _ = request(base, "/api/bot-graphique?bot=1", headers={HEADER: HEADER_VALUE})
+    chart = json.loads(body)
+    assert status == 200 and len(chart["candles"]) == 150 and chart["side"] == "short" and chart["lines"]
+    assert request(base, "/api/bot-graphique?bot=9", headers={HEADER: HEADER_VALUE})[0] == 400
+
+
+def test_the_site_keeps_the_chosen_bots_running_unless_stopped_by_hand(tmp_path, fake_bot, random_walk):
+    s = site(tmp_path, fake_bot)
+    assert s.keep_fleet_running() is None  # rien de choisi : rien à lancer
+    fleet_files(tmp_path, random_walk.iloc[:700])
+    task = s.keep_fleet_running()
+    assert task is not None and task.action.key == "flotte" and task.steps == [("flotte",)]
+    assert wait(lambda: task.status != "en cours")
+    s.fleet_stopped = True  # arrêtés à la main : le site ne les relance pas
+    assert s.keep_fleet_running() is None
+    s.fleet_stopped = False
+    (tmp_path / "data" / "bots" / "en-cours.json").write_text(json.dumps({"pid": 1, "t": time.time()}),
+                                                                encoding="utf-8")
+    assert s.fleet_running() and s.keep_fleet_running() is None  # lancés par un lanceur : jamais deux fois
+    assert "lancés par un lanceur" in s.blocked("flotte", "paper")
+
+
+def test_the_fleet_settings_stay_within_bounds():
+    fields = {f.key: f for f in FIELDS}
+    assert clean_value(fields["FLOTTE_LEVIER_SCALPING"], "10") == "10.0"
+    assert clean_value(fields["FLOTTE_CRYPTOS"], "20") == "20"
+    for key, bad in [("FLOTTE_LEVIER_LONG", "0"), ("FLOTTE_LEVIER_COURT", "21"), ("FLOTTE_CRYPTOS", "2.5"),
+                     ("FLOTTE_AGITEES", "31"), ("FLOTTE_CAPITAL", "-5")]:
+        with pytest.raises(ValueError):
+            clean_value(fields[key], bad)
