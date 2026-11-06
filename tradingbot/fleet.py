@@ -716,12 +716,11 @@ def _dataset_job(job: tuple) -> list[dict]:
         for side in SIDES:
             try:
                 sig = signals_for(df, params, side)
-            except (ValueError, ZeroDivisionError, FloatingPointError) as exc:
-                log.warning("%s %s %s : signaux impossibles (%s)", symbol, timeframe, name, exc)
-                continue
-            for target in TARGETS:
-                spec = Spec(section_key, symbol, timeframe, name, side, target, leverage)
-                out.append(judge(simulate(df, spec, capital, ex, sig), start, end))
+                for target in TARGETS:
+                    spec = Spec(section_key, symbol, timeframe, name, side, target, leverage)
+                    out.append(judge(simulate(df, spec, capital, ex, sig), start, end))
+            except Exception as exc:  # des bougies étranges sur une crypto n'arrêtent jamais tout le choix
+                log.warning("%s %s %s : combinaison ignorée (%s)", symbol, timeframe, name, exc)
     return out
 
 
@@ -987,7 +986,10 @@ class Fleet:
                 continue
             self.next_fetch[(symbol, timeframe)] = int(closed["ts"].iloc[-1]) + 2 * tf_ms + 2000
             for slot, bot, book in items:
-                events += self._on_candles(slot, bot, book, closed, prices.get(symbol), at)
+                try:
+                    events += self._on_candles(slot, bot, book, closed, prices.get(symbol), at)
+                except Exception as exc:  # un bot qui bute sur ses bougies ne bloque jamais les autres
+                    log.warning("Bot %s (%s %s) : bougie non traitée (%s)", slot["slot"], symbol, timeframe, exc)
         for slot, bot, book in bots:  # puis le prix du moment : stop et objectif entre deux bougies
             price = prices.get(bot["spec"]["symbol"])
             if price:

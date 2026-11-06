@@ -370,3 +370,40 @@ def test_the_loop_waits_longer_while_the_network_is_down_and_frees_its_place_whe
     assert sleeps == [10, 20, 40, 60, 60, 60]  # de plus en plus tard, une minute au plus
     assert caplog.text.count("ils réessaient tout seuls") == 2  # pas une ligne par tour raté
     assert not fleet_running(tmp_path)  # arrêtés : la place est libre pour un nouveau lancement
+
+
+def test_strange_candles_on_one_coin_never_stop_the_whole_choice(random_walk, monkeypatch):
+    import tradingbot.fleet as fleet_module
+    real = fleet_module.signals_for
+
+    def flaky(df, params, side):
+        if params.strategy_type == "supertrend":
+            raise IndexError("bougies étranges")
+        return real(df, params, side)
+
+    monkeypatch.setattr(fleet_module, "signals_for", flaky)
+    rows = fleet_module._dataset_job(("court", "X/USDT", "1h", random_walk.iloc[:900], ("Cassure 20/10", "Supertrend 10/3"),
+                                      3.0, 1000.0, FUTURES))
+    assert rows and {r["technique"] for r in rows} == {"Cassure 20/10"}
+
+
+def test_a_bot_that_fails_on_its_candles_never_blocks_the_others(random_walk, monkeypatch):
+    s1, s2 = spec("Cassure 20/10"), spec("Supertrend 10/3", symbol="Y/USDT")
+    selection = one_bot_selection(s1)
+    selection["sections"][0]["bots"].append({**selection["sections"][0]["bots"][0], "symbol": "Y/USDT",
+                                             "technique": "Supertrend 10/3"})
+    market = FakeMarket({"X/USDT": random_walk, "Y/USDT": random_walk})
+    market.i = 500
+    fleet = Fleet(market, None, selection, clock=lambda: market.now_ms() / 1000, read=False)
+    real = Fleet._on_candles
+
+    def broken(self, slot, bot, book, closed, price, at):
+        if bot["spec"]["symbol"] == "X/USDT":
+            raise IndexError("bougie étrange")
+        return real(self, slot, bot, book, closed, price, at)
+
+    monkeypatch.setattr(Fleet, "_on_candles", broken)
+    fleet.cycle(market.now_ms())
+    books = [slot["bot"]["book"] for slot in fleet.state["slots"]]
+    assert books[0]["last_ts"] is None and books[1]["last_ts"] is not None  # le second bot a avancé
+    assert s2.symbol == fleet.state["slots"][1]["bot"]["spec"]["symbol"]
