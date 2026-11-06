@@ -9,85 +9,71 @@ place, puis lui dises en quelques lignes ce qui en ressort.
 ## Ce qu'il y a ici
 
 - `tradingbot\tradingbot.exe` : le programme (aucun Python nécessaire). Sans argument, il ouvre le site du bot
-  (http://127.0.0.1:8765) ; avec une commande, il l'exécute dans la console.
+  (http://127.0.0.1:8765), qui lance tout seul l'essaim de bots en argent fictif ; avec une commande, il l'exécute
+  dans la console.
 - `.env` : les réglages (copie de `.env.example` au premier lancement). `MODE=paper` = argent fictif.
-- `data\` : résultats des labos (`laboratoire.json`, `laboratoire-court-terme.json`,
-  `laboratoire-court-terme-limites.json`), tournois (`data\tournoi\`, `data\tournoi-court-terme\`, chacun avec son
-  `tableau-de-bord.html`), tableau de bord des bots (`data\tableau-de-bord.html`), journal (`data\bot.log`).
-- `data\bots\selection.json` : le choix des 15 bots (par équipe `long`, `court`, `scalping` : `bots`, `bench` =
-  remplaçants, `top` = les mieux classées, `tested`, `eligible`) ; `data\bots\etat.json` : les bots en direct (`slots`,
-  chacun avec son `bot` : `spec`, `book` = argent, position, trades avec `diagnosis`, `reading` = lecture de sa crypto,
-  `backtest`, et `retired` = les bots remplacés) et `events` (achats, ventes, remplacements).
-- `data\trader\compte.json` : le trader fictif (`positions`, `trades` avec `why`, `reading` et `diagnosis`, `stats`,
-  `eliminated`, `playbook`, `history`) ; `data\trader\rejeu.json` : ses règles rejouées sur l'historique (pas une preuve).
-- `data\laboratoire-futures.json` : le labo scalping avec les frais des contrats à terme.
-- `data\laboratoire-portefeuille.json` : le labo portefeuille (momentum croisé) ; `data\portefeuille\` : un fichier
-  par portefeuille fictif (`value`, `holdings`, `rotations`, `next` = prochaine rotation).
-- `data\essais.json` : « Mes essais », le compte fictif des essais lancés depuis le radar du site (positions,
-  trades clôturés avec `return` après frais et `reason` : stop, essoufflement, temps, main).
-- `data\mouvements.jsonl` : le journal des gros mouvements à la hausse vus par le radar, une ligne par mouvement,
-  avec `after` = variation 300, 900 et 3600 s après (avant frais ; un aller-retour coûte environ 0,3 %).
+- `data\bots\essaim.json` : le résumé que lit le site, réécrit à chaque tour (toutes les 5 secondes) : `totals`
+  (valeur, résultat, trades, bots arrêtés compris), `coins` (une ligne par crypto suivie : `amplitude` sur 24 h,
+  `moving` = assez de mouvement, `status`, `tested`, `n_tested`, `n_eligible`, `best` = les combinaisons les mieux
+  classées de son dernier test), `bots` (chaque bot en bref, avec sa `position`), `events` et `retired`.
+- `data\bots\essaim\<id>.json` : le compte complet de chaque bot : `spec` (crypto, unité, technique, sens, objectif,
+  levier), `book` (argent, position, trades avec `roi`, `net`, `reason`, `diagnosis`, `analysis`), `backtest` (son
+  dernier test, avec `profile` = où sa stratégie gagne et perd), `status` (`actif`, `veille`, `sortie`).
+- `data\bots\essaim-etat.json` : la mémoire de l'essaim (cryptos suivies, prochains tests, combinaisons mises de côté
+  24 h dans `banned`) ; `data\bots\en-cours.json` : le signal de vie (les bots tournent si son heure a moins de 45 s).
+- `data\bot.log` : le journal. Les anciens labos, tournois et le trader fictif écrivent toujours dans `data\` quand
+  on les lance depuis `autres lanceurs\`.
 - `autres lanceurs\` : un fichier .bat par commande ; `LISEZ-MOI.txt` : le mode d'emploi de l'utilisateur.
 
 ## Les commandes (lancées depuis ce dossier)
 
 | Pour… | Commande | Durée |
 |---|---|---|
-| labo court terme | `tradingbot\tradingbot.exe labo --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --timeframes "1m,5m,15m" --scanner 8 --memecoins --combinaisons --resultats laboratoire-court-terme.json` | ~1 h |
-| le même en ordres limites | la même ligne avec `--ordres-limites --resultats laboratoire-court-terme-limites.json` | ~1 h |
-| labo long terme | `tradingbot\tradingbot.exe labo` (ajoute `--csv-dir actions` s'il y a des CSV dans `actions\`) | 10 à 20 min |
-| labo portefeuille | `tradingbot\tradingbot.exe labo-portefeuille` | 2 à 5 min |
-| labo scalping, frais futures | la ligne du labo court terme avec `--futures --resultats laboratoire-futures.json` | ~1 h |
-| rejouer le trader sur l'historique | `tradingbot\tradingbot.exe trader --rejouer` | 1 à 5 min |
-| tournoi court terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --labo laboratoire-court-terme.json,laboratoire-court-terme-limites.json --top 20 --sans-navigateur` | jusqu'à l'arrêt |
-| tournoi long terme (argent fictif) | `tradingbot\tradingbot.exe tournoi --avec-marches-du-labo --top 20 --sans-navigateur` | jusqu'à l'arrêt |
-| portefeuille momentum (argent fictif) | `tradingbot\tradingbot.exe portefeuille` | jusqu'à l'arrêt |
-| choisir les 15 bots par backtest | `tradingbot\tradingbot.exe flotte --choisir` | 15 à 40 min |
-| les 15 bots (argent fictif) | `tradingbot\tradingbot.exe flotte` | jusqu'à l'arrêt |
-| mon trader (argent fictif) | `tradingbot\tradingbot.exe trader` | jusqu'à l'arrêt |
-| prix en direct, une fois | `tradingbot\tradingbot.exe prix --une-fois` | quelques secondes |
+| les bots en direct (argent fictif) | `tradingbot\tradingbot.exe flotte` | jusqu'à l'arrêt |
 | vérifier la connexion | `tradingbot\tradingbot.exe check` | quelques secondes |
-| régénérer le tableau de bord | `tradingbot\tradingbot.exe tableau --no-open` | quelques secondes |
+| prix en direct | `tradingbot\tradingbot.exe prix` | jusqu'à l'arrêt |
+| tester les alertes Telegram | `tradingbot\tradingbot.exe telegram` | quelques secondes |
+| test de robustesse (avant tout argent réel) | `tradingbot\tradingbot.exe robustesse` | quelques minutes |
+| labo court terme (ancien outil) | `tradingbot\tradingbot.exe labo --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --timeframes "1m,5m,15m" --scanner 8 --memecoins --combinaisons --resultats laboratoire-court-terme.json` | ~1 h |
+| labo long terme (ancien outil) | `tradingbot\tradingbot.exe labo` | 10 à 20 min |
 
-Le plus simple pour l'utilisateur reste le site (« Ouvrir le bot.bat ») : l'écran « Direct » montre les 15 bots
-(bouton « Choisir les 15 bots » la première fois ; ensuite le site les relance tout seul à chaque ouverture). Le bouton
-« Pilote automatique » (Labos) lance les cinq labos (portefeuille d'abord), puis le trader, son rejeu, les deux
-tournois et le portefeuille. Un seul calcul lourd à la fois : ils se partagent le processeur. Pour expliquer un trade
-du trader à l'utilisateur, lis son `why`, son `reading` et son `diagnosis` dans `data\trader\compte.json`. Le levier
-et la vente à découvert n'existent qu'en argent fictif.
+Le plus simple pour l'utilisateur reste le site (« Ouvrir le bot.bat ») : l'écran « Direct » liste tous les bots
+(filtres par horizon et par état, tri par résultat), l'onglet « Cryptos » les cryptos suivies ; un clic sur une crypto
+montre ses bots, son graphique zoomable et ce que le labo en direct y a testé ; un clic sur un bot montre sa position
+(prix d'entrée, stop, objectif, liquidation), son graphique, ses agents d'analyse et chaque trade expliqué. Le site
+relance les bots tout seul toutes les 20 secondes s'ils s'arrêtent, sauf si l'utilisateur les a arrêtés à la main.
 
-## Lire les résultats d'un labo
+## Comment travaille l'essaim
 
-Dans chaque fichier `data\laboratoire*.json` : `verdict` (le texte du verdict) et `rows`, une ligne par stratégie et
-unité de temps : `variant`, `timeframe`, `trades`, `win_rate`, `gross_expectancy_pct` (gain par trade avant frais, en
-%), `expectancy_pct` (après frais), `test_expectancy_pct` (sur le test final, jamais regardé pour choisir),
-`verdict`. Seules les stratégies « prometteur » ou « à surveiller » vont en tournoi. Si l'avant-frais est positif mais
-l'après-frais négatif, ce sont les frais qui font perdre ; si même l'avant-frais est négatif, rien ne gagne.
+1. Toutes les 10 minutes, les N cryptos USDT les plus agitées sur 24 h (au moins 5 M$ échangés par jour, sans monnaies
+   stables). Sous `FLOTTE_MOUVEMENT_MIN` d'amplitude (3 % par défaut), une crypto passe en veille : ses bots n'ouvrent
+   plus de trade et gèrent ceux en cours.
+2. Chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures : 39 techniques × 2 sens × avec
+   ou sans objectif × 5 unités (1 min à 4 h) = 780 combinaisons, sur l'historique récent, frais des contrats à terme
+   compris. Une combinaison ne devient un bot que si elle gagne sur l'étude, la validation et la période récente, avec
+   assez de trades et sans liquidation. Au plus `FLOTTE_BOTS_PAR_CRYPTO` bots par crypto (8 par défaut, 60 cryptos :
+   480 bots au plus).
+3. Chaque bot met tout son capital fictif à chaque trade, avec le levier de son horizon (×5 scalping, ×3 court terme,
+   ×1 long terme par défaut), réduit si le stop est loin. Un bot que le dernier test ne garde plus finit son trade puis
+   s'arrête ; un bot liquidé, à moitié ruiné ou nettement perdant après 20 trades est arrêté et sa combinaison mise de
+   côté 24 h.
+4. Les agents d'analyse mesurent, sur le backtest de chaque bot, dans quelles conditions sa stratégie gagne ou perd
+   (tendance de fond, volatilité, RSI, volume, heure), une probabilité de gain dans les conditions du moment, et
+   pourquoi chaque trade réel a gagné ou perdu. Ce sont des mesures : un bot n'entre que sur le signal de sa règle.
 
-Dans `data\laboratoire-portefeuille.json` : `rows`, une ligne par variante : `mean_pct` (rendement moyen par semaine
-après frais, en %), `basket_pct` (le panier de toutes les cryptos à parts égales), `excess_pct` (l'écart : ce qui
-compte), `test_mean_pct` et `test_excess_pct` (test final), `verdict`. Une variante n'est retenue que si elle bat le
-panier ; « ne bat pas le panier » veut dire que garder toutes les cryptos aurait rapporté autant sans rien choisir.
-
-## Lire les 15 bots
-
-Trois équipes de cinq : long terme (4 h et 1 jour, levier ×1 par défaut), court terme (15 min et 1 h, ×3), scalping (1
-et 5 min, ×5). Chaque bot met tout son capital fictif à chaque trade, avec le levier de son équipe (réduit si le stop
-est loin, pour que le stop passe avant la liquidation), à l'achat (`side` = `long`) ou à la vente à découvert
-(`short`), avec ou sans objectif (`target_r` = 2 : à 2 fois la distance du stop). Dans `etat.json`, un trade a `roi`
-(résultat sur le capital du bot, levier compris), `net` (sur la position, frais compris, sans levier), `reason` et
-`diagnosis`. Le `label` du choix : `3` = gagnant sur les trois périodes du backtest, `2` = sur l'étude et la
-validation, `essai` = rien de mieux. Un bot liquidé, qui a perdu la moitié de son capital ou nettement perdant après 20
-trades est remplacé par le suivant de `bench`. Tout cela est de l'argent fictif : le meilleur de milliers de backtests
-est souvent chanceux, c'est le direct qui tranche.
+Pour expliquer un bot ou un trade à l'utilisateur, lis son fichier `data\bots\essaim\<id>.json` : `diagnosis` et
+`analysis` de chaque trade, `backtest.profile`. Choisir parmi des centaines de combinaisons fait toujours sortir des
+gagnants par chance : dis-le, c'est le direct qui tranche. Le levier et la vente à découvert n'existent qu'en argent
+fictif.
 
 ## Règles non négociables
 
 - Ne promets jamais de gains, ni « zéro perte ».
-- Pas d'argent réel sans un verdict « prometteur » sur de vraies données, puis plusieurs semaines de testnet.
+- Pas d'argent réel sans un verdict « robuste » de `tradingbot\tradingbot.exe robustesse` sur de vraies données, puis
+  plusieurs semaines de testnet.
 - Ne touche jamais à `MODE`, aux clés API, à `CONFIRM_LIVE_TRADING` ni à `MAX_CAPITAL` sans une demande explicite de
   l'utilisateur, et jamais pour passer en argent réel sans ces preuves.
 - Ne règle pas une stratégie à la main pour embellir un résultat : les décisions de trading restent des règles
-  testées par le labo. Pas de trading « à l'instinct ».
+  testées. Pas de trading « à l'instinct ».
 - Pour changer le code, travaille dans le dépôt GitHub (branche `claude/trading-bot`) : la version Windows se
   reconstruit toute seule à chaque modification.

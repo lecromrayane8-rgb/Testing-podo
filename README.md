@@ -2,20 +2,18 @@
 
 Bot de trading automatique en Python, connecté aux plateformes d'échange via [ccxt](https://github.com/ccxt/ccxt)
 (Binance par défaut, plus de 100 plateformes possibles). En argent réel, il trade uniquement à l'achat, au comptant
-(spot) et **sans levier**. En argent fictif, **15 bots** (trois équipes : long terme, court terme, scalping) tradent
-en direct, chacun sur sa crypto, à l'achat ou à la vente à découvert, avec levier, stop et objectif, choisis par
-backtest parmi des milliers de combinaisons. Autour : onze familles de stratégies testées hors échantillon (dont les
-supports et résistances), un laboratoire qui cherche ce qui tient après frais, un trader fictif qui explique chaque
-trade, des tournois, un radar des mouvements, l'actualité, une école du trading pour débutant, et un site qui réunit
-tout.
+(spot) et **sans levier**. En argent fictif, un **essaim de bots** (des centaines au plus) suit en continu les cryptos
+qui bougent le plus : chaque crypto est retestée toutes les 3 heures avec toutes les techniques du bot (39 techniques,
+vingt familles, à l'achat et à la vente à découvert, avec ou sans objectif, de 1 minute à 4 heures), et chaque
+combinaison gagnante sur son historique récent devient un bot, avec levier, stop et objectif. Des agents d'analyse
+disent où chaque stratégie gagne et perd, et pourquoi chaque trade a gagné ou perdu. Le site montre tout : la liste des
+bots, les cryptos, la page de chaque bot avec un graphique zoomable, l'actualité et les prix.
 
 **Démarrage rapide (Windows, sans Python)** : télécharge le
 [ZIP](https://github.com/lecromrayane8-rgb/Testing-podo/releases/download/windows-dev/tradingbot-windows.zip),
-extrais-le et double-clique sur `Ouvrir le bot.bat` : le site du bot s'ouvre dans ton navigateur, sur l'écran
-**Direct**. Clique sur « Choisir les 15 bots » : le bot backteste toutes les combinaisons sur l'historique réel (15 à
-40 min), garde les 5 meilleures de chaque équipe et les lance en argent fictif. Ensuite, chaque fois que tu ouvres le
-site, ils repartent tout seuls là où ils en étaient ; l'écran Direct montre tout, et chaque bot a sa page avec son
-graphique, ses entrées, ses sorties, son stop et son objectif.
+extrais-le et double-clique sur `Ouvrir le bot.bat` : le site du bot s'ouvre dans ton navigateur et les bots démarrent
+tout seuls en argent fictif. Les premiers apparaissent après quelques minutes (le temps de tester les cryptos) ; ensuite
+ils tournent sans fin, et repartent là où ils en étaient à chaque ouverture du site.
 
 > **À lire avant tout.** Aucun bot ne garantit un profit régulier. Un **taux de réussite élevé ne veut pas
 > dire rentable** : une stratégie qui gagne 70 % du temps 0,5 % et perd 30 % du temps 2 % perd de l'argent.
@@ -133,48 +131,45 @@ Contrepartie : un ordre limite peut ne pas être exécuté. Si le prix rebondit 
 Windows peut afficher « Windows a protégé votre ordinateur » : clique sur « Informations complémentaires »
 puis « Exécuter quand même ». C'est normal pour un programme qui n'est pas signé.
 
-## Les 15 bots (argent fictif)
+## Les bots en direct : l'essaim (argent fictif)
 
 ```bash
-python main.py flotte --choisir   # les choisir par backtest (« Choisir les 15 bots » sur le site), puis s'arrêter
-python main.py flotte             # les faire tourner en direct (le site les lance tout seul une fois choisis)
+python main.py flotte                 # l'essaim, sans fin (le site le lance tout seul)
+python main.py flotte --une-fois      # un seul tour, pour vérifier
 ```
 
-Trois équipes de cinq bots (`tradingbot/fleet.py`), chacun sur sa crypto :
+Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au direct dans `tradingbot/fleet.py`) :
 
-| Équipe | Bougies | Levier maximum (réglable) | Historique du choix |
-|---|---|---|---|
-| Long terme | 4 h et 1 jour | ×1 | 2 ans en 4 h, 4 ans en 1 jour |
-| Court terme | 15 min et 1 h | ×3 | 90 jours en 15 min, 1 an en 1 h |
-| Scalping | 1 et 5 min | ×5 | 10 jours en 1 min, 45 jours en 5 min |
+1. **Les cryptos** : toutes les 10 minutes, les `FLOTTE_CRYPTOS` paires USDT les plus agitées sur 24 h (60 par défaut,
+   au moins 5 M$ échangés par jour, sans monnaies stables ni tokens à levier). Une crypto dont l'amplitude sur 24 h
+   passe sous `FLOTTE_MOUVEMENT_MIN` (3 %), ou qui sort de la liste, passe **en veille** : ses bots n'ouvrent plus de
+   trade et gèrent ceux en cours.
+2. **Le labo en direct** : chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures, sur
+   l'historique récent (2 jours en 1 min, 7 en 5 min, 20 en 15 min, 60 en 1 h, 240 en 4 h) : 39 techniques × 2 sens ×
+   avec ou sans objectif × 5 unités = 780 combinaisons, avec les frais des contrats à terme (0,05 % par ordre au marché,
+   0,02 % pour un objectif posé d'avance, glissement, financement toutes les 8 h compté comme un coût). L'historique est
+   coupé comme au labo : étude, validation, période récente. Une combinaison ne devient un bot que si elle gagne sur
+   les trois (frais compris), avec assez de trades et sans liquidation. Au plus `FLOTTE_BOTS_PAR_CRYPTO` bots par
+   crypto (8), des familles et des unités variées : 480 bots au plus par défaut. Les tests tournent à part (un fil
+   télécharge, un processus calcule) : le direct n'attend jamais.
+3. **Les bots** : tout le capital fictif du bot (`FLOTTE_CAPITAL`, 1000 USDT) à chaque trade, avec le levier de son
+   horizon (`FLOTTE_LEVIER_SCALPING` ×5 en 1 et 5 min, `FLOTTE_LEVIER_COURT` ×3 en 15 min et 1 h,
+   `FLOTTE_LEVIER_LONG` ×1 en 4 h), réduit pour un trade dont le stop est loin : le stop passe toujours avant la
+   liquidation. Même moteur que le backtest (`Book`), bougie clôturée par bougie clôturée, et stop et objectif surveillés
+   au prix du moment toutes les 5 secondes (tests de parité : mêmes trades en direct qu'en backtest, et mêmes signaux
+   sur la fenêtre lue en direct que sur tout l'historique, pour chaque technique dans les deux sens).
+4. **Les arrêts** : un bot que le dernier test ne garde plus finit son trade puis s'arrête ; un bot liquidé, qui a
+   perdu la moitié de son capital ou que le gardien juge nettement perdant après 20 trades est arrêté, et sa
+   combinaison mise de côté 24 h. Ses résultats restent comptés dans le bilan. Jamais un réglage changé après une perte.
+5. **Les agents d'analyse** : sur les trades du backtest de chaque bot, dans quelles conditions sa stratégie gagne ou
+   perd (tendance de fond, volatilité, RSI, volume, heure de la journée), sa probabilité de gain dans les conditions
+   du moment (tirée vers sa moyenne quand les cas sont peu nombreux), et après chaque trade réel, pourquoi il a gagné
+   ou perdu. Des mesures, jamais des ordres : un bot n'entre que sur le signal de sa règle.
 
-- **Un bot = une crypto + une technique + une unité de temps + un sens + un objectif.** Les techniques couvrent les
-  onze familles du bot (15 par équipe, réglages fixés d'avance). Le sens : acheteur (il gagne si le prix monte) ou
-  vendeur à découvert (il gagne si le prix baisse ; la même règle appliquée au graphique retourné). L'objectif : sortie
-  par la règle seulement, ou en plus un take-profit à 2 fois la distance du stop (« 2R »).
-- **Les cryptos testées** : les 15 plus échangées, les 10 plus agitées du moment (celles qui prennent 20 ou 50 % dans
-  la journée) et les memecoins assez échangés (`FLOTTE_CRYPTOS`, `FLOTTE_AGITEES`).
-- **Le choix** : chaque combinaison est backtestée avec les frais des contrats à terme (0,05 % par ordre au marché,
-  0,02 % pour un objectif posé à l'avance, glissement, financement toutes les 8 h compté comme un coût). L'historique
-  est coupé comme au labo : étude (première moitié), validation (jusqu'à 80 %), test final (le plus récent). Le
-  classement ne regarde que l'étude et la validation (gain moyen par trade rapporté à sa dispersion) ; une combinaison
-  liquidée dans le backtest n'est jamais choisie. Par équipe : les 5 premières, des cryptos toutes différentes et des
-  techniques variées, même si leur avantage est minuscule, avec une étiquette franche (« gagnant sur les 3 périodes »,
-  « sur 2 périodes », ou « à l'essai » faute de mieux), puis 12 remplaçants.
-- **La mise** : tout le capital du bot (1000 USDT fictifs, `FLOTTE_CAPITAL`) à chaque trade, avec le levier de son
-  équipe (`FLOTTE_LEVIER_LONG`, `FLOTTE_LEVIER_COURT`, `FLOTTE_LEVIER_SCALPING`). Pour un trade dont le stop est loin,
-  le levier est réduit : le stop passe toujours avant le prix de liquidation. Un stop touché à 2 % avec ×5 coûte
-  environ 10 % du capital du bot.
-- **Le direct** : exactement le même moteur que le backtest (`Book`, test de parité), bougie clôturée par bougie
-  clôturée ; le stop et l'objectif sont aussi surveillés au prix du moment, toutes les 5 secondes. L'état est dans
-  `data/bots/etat.json` et repris au redémarrage ; le choix dans `data/bots/selection.json`.
-- **Le remplacement** : un bot liquidé, qui a perdu la moitié de son capital, ou que le gardien juge nettement perdant
-  après 20 trades (même le haut de sa fourchette est négatif) laisse sa place au suivant du classement de son équipe,
-  sur une autre crypto. Ses résultats restent comptés dans le bilan. Jamais un réglage changé après une perte.
-
-Le meilleur de milliers de backtests est souvent chanceux : chaque bot montre côte à côte son backtest (dont le test
-final, jamais regardé pour choisir) et ce qu'il fait en direct. C'est le direct qui tranche. Le bot en argent réel,
-lui, reste au comptant et sans levier.
+L'état est repris au redémarrage : `data/bots/essaim-etat.json` (cryptos, tests, combinaisons mises de côté),
+`data/bots/essaim/<id>.json` (le compte complet de chaque bot) ; `data/bots/essaim.json` est le résumé que lit le
+site, réécrit à chaque tour. Choisir parmi des centaines de combinaisons fait toujours sortir des gagnants par
+chance : c'est le direct qui tranche. Le bot en argent réel, lui, reste au comptant et sans levier.
 
 ## Le site du bot (tout à portée de main)
 
@@ -182,77 +177,41 @@ lui, reste au comptant et sans levier.
 python main.py site          # ou « Ouvrir le bot.bat » ; sans argument, le programme Windows fait de même
 ```
 
-Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765) :
+Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Quatre onglets, et « Plus » :
 
-Cinq onglets : **Direct**, **Long terme**, **Court terme**, **Scalping** et **Labos** ; le reste est sous « Plus ».
-
-- **Direct** : où en sont les 15 bots en une phrase (et le bouton utile : les choisir, ou les relancer), la valeur de
-  tous les bots, le résultat depuis le départ (bots remplacés compris), les positions ouvertes, les trades terminés ;
-  puis une carte par bot, rangées par équipe (crypto, technique, sens, levier, courbe du prix avec l'entrée, le stop et
-  l'objectif, capital, position en cours) ; puis le fil de ce qui vient de se passer (achats, ventes, remplacements).
-- **Long terme, Court terme, Scalping** : les cinq bots de l'équipe, chacun avec sa règle d'entrée et de sortie en mots
-  simples, son graphique (bougies, lignes de sa technique, supports et résistances, ses vrais trades en triangles
-  pleins, ce que sa règle aurait fait sur ces bougies en triangles vides, et pour une position ouverte : entrée, stop,
-  objectif, liquidation), sa position, son direct face à son backtest et ses derniers trades expliqués.
-- **La page d'un bot** : tout ce qui précède, plus la lecture de sa crypto comme un trader (tendance, RSI, taille des
-  bougies, supports, résistances, chiffres ronds), la courbe de son backtest, tous ses trades et les bots qui ont eu
-  sa place avant lui.
-- **Labos** : comment les 15 bots ont été choisis (par équipe : combien de combinaisons testées, combien gagnantes,
-  les mieux classées avec leur test final, leur résultat avec levier et leur pire baisse), puis les autres labos et
-  toutes les actions.
-
-Sous « Plus », les pages d'avant :
-
-- **Mon trader** : la prochaine étape des labos en une phrase, puis **ton trader fictif** : valeur du compte, résultat depuis le
-  départ, courbe, positions ouvertes avec leur stop, derniers trades expliqués (pourquoi il est entré, ce qui s'est
-  passé, la leçon), ce qu'il a appris, ses stratégies et celles que le gardien a coupées ; en direct, ou rejoué sur
-  l'historique. Puis ce qui tourne, avec son journal et un bouton Arrêter.
-- **Pilote automatique** : les cinq labos à la suite (portefeuille, court terme, court terme en ordres limites,
-  scalping avec les frais des futures, long terme), puis le trader, son rejeu, les deux tournois et le portefeuille
-  momentum en argent fictif avec ce qui a été retenu. Ils tournent ensuite tant que le site est ouvert. Si un labo ne
-  retient rien, la suite correspondante attend : c'est voulu.
-- **Graphiques** : chaque crypto en bougies (15 min, 1 h, 4 h, 1 jour) comme un trader la lit : supports et
-  résistances avec le nombre de touches, moyennes sur 50 et 200 bougies, l'achat et le stop du trader, ses derniers
-  achats et ventes, la lecture du graphique en mots simples (tendance, RSI, taille des bougies face aux frais,
-  chiffres ronds, scénario d'un trader) et le signal de chaque règle du trader.
-- **École** : treize leçons courtes pour débutant (`tradingbot/school.py`) : le trading, une crypto, les bougies, la
-  tendance, les supports, le stop et la taille de position, le levier, la vente à découvert et l'objectif (comment
-  jouent les 15 bots), les frais et le scalping, les indicateurs,
-  l'actualité, tester avant de trader, lire les trades de son trader. Un schéma ou un simulateur quand l'idée a une
-  forme (levier, taille de position, frais), un mini-quiz dont chaque réponse est expliquée, les sources.
+- **Direct** : où en sont les bots en une phrase (et le bouton utile : les lancer, ou les arrêter), la valeur de tous
+  les bots, le résultat depuis le départ (bots arrêtés compris), le nombre de bots et de positions, les trades
+  terminés et l'humeur du marché ; puis **la liste de tous les bots** (filtres par horizon et par état, tri par
+  résultat, 30 par page) ; puis le fil de ce qui vient de se passer.
+- **Cryptos** : les cryptos suivies, leur variation et leur amplitude sur 24 h, leur état (des bots tournent, test en
+  cours, rien de gagnant, en veille) et le résultat de leurs bots. **La page d'une crypto** : ses bots, son graphique
+  dans chaque unité de temps (bougies, volume, supports et résistances, l'entrée, le stop et l'objectif des positions
+  ouvertes, les trades des bots), la lecture d'un trader (tendance, RSI, taille des bougies, supports, résistances),
+  son actualité et ce que le labo en direct y a testé (les combinaisons les mieux classées, gagnantes ou non).
+- **La page d'un bot** : sa règle en mots simples, sa position (prix d'entrée, stop, objectif, liquidation et levier,
+  au chiffre près), son graphique (lignes de sa technique, ses vrais trades en triangles pleins, ce que sa règle aurait
+  fait sur ces bougies en triangles vides), les agents d'analyse, son direct face à son backtest, la courbe de son
+  capital, chaque trade expliqué (diagnostic, analyse, leçon) et la fiche de sa technique (ce qu'elle mesure, ce qu'en
+  dit la recherche).
+- **Le graphique zoomable** : molette, boutons + et −, pincement sur tablette, glisser ou ◀ ▶ pour remonter le temps,
+  « Maintenant » pour revenir au présent, double-clic pour la vue de départ, flèches du clavier ; le prix exact sous
+  le curseur et le détail de chaque bougie (ouverture, plus haut, plus bas, clôture, volume, valeur des lignes).
 - **Actualité** (`tradingbot/news.py`) : les derniers titres de CoinDesk, Cointelegraph et Decrypt, les cryptos citées
   et ce que leur prix a fait depuis la publication ; l'indice peur et avidité, son année, et ce qui a suivi ses
-  extrêmes (une observation, pas une règle). Le bot ne trade jamais sur les titres.
-- **Radar des mouvements** : toutes les cryptos de la plateforme cotées en USDT et échangées à plus de 5 M$ par
-  jour, classées par variation sur 1, 5 ou 15 minutes (barre jaune au-delà de 1 %, 2 % ou 4 %). Il tourne dès
-  l'ouverture du site : la liste complète des paires toutes les 5 minutes, puis le dernier prix seulement toutes
-  les 10 secondes (requête légère). Le radar ne passe aucun ordre : un mouvement affiché a déjà eu lieu.
-  - **L'étude d'une opportunité** (le nom d'une crypto) : 30 jours de bougies de 1 minute, les mêmes hausses dans
-    le passé, la courbe médiane du prix dans l'heure qui suit l'achat (avec la moitié centrale des cas et la ligne
-    des frais), trois sorties testées par le backtest du bot (rapide, normale, laisser courir : seuils fixés
-    d'avance), un verdict franc (mauvais, rien de net, piste à confirmer, trop peu de cas) et la perte si le stop
-    est touché (`tradingbot/moves.py`).
-  - **Le journal des mouvements jaunes** (`data/mouvements.jsonl`) : chaque gros mouvement à la hausse, puis ce que
-    le prix a fait 5 min, 15 min et 1 h après, frais compris. Un test en direct, sans regard vers le futur.
-- **Mes essais** : un compte fictif de 1000 USDT (`data/essais.json`, `tradingbot/desk.py`) pour essayer une
-  opportunité. Achat au prix réel, frais et glissement compris ; taille calculée pour risquer environ 1 % du compte
-  au stop, 1/5 du compte au plus par essai, 5 essais au plus ; revente automatique par les règles de l'option
-  (stop, essoufflement, temps maximum) ou à la main ; résultats, courbe et historique.
-- **Comprendre** (`tradingbot/knowledge.py`) : d'abord **la base des bots**, les idées tirées d'études publiées
-  (`tradingbot/research.py`), chacune avec ses règles et où elle en est (à tester, retenue par le labo et utilisée par
-  les bots, recalée, ou défavorable selon la recherche) ; puis chaque technique du bot, ce qu'elle mesure et comment la
-  lire, ce qu'en dit la recherche publiée (études relues par des pairs, liens SciSpace) et ce qu'en dit le labo de
-  l'utilisateur (meilleure version après frais, versions retenues).
-- **Prix** (plusieurs plateformes côte à côte), **Tableau de bord** (mes bots et les labos, chaque tournoi),
-  **Journal** (la sortie des commandes, en direct) et **Réglages** (bots, capital fictif, frais, Telegram,
-  Obsidian).
+  extrêmes (une observation, pas une règle). Les bots ne tradent jamais sur les titres.
+- **Prix** : les prix publics de plusieurs plateformes côte à côte.
+- Sous « Plus » : **École** (treize leçons courtes pour débutant, `tradingbot/school.py`, avec simulateurs, mini-quiz
+  et exemples tirés des vrais trades des bots), **Réglages** (cryptos suivies, bots par crypto, mouvement minimum,
+  leviers, capital fictif, plateforme des données, Telegram ; les bots redémarrent tout seuls quand on les change) et
+  **Journal** (la sortie des commandes, en direct).
 
-Chaque bouton lance la même commande que le lanceur `.bat` correspondant (un test le vérifie), dans un processus à
-part ; un seul calcul lourd à la fois. Sous Windows, chaque tâche est rangée dans un « job » : fermer la fenêtre du
-site arrête aussi les labos et les tournois qu'il a lancés, rien ne continue en cachette.
+Le site lance les bots tout seul à l'ouverture et les relance toutes les 20 secondes s'ils s'arrêtent, sauf s'ils ont
+été arrêtés à la main. Chaque bouton lance la même commande que le lanceur `.bat` correspondant (un test le vérifie),
+dans un processus à part. Sous Windows, chaque tâche est rangée dans un « job » : fermer la fenêtre du site arrête
+aussi les bots, rien ne continue en cachette.
 
-Ce que le site ne fait jamais : passer en argent réel. Les tournois restent en argent fictif, « Mes bots » refuse
-`MODE=live`, et le formulaire ne touche ni à `MODE`, ni aux clés API, ni à `CONFIRM_LIVE_TRADING`, ni à
+Ce que le site ne fait jamais : passer en argent réel. Ses bots sont en argent fictif (ils ne passent aucun ordre), il
+ne lance jamais la commande `run`, et le formulaire ne touche ni à `MODE`, ni aux clés API, ni à `CONFIRM_LIVE_TRADING`, ni à
 `MAX_CAPITAL` (ils se changent dans `.env`). Le site n'écoute que l'ordinateur lui-même ; toute action exige un
 en-tête que seule sa page envoie, et l'adresse demandée doit être la sienne : un autre site ouvert dans le
 navigateur ne peut pas lui donner d'ordres. Avec `--ipad`, il s'ouvre au Wi-Fi de la maison, et chaque appareil
@@ -365,7 +324,7 @@ quand le volume double (le mouvement a des acheteurs derrière lui), pendant les
 UTC, quand l'Europe et les États-Unis échangent ensemble), ou après une compression (les bandes de Bollinger de la
 bougie précédente parmi les 20 % les plus serrées des 120 dernières : un marché calme qui se réveille). Ces seuils
 sont fixés d'avance, pas ajustés sur les données. S'y ajoutent 4 **impulsions**, qui sautent sur un mouvement
-soudain comme ceux du radar : +1 % en 5 bougies (avec ou sans volume triplé), +0,5 % en une seule bougie avec
+soudain : +1 % en 5 bougies (avec ou sans volume triplé), +0,5 % en une seule bougie avec
 volume triplé, +3 % en 15 bougies avec volume triplé ; revente sous le plus bas des 5 bougies précédentes, stop à
 2 ATR, 20 bougies au plus. Les 53 variantes passent par la même validation, le même seuil durci et le même test
 final. Les filtres existent aussi dans `.env` (`MIN_ATR_PCT`, `VOLUME_MULT`,
@@ -652,7 +611,7 @@ tail -f data/bot.log
 | `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
 | `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins] [--combinaisons] [--ordres-limites] [--futures] [--resultats fichier]` | comparer les stratégies, validées hors échantillon |
 | `python main.py tournoi [--labo fichier] [--unite 1m] [--avec-marches-du-labo] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X] [--sans-navigateur]` | faire s'affronter en argent fictif les stratégies retenues par un labo |
-| `python main.py flotte [--choisir] [--coeurs N] [--secondes 5] [--une-fois]` | les 15 bots en argent fictif ; `--choisir` : les choisir par backtest, puis s'arrêter |
+| `python main.py flotte [--coeurs N] [--secondes 5] [--une-fois]` | l'essaim de bots en argent fictif, sans fin : les cryptos qui bougent le plus, retestées en continu (`--coeurs` : processus de calcul des re-tests, 0 = dans le direct) |
 | `python main.py trader [--rejouer] [--une-fois]` | le trader fictif : les stratégies retenues sur beaucoup de cryptos, chaque trade expliqué |
 | `python main.py labo-portefeuille [--cryptos 30] [--days N]` | tester le momentum croisé (garder chaque semaine les cryptos qui ont le plus monté) contre le panier |
 | `python main.py portefeuille [--capital X] [--variantes 2] [--une-fois]` | les variantes retenues par le labo portefeuille, en argent fictif, une rotation par semaine |
@@ -669,13 +628,16 @@ Fichiers produits dans `data/` : `bot.log` (journal), `state_*.json` (position e
 `laboratoire-portefeuille.json` et `tableau-de-bord.html`. Les tournois rangent les leurs dans `data/tournoi/` et
 `data/tournoi-court-terme/`, avec `tournoi.json` (cryptos et stratégies en compétition) ; les portefeuilles fictifs
 dans `data/portefeuille/` ; le trader dans `data/trader/` (`compte.json` en direct, `rejeu.json`) ; le labo scalping
-futures dans `laboratoire-futures.json` ; les 15 bots dans `data/bots/` (`selection.json` : le choix,
-`etat.json` : le direct, `etat-<date>.json` : une équipe remplacée par un nouveau choix).
+futures dans `laboratoire-futures.json` ; l'essaim dans `data/bots/` (`essaim.json` : le résumé du site,
+`essaim-etat.json` : sa mémoire, `essaim/<id>.json` : le compte de chaque bot, `en-cours.json` : son signal de vie).
 
 ## Limites connues
 
 - En argent réel : achat seulement, une position à la fois par bot. La vente à découvert et le levier n'existent
-  que pour les 15 bots, en argent fictif.
+  que pour les bots de l'essaim, en argent fictif.
+- L'essaim choisit parmi des centaines de combinaisons par crypto : une partie de celles qui « gagnent » sur
+  l'historique le doivent à la chance, et ses résultats en direct le diront. Ses bots en argent fictif ne passent
+  aucun ordre : ils ne mesurent ni la file d'attente d'un carnet ni l'impact d'un gros ordre sur une petite crypto.
 - En mode limite, le backtest ne voit que les bougies : il ne sait pas si l'ordre aurait été servi dans la file
   d'attente à ton prix. Le testnet donne une idée plus réaliste du taux d'exécution.
 - Le stop n'existe que tant que le bot tourne : il n'y a pas d'ordre stop posé sur la plateforme.

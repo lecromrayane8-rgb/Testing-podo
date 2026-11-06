@@ -49,6 +49,7 @@ jobs:
           Copy-Item sample.csv samples\a.csv
           Copy-Item sample.csv samples\b.csv
           .\dist\tradingbot\tradingbot.exe labo --symbols "," --timeframes "," --csv-dir samples --coeurs 2
+          .\dist\tradingbot\tradingbot.exe flotte --une-fois
 
       - name: Vérifier le site (il lance l'exécutable lui-même et lit son journal)
         run: |
@@ -61,7 +62,9 @@ jobs:
           }
           if ($ping.site -ne "tradingbot") { throw "le site ne répond pas" }
           $page = Invoke-WebRequest http://127.0.0.1:8790/
-          if ($page.Content -notmatch "Prochaine étape") { throw "page du site incomplète" }
+          if ($page.Content -notmatch "Tous les bots") { throw "page du site incomplète" }
+          $bots = Invoke-RestMethod http://127.0.0.1:8790/api/bots
+          if (-not $bots.step.title) { throw "écran Direct illisible" }
           $task = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8790/api/lancer `
             -Headers @{ "X-Demande" = "site-du-bot" } -ContentType "application/json" -Body '{"action": "telegram"}'
           $text = ""

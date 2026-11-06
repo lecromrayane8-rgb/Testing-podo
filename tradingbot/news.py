@@ -195,7 +195,7 @@ class NewsSource:
         self.cache_dir = cache_dir
         self.get = get or _http_get
         self.closes = closes  # () -> clôtures journalières du Bitcoin, pour l'étude de l'indice
-        self.known = known  # () -> tickers suivis par le radar
+        self.known = known  # () -> les cryptos cotées sur la plateforme
         self.fng_at, self.fng = -math.inf, None
         self.prices_at_pub: dict[tuple[str, str], float] = {}
 

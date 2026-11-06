@@ -205,6 +205,21 @@ def rule_sentence(p: StrategyParams) -> str:
                      f"soudain, sur lequel le bot saute{trend}.",
         "support": f"Le prix est descendu sur un support solide puis a clôturé au-dessus, en hausse : un rebond{trend}.",
         "resistance": f"Le prix a clôturé nettement au-dessus d'une résistance solide : une cassure{trend}.",
+        "ema_croisement": f"La moyenne exponentielle des {p.ema_fast} dernières clôtures vient de passer au-dessus de celle "
+                          f"des {p.ema_slow} : la tendance tourne à la hausse{trend}.",
+        "vwap": f"Le prix est repassé au-dessus de son prix moyen pondéré par le volume (VWAP sur {p.vwap_period} bougies), "
+                f"avec la moyenne exponentielle {p.ema_fast} au-dessus de la {p.ema_slow}{trend}.",
+        "stochastique": f"Le stochastique est sorti de la zone de survente (sous {p.stoch_low:g}) en croisant sa moyenne par "
+                        f"le haut : un rebond s'amorce{trend}.",
+        "keltner": f"Le prix a clôturé au-dessus du canal de Keltner (moyenne + {decimal(p.keltner_mult)} fois la taille "
+                   f"moyenne d'une bougie) : un mouvement fort, que le bot suit{trend}.",
+        "adx": f"Le DI+ est passé devant le DI− avec une tendance forte (ADX au-dessus de {p.adx_min:g}){trend}.",
+        "psar": f"Le Parabolic SAR est passé sous le prix : la tendance devient haussière{trend}.",
+        "ichimoku": f"Le prix est passé au-dessus du nuage d'Ichimoku, avec la Tenkan au-dessus de la Kijun{trend}.",
+        "zscore": f"Le prix est tombé à plus de {decimal(p.zscore_entry)} écarts-types sous sa moyenne des "
+                  f"{p.zscore_period} bougies : un retour vers la moyenne est attendu{trend}.",
+        "heikin": f"Les bougies Heikin-Ashi (lissées) sont vertes {p.heikin_bars} fois de suite après une rouge : la "
+                  f"hausse s'installe{trend}.",
     }
     filters = []
     if p.volume_mult:

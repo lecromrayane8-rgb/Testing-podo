@@ -15,7 +15,7 @@ Suivre une tendance :
 
 Sauter sur un mouvement :
 - impulsion : le prix vient de prendre au moins `impulse_pct` en `impulse_bars` bougies (un mouvement
-  soudain, comme ceux du radar) ; revend sous le plus bas des M bougies précédentes (le mouvement s'essouffle).
+  soudain) ; revend sous le plus bas des M bougies précédentes (le mouvement s'essouffle).
 
 Supports et résistances (tradingbot/levels.py : les niveaux où le prix s'est déjà retourné plusieurs fois) :
 - support : la bougie descend jusqu'à un support solide puis clôture au-dessus, en hausse (un rebond) ; revend quand
@@ -24,6 +24,18 @@ Supports et résistances (tradingbot/levels.py : les niveaux où le prix s'est d
   l'ancien niveau, devenu support.
 Les niveaux utilisés sont ceux connus à la clôture précédente : la bougie du signal ne compte pas dans son propre
 niveau.
+
+D'autres outils de traders (ajoutés pour l'essaim de bots, réglages classiques fixés d'avance) :
+- ema_croisement : la moyenne exponentielle rapide (9) croise la lente (21) par le haut ; revend au croisement inverse ;
+- vwap : la clôture repasse au-dessus du prix moyen pondéré par le volume, avec la moyenne exponentielle rapide
+  au-dessus de la lente (la stratégie de scalping la plus citée) ; revend sous le VWAP ;
+- stochastique : le %K croise le %D par le haut en zone de survente (sous 20) ; revend au-dessus de 80 ;
+- keltner : la clôture sort au-dessus du canal de Keltner (moyenne exponentielle + k × ATR) ; revend sous la moyenne ;
+- adx : le DI+ passe au-dessus du DI− avec une tendance forte (ADX > 25) ; revend quand le DI− repasse devant ;
+- psar : le Parabolic SAR passe sous le prix ; revend quand il repasse au-dessus ;
+- ichimoku : la clôture passe au-dessus du nuage avec la Tenkan au-dessus de la Kijun ; revend sous la Kijun ;
+- zscore : la clôture tombe à plus de k écarts-types sous sa moyenne ; revend au retour sur la moyenne ;
+- heikin : les bougies Heikin-Ashi (lissées) deviennent vertes N fois de suite ; revend à la première rouge.
 
 Pour toutes : stop-loss à k × ATR sous le prix d'achat, stop temporel optionnel (0 = aucun),
 filtre de tendance optionnel (clôture au-dessus de la moyenne longue, 0 = aucun filtre).
@@ -45,14 +57,17 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from .indicators import atr, bollinger, macd, rsi, sma, supertrend
+from .indicators import (
+    adx, atr, bollinger, ema, heikin_ashi, ichimoku, macd, parabolic_sar, rolling_vwap, rsi, sma, stochastic, supertrend,
+)
 from .levels import level_series
 
 STRATEGY_TYPES = (
     "retour_moyenne", "bollinger", "cassure", "bollinger_cassure", "croisement", "macd", "momentum", "supertrend",
     "impulsion", "support", "resistance",
+    "ema_croisement", "vwap", "stochastique", "keltner", "adx", "psar", "ichimoku", "zscore", "heikin",
 )
-MEAN_REVERSION = ("retour_moyenne", "bollinger")
+MEAN_REVERSION = ("retour_moyenne", "bollinger", "stochastique", "zscore")
 LEVEL_FAMILIES = ("support", "resistance")
 
 
@@ -90,6 +105,25 @@ class StrategyParams:
     active_hours: str = ""  # heures UTC d'achat, « 13-21 » ; vide = toute la journée
     squeeze_quantile: float = 0.0  # compression des bandes de Bollinger avant l'achat ; 0 = sans filtre
     squeeze_period: int = 120
+    ema_fast: int = 9  # moyennes exponentielles (ema_croisement, et filtre de la famille vwap)
+    ema_slow: int = 21
+    vwap_period: int = 48  # VWAP glissant sur 48 bougies
+    stoch_k: int = 14
+    stoch_d: int = 3
+    stoch_low: float = 20.0
+    stoch_high: float = 80.0
+    keltner_period: int = 20
+    keltner_mult: float = 2.0
+    adx_period: int = 14
+    adx_min: float = 25.0
+    psar_step: float = 0.02
+    psar_max: float = 0.2
+    ichi_tenkan: int = 9
+    ichi_kijun: int = 26
+    ichi_senkou: int = 52
+    zscore_period: int = 20
+    zscore_entry: float = 2.0
+    heikin_bars: int = 2
 
     def __post_init__(self):
         if self.strategy_type not in STRATEGY_TYPES:
@@ -116,6 +150,19 @@ class StrategyParams:
             raise ValueError("SQUEEZE_QUANTILE doit être entre 0 et 1 (0,2 = 20 %), SQUEEZE_PERIOD >= 2")
         if self.active_hours:
             self.hours_window  # « 13-21 » mal écrit : erreur claire dès le chargement des réglages
+        if not 1 <= self.ema_fast < self.ema_slow:
+            raise ValueError("EMA_FAST doit être plus petit que EMA_SLOW")
+        if min(self.vwap_period, self.stoch_k, self.stoch_d, self.keltner_period, self.adx_period,
+               self.zscore_period) < 2 or self.heikin_bars < 1:
+            raise ValueError("Les périodes des indicateurs doivent être >= 2 (HEIKIN_BARS >= 1)")
+        if not 0 < self.stoch_low < self.stoch_high < 100:
+            raise ValueError("STOCH_LOW et STOCH_HIGH doivent être entre 0 et 100, le premier plus petit")
+        if not self.keltner_mult > 0 or not self.zscore_entry > 0 or not 0 <= self.adx_min < 100:
+            raise ValueError("KELTNER_MULT et ZSCORE_ENTRY doivent être positifs, ADX_MIN entre 0 et 100")
+        if not 0 < self.psar_step <= self.psar_max < 1:
+            raise ValueError("PSAR_STEP doit être positif et au plus PSAR_MAX (< 1)")
+        if not 1 <= self.ichi_tenkan < self.ichi_kijun < self.ichi_senkou:
+            raise ValueError("ICHI_TENKAN < ICHI_KIJUN < ICHI_SENKOU")
 
     @property
     def warmup_bars(self) -> int:
@@ -131,6 +178,15 @@ class StrategyParams:
             "impulsion": [self.impulse_bars + 2, self.breakout_exit_period + 1],
             "support": [self.level_lookback + self.level_window + self.atr_period + 2],
             "resistance": [self.level_lookback + self.level_window + self.atr_period + 2],
+            "ema_croisement": [self.ema_slow + 2],
+            "vwap": [self.vwap_period + 2, self.ema_slow + 2],
+            "stochastique": [self.stoch_k + self.stoch_d + 2],
+            "keltner": [self.keltner_period + 2],
+            "adx": [2 * self.adx_period + 2],
+            "psar": [10],
+            "ichimoku": [self.ichi_senkou + self.ichi_kijun + 2],
+            "zscore": [self.zscore_period + 2],
+            "heikin": [self.heikin_bars + 10],
         }[self.strategy_type]
         volume = [self.volume_period] if self.volume_mult else []
         squeeze = [self.bb_period + self.squeeze_period + 1] if self.squeeze_quantile else []
@@ -155,6 +211,10 @@ class StrategyParams:
             return "résistance ou support cassé"
         if self.strategy_type == "resistance":
             return "retour sous le niveau"
+        if self.strategy_type == "stochastique":
+            return "suracheté"
+        if self.strategy_type == "zscore":
+            return "retour à la moyenne"
         return "rebond" if self.strategy_type in MEAN_REVERSION else "fin de tendance"
 
 
@@ -207,6 +267,48 @@ def compute_signals(df: pd.DataFrame, p: StrategyParams) -> pd.DataFrame:
         else:  # cassure : clôture nettement au-dessus de la résistance ; sortie si le prix retombe sous le niveau
             entry = _crossing_up(close > resistance + tol)
             exit_ = close < support - tol
+    elif t == "ema_croisement":
+        fast, slow = ema(close, p.ema_fast), ema(close, p.ema_slow)
+        entry = _crossing_up(fast > slow)
+        exit_ = fast < slow
+    elif t == "vwap":
+        vw = rolling_vwap(out, p.vwap_period)
+        entry = _crossing_up(close > vw) & (ema(close, p.ema_fast) > ema(close, p.ema_slow))
+        exit_ = close < vw
+    elif t == "stochastique":
+        k, d = stochastic(out, p.stoch_k, p.stoch_d)
+        entry = _crossing_up(k > d) & (k.shift(1) < p.stoch_low)
+        exit_ = k >= p.stoch_high
+    elif t == "keltner":
+        mid = ema(close, p.keltner_period)
+        upper = mid + p.keltner_mult * atr(out, p.keltner_period)
+        entry = _crossing_up(close > upper)
+        exit_ = close < mid
+    elif t == "adx":
+        strength, plus, minus = adx(out, p.adx_period)
+        entry = _crossing_up(plus > minus) & (strength > p.adx_min)
+        exit_ = plus < minus
+    elif t == "psar":
+        _, rising = parabolic_sar(out, p.psar_step, p.psar_max)
+        entry = _crossing_up(rising)
+        exit_ = ~rising
+    elif t == "ichimoku":
+        tenkan, kijun, span_a, span_b = ichimoku(out, p.ichi_tenkan, p.ichi_kijun, p.ichi_senkou)
+        cloud_top = pd.concat([span_a, span_b], axis=1).max(axis=1, skipna=False)
+        entry = _crossing_up((close > cloud_top) & (tenkan > kijun))
+        exit_ = close < kijun
+    elif t == "zscore":
+        mean = sma(close, p.zscore_period)
+        spread = close.rolling(p.zscore_period, min_periods=p.zscore_period).std(ddof=0)
+        z = (close - mean) / spread.where(spread > 0)
+        entry = (z < -p.zscore_entry) & ~(z.shift(1) < -p.zscore_entry)
+        exit_ = z > 0
+    elif t == "heikin":
+        ha_open, ha_close = heikin_ashi(out)
+        green = ha_close > ha_open
+        streak = green.rolling(p.heikin_bars, min_periods=p.heikin_bars).sum() == p.heikin_bars
+        entry = streak & ~green.shift(p.heikin_bars, fill_value=True)
+        exit_ = ~green
     elif t == "impulsion":
         # Seulement la bougie où le mouvement apparaît : pas de rachat à chaque bougie d'une même envolée.
         rise = close / close.shift(p.impulse_bars) - 1

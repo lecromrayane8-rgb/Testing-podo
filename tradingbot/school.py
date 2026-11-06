@@ -3,7 +3,7 @@
 Chaque leçon : une seule idée, un exemple chiffré, au plus un schéma ou un simulateur quand l'idée a une forme (une
 bougie, un graphique réel avec ses supports, le levier qu'on fait varier soi-même), puis ce qu'il faut retenir et un
 mini-quiz dont chaque réponse est expliquée. Les sources sont les études de knowledge.SOURCES. La dernière leçon
-montre les vrais trades du trader de l'utilisateur, avec leur diagnostic.
+montre les vrais trades des bots de l'utilisateur, avec leur diagnostic.
 
 Rien ici n'est un conseil d'investissement : l'école explique comment les traders raisonnent et pourquoi le bot teste
 tout avant de s'en servir.
@@ -87,7 +87,7 @@ LESSONS = (
                   "Verte : la clôture est plus haute, le prix a monté. Rouge : il a baissé. Les mèches montent "
                   "jusqu'au plus haut et descendent jusqu'au plus bas de la période."},
          {"example": "Une longue mèche sous une bougie verte : le prix est descendu, puis les acheteurs l'ont fait "
-                     "remonter. C'est exactement ce que cherche la règle « rebond sur support » de ton trader."},
+                     "remonter. C'est exactement ce que cherche la règle « rebond sur support » de tes bots."},
          {"text": "Sous les bougies, le volume dit combien a été échangé. Un mouvement avec beaucoup de volume a plus "
                   "de monde derrière lui. Plus l'unité est courte, plus il y a de bruit : en 1 minute, la plupart des "
                   "mouvements sont du hasard."},
@@ -180,7 +180,9 @@ LESSONS = (
          {"figure": "risk", "question": "Avant de bouger les curseurs : si tu rapproches le stop, la position "
                                         "devient-elle plus grosse ou plus petite ?"},
          {"text": "Avec 1 % par trade, il faut une longue série de pertes pour faire mal : 10 pertes d'affilée coûtent "
-                  "environ 10 %. C'est exactement ce que fait ton trader à chaque achat."},
+                  "environ 10 %. C'est la règle des traders prudents. Tes bots en argent fictif, eux, misent tout "
+                  "leur capital à chaque trade (c'est ton choix, pour voir vite ce que vaut chaque stratégie) : un "
+                  "stop touché leur coûte plusieurs pourcents. Le bot en argent réel, lui, reste à 1 %."},
      ],
      "remember": ["Un stop à chaque trade, décidé avant d'entrer.",
                   "Taille = capital × risque ÷ distance du stop.",
@@ -205,8 +207,8 @@ LESSONS = (
                                             "ta mise est-elle perdue ? Puis vérifie avec les curseurs."},
          {"text": "Le levier ne transforme pas une stratégie perdante en gagnante : il fait juste perdre, ou gagner, "
                   "plus vite. Il sert à une chose : prendre la taille voulue quand le stop est très proche (le "
-                  "scalping). Dans ton trader, le risque reste de 1 % par trade ; le levier permet seulement la "
-                  "taille."},
+                  "scalping). Tes bots en argent fictif l'utilisent en plein (×5 en scalping par défaut) : leurs "
+                  "gains et leurs pertes en sont multipliés d'autant."},
          {"text": "Les contrats à terme (futures), qui permettent le levier, coûtent aussi un « financement » toutes "
                   "les 8 heures : garder une position des semaines coûte cher."},
      ],
@@ -223,13 +225,13 @@ LESSONS = (
           "why": "Une stratégie qui perd 0,1 % par trade perd 1 % par trade avec un levier de 10."},
      ],
      "sources": []},
-    {"id": "decouvert", "title": "Vendre à découvert, l'objectif et la liquidation : comment jouent tes 15 bots",
+    {"id": "decouvert", "title": "Vendre à découvert, l'objectif et la liquidation : comment jouent tes bots",
      "minutes": 5,
      "blocks": [
          {"text": "Vendre à découvert, c'est parier sur la baisse : le bot vend d'abord, et rachète plus tard. Si le prix "
                   "a baissé entre-temps, il gagne la différence. Avec les contrats à terme (futures), c'est aussi simple "
-                  "qu'acheter : chaque technique de tes bots a été testée dans les deux sens, et le backtest a gardé, "
-                  "pour chaque bot, le sens qui marchait le mieux."},
+                  "qu'acheter : chaque technique est testée dans les deux sens sur chaque crypto, et seul un sens qui "
+                  "gagne sur tout l'historique récent devient un bot."},
          {"example": "Un bot vend à découvert SOL à 150 $. Le prix tombe à 145 $ (−3,3 %) : il rachète et gagne 3,3 %, "
                      "moins les frais. Si le prix monte à 155 $, il perd 3,3 %."},
          {"text": "Le stop d'un vendeur est donc au-dessus de son prix d'entrée : il coupe la perte si le prix monte. "
@@ -237,14 +239,15 @@ LESSONS = (
          {"text": "L'objectif (le « take-profit ») est un prix fixé d'avance où le bot encaisse. Ceux de tes bots qui en "
                   "ont un le placent à 2 fois la distance de leur stop (« 2R ») : quand il est touché, le gain vaut deux "
                   "fois la perte possible. Encaisser tôt évite de rendre un gain, mais coupe aussi les grands "
-                  "mouvements : le labo a testé chaque technique avec et sans objectif, et a gardé la meilleure."},
-         {"text": "Tes 15 bots misent tout leur capital fictif à chaque trade, avec le levier de leur équipe (×1 en long "
+                  "mouvements : chaque technique est testée avec et sans objectif, et seule une version gagnante devient "
+                  "un bot."},
+         {"text": "Tes bots misent tout leur capital fictif à chaque trade, avec le levier de leur horizon (×1 en long "
                   "terme, ×3 en court terme, ×5 en scalping, par défaut). Un stop touché à 2 % du prix avec un levier "
                   "de 5 coûte donc environ 10 % du capital du bot, frais compris."},
          {"text": "La liquidation : avec un levier de 5, une baisse d'environ 20 % (pour un acheteur) fait perdre toute "
                   "la mise. Tes bots réduisent leur levier quand leur stop est loin, pour que le stop passe toujours "
-                  "avant la liquidation ; seul un saut de prix brutal peut encore liquider un bot. Il est alors remplacé "
-                  "par le suivant du classement."},
+                  "avant la liquidation ; seul un saut de prix brutal peut encore liquider un bot. Il est alors arrêté, "
+                  "et sa combinaison mise de côté une journée."},
      ],
      "remember": ["Vendeur à découvert : il gagne si le prix baisse ; son stop est au-dessus de son prix d'entrée.",
                   "L'objectif « 2R » : encaisser quand le gain vaut 2 fois la distance du stop.",
@@ -352,11 +355,12 @@ LESSONS = (
                   "hasard. C'est le piège numéro un : la sur-optimisation."},
          {"example": "Pile ou face : 20 personnes lancent chacune une pièce 10 fois. L'une d'elles fera sans doute 8 "
                      "piles sur 10. Elle n'a aucun talent : le hasard s'est concentré sur elle."},
-         {"text": "Comment ton labo s'en protège : il coupe l'historique en trois (étude, validation, et un test final "
-                  "jamais regardé pour choisir), il durcit son seuil selon le nombre d'essais, et il compte tous les "
-                  "frais."},
-         {"text": "Ensuite vient l'argent fictif en direct, avec ton trader et les tournois : la vraie preuve, sur des "
-                  "données que personne n'a vues. Puis, après plusieurs semaines, le testnet. L'argent réel en "
+         {"text": "Comment tes bots s'en protègent : chaque re-test coupe l'historique en trois (étude, validation, et "
+                  "une période récente qui doit aussi gagner), compte tous les frais, et ne garde que des combinaisons "
+                  "gagnantes sur les trois. Ça ne suffit pas : sur des centaines d'essais, certaines passent par "
+                  "chance."},
+         {"text": "Ensuite vient l'argent fictif en direct : la vraie preuve, sur des données que personne n'a vues. Un "
+                  "bot qui perd nettement est arrêté. Puis, après plusieurs semaines, le testnet. L'argent réel en "
                   "dernier, et seulement avec ce que tu acceptes de perdre."},
      ],
      "remember": ["Essayer beaucoup de règles finit toujours par en trouver une qui a gagné par hasard.",
@@ -373,26 +377,26 @@ LESSONS = (
           "why": "Chaque étape attrape une erreur que la précédente ne voit pas."},
      ],
      "sources": ["zakamulin", "park_irwin"]},
-    {"id": "trades", "title": "Lire les trades de ton trader", "minutes": 4,
+    {"id": "trades", "title": "Lire les trades de tes bots", "minutes": 4,
      "blocks": [
-         {"text": "Chaque trade de ton trader a deux histoires : pourquoi il est entré (la règle, et la lecture du "
+         {"text": "Chaque trade d'un bot a deux histoires : pourquoi il est entré (sa règle, et les conditions du "
                   "graphique à ce moment-là) et ce qui s'est passé (le diagnostic, avec la leçon)."},
          {"figure": "diagnoses"},
          {"text": "Un trade perdant n'est pas une erreur : même une bonne stratégie perd souvent. Ce qui compte, c'est "
-                  "la moyenne sur beaucoup de trades. Les leçons du trader ne se lisent qu'avec assez de trades "
-                  "derrière : au moins 30 pour une stratégie."},
-         {"text": "Ce que ton trader ne fait jamais : changer ses réglages tout seul après une perte. Il arrête de jouer "
-                  "ce qui perd nettement (le gardien), et le labo teste les nouvelles idées. C'est comme ça qu'il "
-                  "apprend sans se raconter d'histoires."},
+                  "la moyenne sur beaucoup de trades. Les agents d'analyse disent dans quelles conditions une stratégie "
+                  "a gagné ou perdu, mais ne se lisent qu'avec assez de trades derrière : au moins 30."},
+         {"text": "Ce que tes bots ne font jamais : changer leurs réglages tout seuls après une perte. Un bot qui perd "
+                  "nettement est arrêté (le gardien), et chaque crypto est retestée toutes les 3 heures sur des "
+                  "données fraîches. C'est comme ça qu'ils apprennent sans se raconter d'histoires."},
      ],
      "remember": ["Deux histoires par trade : pourquoi il est entré, ce qui s'est passé.",
                   "Un trade perdant n'est pas une erreur ; la moyenne sur beaucoup de trades décide.",
-                  "Le trader coupe ce qui perd nettement, il ne bricole pas ses règles."],
+                  "Un bot qui perd nettement est arrêté ; personne ne bricole ses règles."],
      "quiz": [
          {"q": "Un trade monte de +3 %, puis redescend jusqu'au stop. Diagnostic ?",
           "choices": ["Gagnant, puis retourné", "Faux départ", "Scénario réussi"], "answer": 0,
           "why": "Il a été gagnant avant de se retourner : une prise de bénéfice partielle l'aurait protégé."},
-         {"q": "Une stratégie a perdu ses 3 premiers trades. Que fait le trader ?",
+         {"q": "Un bot a perdu ses 3 premiers trades. Que se passe-t-il ?",
           "choices": ["Rien de spécial : 3 trades ne disent rien, il attend d'en avoir assez", "Il change ses réglages",
                       "Il double la mise pour se refaire"], "answer": 0,
           "why": "Doubler la mise pour se refaire est la façon la plus sûre de tout perdre."},
@@ -417,24 +421,26 @@ def source(key: str) -> dict:
     return {"title": title, "url": url}
 
 
-def examples(data_dir: Path, limit: int = 6) -> list[dict]:
-    """Des trades récents du trader, un par diagnostic si possible, pour la dernière leçon."""
+def examples(data_dir: Path, limit: int = 6, files: int = 400) -> list[dict]:
+    """Des trades récents des bots (data/bots/essaim/), un par diagnostic si possible, pour la dernière leçon."""
     trades = []
-    for name in ("compte.json", "rejeu.json"):
+    for path in sorted((data_dir / "bots" / "essaim").glob("*.json"))[:files]:
         try:
-            state = json.loads((data_dir / "trader" / name).read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            continue
-        for t in reversed(state.get("trades") or []):
-            if t.get("diagnosis"):
-                trades.append({**t, "replay": bool(state.get("replay"))})
+            bot = json.loads(path.read_text(encoding="utf-8"))
+            spec = bot["spec"]
+            play = f"{spec['technique']} ({spec['timeframe']}, {'achat' if spec['side'] == 'long' else 'vente'})"
+            for t in (bot.get("book") or {}).get("trades") or []:
+                if t.get("diagnosis"):
+                    trades.append({"symbol": spec["symbol"], "play": play, "net": t["net"], "exit_ts": t["exit_ts"],
+                                   "diagnosis": t["diagnosis"]})
+        except (OSError, ValueError, KeyError, TypeError):
+            continue  # un fichier en train d'être réécrit, ou d'une ancienne version
     picked, seen = [], set()
-    for t in trades:
+    for t in sorted(trades, key=lambda t: -t["exit_ts"]):
         kind = t["diagnosis"].get("kind")
         if kind not in seen:
             seen.add(kind)
-            picked.append({"symbol": t["symbol"], "play": t["play"], "net": t["net"], "why": t.get("why"),
-                           "diagnosis": t["diagnosis"], "replay": t["replay"], "exit_time": t.get("exit_time")})
+            picked.append({**t, "replay": False})
         if len(picked) >= limit:
             break
     return picked

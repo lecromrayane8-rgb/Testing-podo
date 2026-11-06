@@ -128,7 +128,7 @@ COMBOS: dict[str, StrategyParams] = {
     "Bollinger cassure 20/2 + compression": StrategyParams(strategy_type="bollinger_cassure", trend_period=0,
                                                            **TREND, **SQUEEZE),
 }
-# Sauter sur un mouvement soudain (ce que montre le radar) : seuils ronds fixés d'avance, pas ajustés sur les
+# Sauter sur un mouvement soudain : seuils ronds fixés d'avance, pas ajustés sur les
 # données. Revente sous le plus bas des 5 bougies précédentes, stop à 2 ATR, et au plus 20 bougies en position.
 JUMP = {"strategy_type": "impulsion", "trend_period": 0, "breakout_exit_period": 5, "stop_atr_mult": 2.0,
         "max_bars_in_trade": 20}

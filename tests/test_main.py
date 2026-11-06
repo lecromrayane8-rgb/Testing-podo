@@ -526,36 +526,24 @@ def test_without_a_retained_strategy_the_replay_has_nothing_to_show(tmp_path, mo
     assert "rien à rejouer" in caplog.text
 
 
-def test_the_fleet_command_chooses_fifteen_bots_then_runs_them_in_paper(tmp_path, monkeypatch):
-    import tradingbot.fleet as fleet
-    from tradingbot.scanner import ScanResult
+def test_the_bots_command_runs_the_swarm_in_paper_money_once_at_a_time(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    rng = np.random.default_rng(5)
-    walks, asked = {}, []
-
-    def fake_load(exchange_id, symbol, timeframe, days, cache_dir, exchange=None):
-        asked.append((timeframe, days))
-        if (symbol, timeframe) not in walks:
-            walks[(symbol, timeframe)] = frame_from_closes(100 * np.exp(np.cumsum(rng.normal(0.0002, 0.01, 900))))
-        return walks[(symbol, timeframe)]
-
-    fast = tuple(fleet.Section(s.key, s.title, s.timeframes, s.leverage, s.days, 5, ("Cassure 20/10", "Supertrend 10/3"),
-                               s.blurb) for s in fleet.SECTIONS)
-    monkeypatch.setattr(fleet, "SECTIONS", fast)
-    monkeypatch.setattr(fleet, "SECTION_KEYS", {s.key: s for s in fast})
-    monkeypatch.setattr(main, "FLEET_SECTIONS", fast)
-    monkeypatch.setattr(main, "load_or_fetch", fake_load)
+    monkeypatch.setenv("FLOTTE_CRYPTOS", "25")
     monkeypatch.setattr(main, "make_exchange", lambda exchange_id: None)
-    monkeypatch.setattr(main, "fleet_universe", lambda exchange, coins, hot: [
-        ScanResult(f"C{k}/USDT", 0.05, 1e8, 0.01) for k in range(6)])
-    assert main.main(["flotte", "--choisir", "--coeurs", "1"]) == 0
-    assert ("1m", 10) in asked and ("1d", 1500) in asked  # chaque équipe a son historique
-    selection = json.loads((tmp_path / "data" / "bots" / "selection.json").read_text(encoding="utf-8"))
-    assert [len(s["bots"]) for s in selection["sections"]] == [5, 5, 5]
+    monkeypatch.setattr(main, "keep_awake", lambda: None)
     runs = []
-    monkeypatch.setattr(main, "run_fleet", lambda f, seconds, once, reload: runs.append((f, reload())))
-    assert main.main(["flotte"]) == 0
-    fleet_, reloaded = runs[0]
-    assert sum(1 for s in fleet_.state["slots"] if s["bot"]) == 15 and reloaded["id"] == selection["id"]
-    assert main.main(["flotte"]) == 1  # ils tournent déjà : pas deux fois (le dernier tour est récent)
+
+    def fake_run(swarm, seconds, once):
+        runs.append((swarm, seconds, once))
+        assert main.fleet_running(tmp_path / "data" / "bots")  # le signal de vie est écrit avant le premier tour
+
+    monkeypatch.setattr(main, "run_swarm", fake_run)
+    assert main.main(["flotte", "--une-fois", "--secondes", "3"]) == 0
+    swarm, seconds, once = runs[0]
+    assert once and seconds == 3 and swarm.settings.coins == 25 and swarm.settings.max_bots == 25 * 8
+    assert swarm.tester is not None and swarm.mood is main.fetch_mood
+    assert main.main(["flotte"]) == 1  # ils tournent déjà (le signal de vie est récent) : jamais deux fois
+    swarm.release()
+    monkeypatch.setenv("FLOTTE_LEVIER_COURT", "50")
+    assert main.main(["flotte"]) == 1  # réglage hors bornes : refusé avec une explication

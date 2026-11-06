@@ -28,14 +28,23 @@ def test_the_school_links_its_lessons_and_shows_real_trades(tmp_path):
     assert all(l["next"] == n["id"] for l, n in zip(lessons, lessons[1:])) and lessons[-1]["next"] is None
     assert all(s["url"].startswith("https://scispace.com/") for l in lessons for s in l["sources"])
     assert page["examples"] == [] and page["kinds"] == KINDS
-    (tmp_path / "trader").mkdir()
-    trades = [{"symbol": "SOL/USDT", "play": "Rebond sur support (4h)", "net": -0.012, "why": "rebond",
-               "diagnosis": {"kind": "faux_depart", "title": "Faux départ", "text": "…", "lesson": "…"}},
-              {"symbol": "BTC/USDT", "play": "Momentum 28 (1d)", "net": 0.05, "why": "tendance",
-               "diagnosis": {"kind": "gagne", "title": "Scénario réussi", "text": "…", "lesson": "…"}},
-              {"symbol": "ETH/USDT", "play": "Momentum 28 (1d)", "net": 0.02, "why": "tendance",
-               "diagnosis": {"kind": "gagne", "title": "Scénario réussi", "text": "…", "lesson": "…"}}]
-    (tmp_path / "trader" / "rejeu.json").write_text(json.dumps({"replay": True, "trades": trades}), encoding="utf-8")
+    folder = tmp_path / "bots" / "essaim"
+    folder.mkdir(parents=True)
+
+    def bot(name, symbol, technique, trades):
+        spec = {"section": "court", "symbol": symbol, "timeframe": "1h", "technique": technique, "side": "long",
+                "target_r": 0.0, "leverage": 3.0}
+        (folder / name).write_text(json.dumps({"spec": spec, "book": {"trades": trades}}), encoding="utf-8")
+
+    def trade(ts, net, kind, title):
+        return {"exit_ts": ts, "net": net, "diagnosis": {"kind": kind, "title": title, "text": "…", "lesson": "…"}}
+
+    bot("a.json", "SOL/USDT", "Rebond sur support", [trade(1, -0.012, "faux_depart", "Faux départ")])
+    bot("b.json", "BTC/USDT", "Momentum 28", [trade(2, 0.05, "gagne", "Scénario réussi"),
+                                             trade(3, 0.02, "gagne", "Scénario réussi")])
+    (folder / "c.json").write_text("{en train d'être réécrit", encoding="utf-8")  # ignoré, sans planter
     shown = school(tmp_path)["examples"]
     assert [e["diagnosis"]["kind"] for e in shown] == ["gagne", "faux_depart"]  # un exemple par diagnostic
-    assert shown[0]["symbol"] == "ETH/USDT" and all(e["replay"] for e in shown)  # les plus récents d'abord
+    assert shown[0]["net"] == 0.02 and shown[0]["play"] == "Momentum 28 (1h, achat)"  # les plus récents d'abord
+    assert shown[1]["symbol"] == "SOL/USDT" and not any(e["replay"] for e in shown)
+    assert not any("ton trader" in str(lesson) for lesson in LESSONS)  # l'école parle des bots du site

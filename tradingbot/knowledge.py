@@ -150,12 +150,11 @@ ENTRIES = (
      "sources": ("caporale_overreactions",)},
     {"key": "impulsion", "family": "impulsion", "title": "Impulsions : sauter sur un mouvement",
      "group": "Court terme",
-     "measures": "La hausse sur les N dernières bougies, par exemple +1 % en 5 minutes : ce que le radar marque en jaune.",
+     "measures": "La hausse sur les N dernières bougies, par exemple +1 % en 5 minutes : un mouvement soudain.",
      "reading": "Le bot achète à la bougie où le mouvement apparaît, et revend quand il s'essouffle.",
      "research": "Un jour de rendement anormal tend à continuer dans le même sens jusqu'à la fin de ce jour (Caporale et "
                  "Plastun 2020). Mais en intraday, frais et glissement mangent l'avantage : sur le Bitcoin, trader en 5 "
-                 "minutes fait moins bien qu'en jours (Resta et al.). Le journal des mouvements jaunes du radar le "
-                 "mesure en direct.",
+                 "minutes fait moins bien qu'en jours (Resta et al.). Les bots le mesurent en direct, frais compris.",
      "sources": ("caporale_momentum", "resta")},
     {"key": "support", "family": "support", "title": "Supports : acheter un rebond sur un plancher",
      "group": "Supports et résistances",
@@ -179,6 +178,71 @@ ENTRIES = (
                  "1897 à 1986, frais non comptés (Brock, Lakonishok et LeBaron), mais presque plus sur les actions "
                  "américaines de 1990 à 2004 (Marshall, Qian et Young).",
      "sources": ("osler_2003", "brock", "marshall")},
+    {"key": "ema_croisement", "family": "ema_croisement", "title": "Moyennes exponentielles 9 et 21",
+     "group": "Suivre une tendance",
+     "measures": "Deux moyennes qui donnent plus de poids aux dernières clôtures : la rapide (9) suit le prix de près, la "
+                 "lente (21) montre la direction.",
+     "reading": "La rapide passe au-dessus de la lente : la hausse prend le dessus (en dessous : la baisse).",
+     "research": "La règle de scalping la plus partagée sur les réseaux. Les études trouvent que les règles de tendance "
+                 "ont le mieux résisté en crypto, mais que les frais mangent l'essentiel en très court terme.",
+     "sources": ("hudson_urquhart",)},
+    {"key": "vwap", "family": "vwap", "title": "VWAP : le prix moyen des échanges", "group": "Suivre une tendance",
+     "measures": "Le prix moyen auquel tout le monde a échangé sur les dernières bougies, pondéré par le volume.",
+     "reading": "Au-dessus du VWAP, les acheteurs ont la main ; le bot y ajoute la moyenne exponentielle 9 au-dessus de "
+                "la 21 pour confirmer.",
+     "research": "Très suivi par les traders et les gros acteurs, ce qui en fait un niveau qui compte. Aucune étude solide "
+                 "ne montre qu'il rapporte seul après frais : c'est au labo du bot de juger.",
+     "sources": ("hudson_urquhart",)},
+    {"key": "stochastique", "family": "stochastique", "title": "Stochastique : sortir de la survente",
+     "group": "Acheter un repli",
+     "measures": "Où se trouve la clôture entre le plus bas et le plus haut des 14 dernières bougies, de 0 à 100.",
+     "reading": "Sous 20, le prix est collé à ses plus bas ; quand la ligne remonte en croisant sa moyenne, un rebond "
+                "s'amorce.",
+     "research": "Les indicateurs à contre-tendance ont en général moins bien résisté que les règles de tendance en "
+                 "crypto : à ne garder que si le test en direct le confirme.",
+     "sources": ("hudson_urquhart", "caporale_overreactions")},
+    {"key": "keltner", "family": "keltner", "title": "Canal de Keltner", "group": "Suivre une tendance",
+     "measures": "Une moyenne exponentielle entourée d'un canal large de 2 fois la taille moyenne des bougies (ATR).",
+     "reading": "Une clôture au-dessus du canal signale un mouvement inhabituellement fort ; le bot sort sous la "
+                "moyenne.",
+     "research": "Cousin des cassures de canal et des bandes de Bollinger, qui ont donné les meilleurs résultats des "
+                 "règles techniques testées sur le Bitcoin, avant frais surtout.",
+     "sources": ("hudson_urquhart",)},
+    {"key": "adx", "family": "adx", "title": "ADX et DI : la force de la tendance", "group": "Suivre une tendance",
+     "measures": "Le DI+ et le DI− mesurent la force des hausses et des baisses ; l'ADX, la force de la tendance (au-dessus "
+                 "de 25 : une vraie tendance).",
+     "reading": "Le bot achète quand le DI+ passe devant le DI− dans une tendance forte, et sort quand le DI− repasse "
+                "devant.",
+     "research": "Utilisé surtout comme filtre pour éviter les marchés sans direction ; son auteur lui-même prévient que "
+                 "ces règles gagnent rarement mais longtemps.",
+     "sources": ("hudson_urquhart",)},
+    {"key": "psar", "family": "psar", "title": "Parabolic SAR", "group": "Suivre une tendance",
+     "measures": "Des points qui suivent le prix en accélérant, sous lui en tendance haussière, au-dessus en baisse.",
+     "reading": "Les points passent sous le prix : le bot achète ; ils repassent au-dessus : il sort.",
+     "research": "Dans un test sur cinq ans de devises, utilisé seul, il a perdu de l'argent : il se retourne trop souvent "
+                 "quand le marché hésite. Gardé ici pour que le labo en direct le juge sur chaque crypto.",
+     "sources": ("hudson_urquhart",)},
+    {"key": "ichimoku", "family": "ichimoku", "title": "Ichimoku : le nuage", "group": "Suivre une tendance",
+     "measures": "Un « nuage » tracé à partir des plus hauts et des plus bas passés, et deux lignes (Tenkan, Kijun) qui "
+                 "résument la tendance courte et moyenne.",
+     "reading": "Au-dessus du nuage avec la Tenkan au-dessus de la Kijun : tendance haussière confirmée.",
+     "research": "Parmi les indicateurs les mieux classés d'un grand test sur les devises, sans période hors échantillon : "
+                 "une piste, pas une preuve.",
+     "sources": ("hudson_urquhart",)},
+    {"key": "zscore", "family": "zscore", "title": "Écart à la moyenne (z-score)", "group": "Acheter un repli",
+     "measures": "De combien d'écarts-types le prix s'est éloigné de sa moyenne des 20 dernières bougies.",
+     "reading": "À plus de 2 écarts-types sous la moyenne, le prix est tombé loin et vite ; le bot parie sur un retour vers "
+                "la moyenne.",
+     "research": "En crypto, parier sur le retournement après un excès n'a pas rapporté une fois testé par un robot : à "
+                 "surveiller de près.",
+     "sources": ("caporale_overreactions",)},
+    {"key": "heikin", "family": "heikin", "title": "Bougies Heikin-Ashi", "group": "Suivre une tendance",
+     "measures": "Des bougies lissées (moyennes de l'ouverture, du plus haut, du plus bas et de la clôture) qui gomment "
+                 "le bruit.",
+     "reading": "Plusieurs bougies lissées vertes de suite : la hausse s'installe ; la première rouge : le bot sort.",
+     "research": "Très populaire sur les réseaux sociaux, peu étudié sérieusement : c'est une autre façon de suivre la "
+                 "tendance, que le labo en direct juge crypto par crypto.",
+     "sources": ("hudson_urquhart",)},
     {"key": "volume", "uses": "volume_mult", "title": "Volume et attention", "group": "Filtres d'achat",
      "measures": "Le volume échangé pendant la bougie, comparé à sa moyenne.",
      "reading": "Un mouvement suivi par deux ou trois fois plus d'échanges que d'habitude a des acheteurs derrière lui.",
