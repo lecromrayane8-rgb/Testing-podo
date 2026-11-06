@@ -124,3 +124,23 @@ def test_trades_record_what_the_strategy_caught_before_costs(random_walk):
     pairs = [(t, f) for t, f in zip(trades, free) if t.reason != "stop" and f.reason != "stop"]
     assert len(pairs) > 10
     assert [t.gross_return for t, _ in pairs] == pytest.approx([f.return_pct for _, f in pairs])
+
+
+def test_futures_pay_their_funding_for_the_time_held():
+    import math as _math
+    from tradingbot.execution import FUTURES, ExecutionParams
+    from tradingbot.strategy import StrategyParams
+    closes = [100.0] * 30 + [101.0 + i for i in range(40)] + [140.0 - 2 * i for i in range(20)]
+    strat = StrategyParams(strategy_type="cassure", breakout_period=20, breakout_exit_period=5, trend_period=0,
+                           atr_period=5, stop_atr_mult=50, max_bars_in_trade=0)
+    free = run_backtest(frame_from_closes(closes), strat, execution=ExecutionParams(fee_rate=0, slippage=0))
+    paid = run_backtest(frame_from_closes(closes), strat, execution=FUTURES, explain=True)
+    assert free.trades and paid.trades and all(t.funding == 0 for t in free.trades)
+    t = paid.trades[0]
+    hours = (t.exit_time - t.entry_time).total_seconds() / 3600
+    assert t.funding == pytest.approx(t.qty * t.entry_price * FUTURES.funding_rate_8h * hours / 8)
+    assert t.proceeds == pytest.approx(t.qty * t.exit_price * (1 - FUTURES.fee_rate) - t.funding)
+    assert t.mfe >= t.gross_return and t.mae <= 0.01 and t.context["sentences"]  # le trade expliqué
+    assert not _math.isnan(t.stop) and t.stop < t.entry_price
+    with pytest.raises(ValueError, match="FUNDING_RATE_8H"):
+        ExecutionParams(funding_rate_8h=-0.001)
