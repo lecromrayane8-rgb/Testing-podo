@@ -115,6 +115,7 @@ def read_chart(df: pd.DataFrame, fees: float = DEFAULT_FEES, window: int = 5, lo
     if len(df) > 15 and math.isfinite(r.iloc[-1]):
         value = float(r.iloc[-1])
         out["rsi"] = value
+        value = round(value)  # les seuils jugent le nombre affiché : « 70 » est bien au seuil de 70
         if value >= 70:
             say(f"RSI à {value:.0f} : les acheteurs ont beaucoup poussé (au-dessus de 70, on dit « suracheté » ; un "
                 "repli devient plus probable, sans certitude).")

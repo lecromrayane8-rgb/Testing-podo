@@ -457,6 +457,7 @@ def summary(state: dict | None) -> dict:
         "win_rate": wins / len(closed) if closed else None, "lessons": learned[:8],
         "playbook": state.get("playbook") or [], "eliminated": state.get("eliminated") or {},
         "history": state.get("history") or [], "skipped": (state.get("skipped") or [])[-5:],
+        "notice": state.get("notice"),
         "universe": state.get("universe") or [],
     }
 

@@ -469,3 +469,22 @@ def test_the_trader_settings_stay_in_paper_money_and_within_bounds():
                      ("TRADER_POSITIONS", "2.5"), ("TRADER_COINS", "0")]:
         with pytest.raises(ValueError):
             clean_value(fields[key], bad)
+
+
+def test_the_school_and_the_news_are_served_to_the_page(server):
+    from tests.test_news import RSS, fng_payload
+    from tradingbot.news import FEEDS, FNG_URL
+    s, base = server
+    school = json.loads(request(base, "/api/ecole")[1])
+    assert len(school["lessons"]) >= 12 and school["lessons"][0]["quiz"]
+    pages = {FEEDS[0][1]: RSS, FNG_URL: json.dumps(fng_payload([40] * 400))}
+    s.news.get = lambda url: pages[url] if url in pages else (_ for _ in ()).throw(ConnectionError("hors ligne"))
+    s.news.closes = None
+    radar_ready(s, symbols=("BTC/USDT", "SOL/USDT"), price=103.0)
+    request(base, "/api/actualite")  # le premier appel lance la relève en arrière-plan
+    assert wait(lambda: json.loads(request(base, "/api/actualite")[1])["news"])
+    page = json.loads(request(base, "/api/actualite")[1])
+    assert page["fng"]["value"] == 40 and page["fng"]["zone"] == "peur"
+    assert any("Cointelegraph" in e for e in page["errors"])  # un site en panne est signalé, pas fatal
+    btc = next(n for n in page["news"] if "BTC" in n["coins"])
+    assert btc["moves"][0]["coin"] == "BTC"  # prix à la publication inconnu ici : le mouvement reste vide

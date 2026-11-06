@@ -52,6 +52,8 @@ from .indicators import sma
 from .lab import ALL_VARIANTS, FUTURES_LAB_FILE, LAB_FILE, LAB_FILES, LIMIT_LAB_FILE, PROMISING, SHORT_LAB_FILE, load_lab
 from .prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, board_to_dict, connect, label, short_error, snapshot
 from .knowledge import knowledge
+from .news import NewsSource, reaction
+from .school import school
 from .moves import OPTIONS, STUDY_DAYS, round_trip_cost, study
 from .portfolio import PORTFOLIO_DIR, PORTFOLIO_LAB_FILE, RETAINED as PORTFOLIO_RETAINED, load as load_portfolio_lab
 from .radar import JOURNAL_FILE, STRONG, WINDOWS, MoveJournal, Radar, journal_stats
@@ -928,6 +930,9 @@ class Site:
         self.desk_market = Market(make_exchange, exchange_id, data_dir / "cache")
         self.studies = Studies(self._study)
         self.charts = Charts(make_exchange, exchange_id)
+        self.news = NewsSource(data_dir / "cache", closes=self._btc_closes, known=self._known_bases)
+        self.news_poller = Poller(self.news.fetch, every=600.0, idle=900.0)  # tant que la page Actualité est ouverte
+        self.pub_prices: dict[tuple[str, str], float | None] = {}
         self.code = self._code() if lan_address else None
 
     def start_background(self) -> None:
@@ -992,6 +997,55 @@ class Site:
     def trials(self) -> dict:
         prices = {s: p for s in self.desk.symbols() if (p := self.radar.price(s))}
         return self.desk.summary(prices)
+
+    def _btc_closes(self):
+        """Les clôtures journalières du Bitcoin (cache du labo long terme), pour l'étude de l'indice peur et avidité."""
+        settings = self.settings()
+        exchange_id = settings.exchange if settings else "binance"
+        df = load_or_fetch(exchange_id, "BTC/USDT", "1d", 3000, self.data_dir() / "cache", self.make_exchange(exchange_id))
+        return df["close"].astype(float)
+
+    def _known_bases(self) -> set[str]:
+        with self.radar.lock:
+            return {s.split("/")[0] for s in self.radar.radar.info}
+
+    def _price_then(self, base: str, published: str | None) -> float | None:
+        """Le prix d'une crypto au moment d'une nouvelle (ouverture de la bougie de 5 min), gardé une fois trouvé."""
+        symbol = f"{base}/USDT"
+        key = (symbol, published or "")
+        if key in self.pub_prices:
+            return self.pub_prices[key]
+        price = None
+        try:
+            when = int(datetime.fromisoformat(published).timestamp() * 1000) if published else None
+            if when and self.radar.follows(symbol) and time.time() * 1000 - when < 3 * 86_400_000:
+                if self.charts.exchange is None:
+                    self.charts.exchange = self.make_exchange(self.charts.exchange_id)
+                rows = self.charts.exchange.fetch_ohlcv(symbol, "5m", since=when - when % 300_000, limit=1)
+                price = float(rows[0][1]) if rows else None
+        except Exception as exc:  # une crypto qui ne répond pas : pas de mouvement affiché pour elle
+            log.debug("Prix de %s à la publication introuvable : %s", symbol, short_error(exc))
+        self.pub_prices[key] = price
+        return price
+
+    def news_view(self) -> dict:
+        data, error, updated = self.news_poller.get()
+        if not data:
+            return {"news": [], "fng": None, "errors": [error] if error else [], "updated": iso(updated)}
+        news = [dict(n) for n in data["news"]]
+        budget = [25]  # au plus 25 recherches de prix par demande ; les suivantes viendront aux demandes d'après
+
+        def then(base, published):
+            key = (f"{base}/USDT", published or "")
+            if key not in self.pub_prices:
+                if budget[0] <= 0:
+                    return None
+                budget[0] -= 1
+            return self._price_then(base, published)
+
+        reaction(news, then, lambda base: self.radar.price(f"{base}/USDT"))
+        return {"news": news, "fng": data["fng"], "errors": data["errors"] + ([error] if error else []),
+                "updated": iso(updated)}
 
     def trader_settings(self):
         from .trader import TraderSettings, settings_from_env
@@ -1327,6 +1381,10 @@ class Handler(BaseHTTPRequestHandler):
             self.json(knowledge(self.site.data_dir()))
         elif url.path == "/api/trader":
             self.json(self.site.trader_view())
+        elif url.path == "/api/ecole":
+            self.json(school(self.site.data_dir()))
+        elif url.path == "/api/actualite":
+            self.json(self.site.news_view())
         elif url.path == "/api/marches":
             self.json({"markets": self.site.radar.top(60), "timeframes": list(Charts.TIMEFRAMES)})
         elif url.path == "/api/graphique":

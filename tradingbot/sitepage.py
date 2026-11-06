@@ -124,6 +124,67 @@ table.options td:first-child { white-space: normal; min-width: 200px; }
   background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25); font-size: 14px; }
 .toast.bad { border-color: var(--critical); }
+.tabs .more { background: none; border: 0; padding: 8px 12px; color: var(--text-secondary); font: inherit;
+  font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; }
+.tabs .more[aria-expanded="true"] { color: var(--text-primary); }
+.tabs .more::after { content: " ▾"; }
+.tabs-more { margin-top: 0; padding-bottom: 2px; }
+.tabs[hidden] { display: none; }
+.tabs-more a { font-size: 13px; }
+.section-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 8px; }
+.section-head h2 { margin: 0; }
+.trade { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 16px;
+  margin-bottom: 10px; }
+.trade p { margin: 4px 0 0; }
+.trade .head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.trade .head h3 { margin: 0; font-size: 15px; }
+.trade .result { font-weight: 700; font-variant-numeric: tabular-nums; }
+.trade details { margin-top: 6px; }
+.trade summary { cursor: pointer; color: var(--text-secondary); font-size: 13px; }
+.trade ul { margin: 6px 0 0; padding-left: 18px; color: var(--text-secondary); font-size: 14px; }
+.lesson-line { margin: 0 0 6px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 6px 0 0; color: var(--text-secondary); font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; }
+.swatch.line { height: 3px; border-radius: 2px; }
+ul.reading { margin: 0; padding-left: 18px; }
+ul.reading li { margin-bottom: 6px; max-width: 860px; }
+select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--page);
+  color: var(--text-primary); max-width: 220px; }
+.lesson { max-width: 820px; }
+.lesson h1 { margin-bottom: 4px; }
+.lesson p { font-size: 16px; line-height: 1.6; }
+.lesson .example { background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--series-1);
+  border-radius: 10px; padding: 10px 14px; }
+.lesson .example strong { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--text-secondary); margin-bottom: 2px; }
+.lesson .remember { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px 10px 32px; }
+.quiz { margin-top: 12px; }
+.quiz .q { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px;
+  margin-bottom: 10px; }
+.quiz .q p { margin: 0 0 8px; font-weight: 600; }
+.quiz .choices { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.quiz .choices button { text-align: left; }
+.quiz .choices button[aria-pressed="true"].right { border-color: var(--good); }
+.quiz .choices button[aria-pressed="true"].wrong { border-color: var(--critical); }
+.quiz .why { margin-top: 8px; color: var(--text-secondary); font-size: 14px; }
+.sim { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin: 12px 0; }
+.sim label { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; margin-bottom: 10px; font-size: 14px; }
+.sim input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
+.sim .out { font-size: 16px; margin: 6px 0 0; }
+.sim .question { color: var(--text-secondary); font-size: 14px; margin: 0 0 10px; }
+.done-mark { color: var(--good); font-weight: 700; }
+.news-item { padding: 10px 0; border-bottom: 1px solid var(--grid); }
+.news-item a { color: var(--text-primary); font-weight: 600; text-decoration: none; }
+.news-item a:hover { text-decoration: underline; }
+.news-item .meta-line { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+.coin { display: inline-flex; gap: 4px; align-items: baseline; margin-right: 10px; font-size: 13px; }
+.meter { position: relative; height: 10px; border-radius: 999px; background: var(--grid); margin: 14px 0 6px; }
+.meter .mark { position: absolute; top: -5px; width: 4px; height: 20px; border-radius: 2px; background: var(--text-primary);
+  transform: translateX(-2px); }
+.meter-scale { display: flex; justify-content: space-between; color: var(--text-secondary); font-size: 12px; }
+.fng-value { font-size: 40px; font-weight: 600; margin: 0; line-height: 1.1; }
 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px;
   vertical-align: 0.05em; }
 .dot-live { animation: pulse 1.6s ease-in-out infinite; }
@@ -139,6 +200,13 @@ BODY = """
   </div>
   <nav class="tabs" aria-label="Pages du site">
     <a href="#accueil" data-view="accueil">Accueil</a>
+    <a href="#graphiques" data-view="graphiques">Graphiques</a>
+    <a href="#ecole" data-view="ecole">École</a>
+    <a href="#actualite" data-view="actualite">Actualité</a>
+    <button type="button" class="more" id="more-toggle" aria-expanded="false" aria-controls="more-tabs">Plus</button>
+  </nav>
+  <nav class="tabs tabs-more" id="more-tabs" aria-label="Autres pages" hidden>
+    <a href="#labos" data-view="labos">Labos<span class="long"> et actions</span></a>
     <a href="#radar" data-view="radar">Radar<span class="long"> des mouvements</span></a>
     <a href="#prix" data-view="prix">Prix</a>
     <a href="#essais" data-view="essais"><span class="long">Mes essais</span><span class="short">Essais</span></a>
@@ -157,9 +225,61 @@ BODY = """
       <div class="row" id="next-actions"></div>
     </div>
     <div id="settings-warning" class="warn" hidden></div>
+    <section id="trader-section">
+      <div class="section-head"><h2>Ton trader fictif</h2>
+        <div class="seg" role="group" aria-label="Compte affiché" id="trader-mode">
+          <button type="button" data-mode="live" aria-pressed="true">En direct</button>
+          <button type="button" data-mode="replay" aria-pressed="false">Rejeu sur l'historique</button>
+        </div></div>
+      <p class="meta" id="trader-intro">Chargement…</p>
+      <div class="trial-kpis" id="trader-kpis"></div>
+      <div id="trader-curve"></div>
+      <h3 class="group-title">Positions ouvertes</h3><div id="trader-positions"></div>
+      <h3 class="group-title">Derniers trades, expliqués</h3><div id="trader-trades"></div>
+      <h3 class="group-title">Ce que le trader a appris</h3><div id="trader-lessons"></div>
+      <h3 class="group-title">Ses stratégies</h3><div id="trader-plays" class="cards"></div>
+    </section>
     <section><h2>En cours et récent</h2><div id="tasks" class="cards"></div></section>
+  </div>
+  <div id="view-labos" class="view" hidden>
+    <h1>Labos et actions</h1>
+    <p class="meta">Ce que les labos ont trouvé sur l'historique réel, ce qui tourne en argent fictif, et toutes les actions
+      du bot. Le plus simple reste le pilote automatique, sur l'accueil.</p>
     <section><h2>Résultats</h2><div id="results" class="cards"></div></section>
     <section><h2>Toutes les actions</h2><div id="actions"></div></section>
+  </div>
+  <div id="view-graphiques" class="view" hidden>
+    <h1>Graphiques</h1>
+    <p class="meta">Chaque crypto comme un trader la lit : les bougies, les supports (en dessous) et les résistances
+      (au-dessus), les moyennes sur 50 et 200 bougies, et ce qu'en disent les règles de ton trader. Une lecture pour
+      comprendre : le trader n'achète que sur ses règles testées.</p>
+    <div class="controls">
+      <label class="check" for="chart-symbol">Crypto <select id="chart-symbol"></select></label>
+      <div class="seg" role="group" aria-label="Unité de temps" id="chart-tf"></div>
+    </div>
+    <p class="status-line" id="chart-status" aria-live="polite">Choisis une crypto.</p>
+    <div id="chart-box"></div>
+    <div class="legend" id="chart-legend"></div>
+    <section><h2>Ce que voit un trader</h2><ul class="reading" id="chart-reading"></ul></section>
+    <section><h2>Ce que disent les règles de ton trader</h2><div id="chart-plays" class="cards"></div></section>
+  </div>
+  <div id="view-ecole" class="view" hidden>
+    <div id="school-home">
+      <h1>L'école du trading</h1>
+      <p class="meta">Des leçons courtes, dans l'ordre : ce qu'est le trading, une crypto, un graphique, les supports,
+        le stop, le levier, les frais… Chacune finit par un mini-quiz. Rien ici n'est un conseil d'investissement.</p>
+      <div id="school-list" class="cards"></div>
+    </div>
+    <article id="lesson" class="lesson" hidden></article>
+  </div>
+  <div id="view-actualite" class="view" hidden>
+    <h1>Actualité</h1>
+    <p class="meta">Les derniers titres de CoinDesk, Cointelegraph et Decrypt, les cryptos qu'ils citent et ce que leur
+      prix a fait depuis la publication, et l'humeur du marché. Pour comprendre ce qui se passe : ton trader ne trade pas
+      sur les titres (quand on les lit, le mouvement a souvent déjà eu lieu).</p>
+    <section><h2>L'humeur du marché</h2><div id="fng-box"><p class="muted">Chargement…</p></div></section>
+    <section><h2>Derniers titres</h2><p class="status-line" id="news-status" aria-live="polite"></p>
+      <div id="news-list" class="news"></div></section>
   </div>
   <div id="view-radar" class="view" hidden>
     <h1>Radar des mouvements</h1>
@@ -266,16 +386,19 @@ BODY = """
 JS = r"""
 (() => {
   const $ = (sel) => document.querySelector(sel);
+  function typo(value) {  // à la française : jamais de « % » ou de « : » seul en début de ligne
+    return String(value).replace(/ ([%$»:;?!])/g, '\u00a0$1').replace(/« /g, '«\u00a0');
+  }
   function el(tag, attrs, ...children) {
     const node = document.createElement(tag);
     for (const [key, value] of Object.entries(attrs || {})) {
       if (value === null || value === undefined || value === false) continue;
       if (key === 'class') node.className = value;
-      else if (key === 'text') node.textContent = value;
+      else if (key === 'text') node.textContent = typo(value);
       else if (key.startsWith('on')) node.addEventListener(key.slice(2), value);
       else node.setAttribute(key, value === true ? '' : value);
     }
-    for (const child of children) if (child !== null && child !== undefined) node.append(child);
+    for (const child of children) if (child !== null && child !== undefined) node.append(typeof child === 'string' ? typo(child) : child);
     return node;
   }
   const HEADERS = {'Content-Type': 'application/json', 'X-Demande': 'site-du-bot'};
@@ -334,10 +457,12 @@ JS = r"""
   function cls(v) { return v > 0 ? 'up' : v < 0 ? 'down' : ''; }
 
   // --- navigation ---
-  const VIEWS = ['accueil', 'radar', 'prix', 'essais', 'savoir', 'tableau', 'journal', 'reglages'];
+  const VIEWS = ['accueil', 'graphiques', 'ecole', 'actualite', 'labos', 'radar', 'prix', 'essais', 'savoir', 'tableau',
+    'journal', 'reglages'];
   let view = 'accueil';
   function show(name) {
-    view = VIEWS.includes(name) ? name : 'accueil';
+    const parts = String(name || '').split('/'), sub = parts[1];
+    view = VIEWS.includes(parts[0]) ? parts[0] : 'accueil';
     for (const v of VIEWS) $('#view-' + v).hidden = v !== view;
     document.querySelectorAll('.tabs a').forEach(a => {
       if (a.dataset.view === view) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
@@ -345,7 +470,14 @@ JS = r"""
     if (view === 'tableau') showBoard(currentBoard);
     if (view === 'reglages') loadSettings();
     if (view === 'savoir') loadKnowledge();
-    last.radar = last.prices = last.journal = last.trials = 0;
+    if (MORE_VIEWS.includes(view)) setMore(true);
+    if (view === 'ecole') loadSchool(sub).catch(e => toast(e.message, true));
+    if (view === 'graphiques') {
+      chartControls();
+      loadMarkets().then(loadChart).catch(e => { $('#chart-status').textContent = e.message; });
+    }
+    last.radar = last.prices = last.journal = last.trials = last.trader = last.news = 0;
+    last.chart = Date.now();
   }
   window.addEventListener('hashchange', () => show(location.hash.slice(1)));
 
@@ -1022,8 +1154,522 @@ JS = r"""
     try { localStorage.setItem('theme', next); } catch (e) {}
   });
 
+  // --- nouvelles pages : le trader, les graphiques, l'école, l'actualité ---
+  const MORE_VIEWS = ['labos', 'radar', 'prix', 'essais', 'savoir', 'tableau', 'journal', 'reglages'];
+  const moreToggle = $('#more-toggle'), moreTabs = $('#more-tabs');
+  function setMore(open) { moreTabs.hidden = !open; moreToggle.setAttribute('aria-expanded', String(open)); }
+  moreToggle.addEventListener('click', () => setMore(moreTabs.hidden));
+  function signed(v, digits) {  // déjà en pourcentage
+    if (v === null || v === undefined || !isFinite(v)) return '—';
+    const s = Math.abs(v).toFixed(digits === undefined ? 2 : digits);
+    if (Number(s) === 0) return s.replace('.', ',') + ' %';
+    return (v > 0 ? '+' : MINUS) + s.replace('.', ',') + ' %';
+  }
+  function dec(v) { return v === null || v === undefined || !isFinite(v) ? '—' : (Math.round(v * 10) / 10).toLocaleString('fr-FR'); }
+  function coin(symbol) { return String(symbol || '').split('/')[0]; }
+  function spreadTicks(xs, k) {
+    if (xs.length < 2) return xs.slice();
+    const out = [];
+    for (let i = 0; i < k; i++) out.push(xs[0] + (xs[xs.length - 1] - xs[0]) * (i + 0.5) / k);
+    return out;
+  }
+  function dayLabel(ms) { return new Date(ms).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit'}); }
+  function monthLabel(ms) { return new Date(ms).toLocaleDateString('fr-FR', {month: 'short', year: '2-digit'}); }
+  function tickPrice(v, step) {
+    const d = Math.max(0, Math.min(8, -Math.floor(Math.log10(step || 1))));
+    return v.toLocaleString('fr-FR', {minimumFractionDigits: d, maximumFractionDigits: d});
+  }
+  function keepOpen(root, render) {  // un rafraîchissement ne referme pas ce que l'utilisateur a déplié
+    const open = new Set([...root.querySelectorAll('details[open]')].map(d => d.dataset.key));
+    render();
+    for (const d of root.querySelectorAll('details')) if (open.has(d.dataset.key)) d.open = true;
+  }
+
+  // --- le trader ---
+  let traderMode = 'live', traderData = null, allTrades = false;
+  $('#trader-mode').addEventListener('click', e => {
+    const b = e.target.closest('button[data-mode]');
+    if (!b) return;
+    traderMode = b.dataset.mode;
+    for (const x of $('#trader-mode').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b));
+    renderTrader();
+  });
+  async function refreshTrader() { traderData = await getJSON('/api/trader'); renderTrader(); }
+  function renderTrader() { if (traderData) keepOpen($('#trader-section'), drawTrader); }
+  function drawTrader() {
+    const t = traderMode === 'live' ? traderData.live : traderData.replay, cfg = traderData.settings;
+    const ids = ['#trader-kpis', '#trader-curve', '#trader-positions', '#trader-trades', '#trader-lessons', '#trader-plays'];
+    for (const id of ids) $(id).replaceChildren();
+    if (!t.exists) {
+      $('#trader-intro').textContent = traderMode === 'live'
+        ? 'Pas encore lancé. Dès qu\'un labo a retenu une stratégie, lance « Mon trader » : il la joue en argent fictif sur les '
+          + cfg.coins + ' cryptos les plus échangées, et t\'explique ici chaque achat et chaque vente.'
+        : 'Pas encore de rejeu. « Rejouer mon trader sur l\'historique » (page Labos et actions) montre en quelques minutes '
+          + 'ce qu\'il aurait fait ces derniers mois, trade par trade, avec les explications.';
+      return;
+    }
+    const s = t.settings || cfg;
+    const lev = s.profile === 'futures' ? 'levier jusqu\'à ' + dec(s.max_leverage) + ' (futures)' : 'sans levier (au comptant)';
+    $('#trader-intro').textContent = (traderMode === 'replay'
+      ? 'Rejoué sur l\'historique récent avec les mêmes règles : forcément flatteur, ce n\'est pas une preuve. '
+      : traderData.live.running ? 'Il tourne, en argent fictif. ' : 'À l\'arrêt : relance « Mon trader » pour qu\'il continue. ')
+      + 'Risque de ' + dec(100 * s.risk_per_trade) + ' % par trade, ' + lev + ', ' + s.max_positions + ' positions au plus.'
+      + (t.notice ? ' ' + t.notice : '');
+    $('#trader-kpis').append(
+      tile('Valeur du compte', usdt(t.value), 'au départ ' + usdt(t.start), true),
+      tile('Depuis le départ', signed(t.pnl_pct), t.created ? 'depuis le ' + when(t.created) : ''),
+      tile('Trades terminés', String(t.count), t.win_rate === null ? 'aucun encore' : Math.round(100 * t.win_rate) + ' % gagnants'),
+      tile('Positions ouvertes', t.positions.length + ' / ' + s.max_positions,
+        t.positions.length ? t.positions.map(p => coin(p.symbol)).join(', ') : 'aucune'));
+    if (t.history && t.history.length >= 2) {
+      const xs = t.history.map(h => Date.parse(h.t)), ys = t.history.map(h => h.value), box = $('#trader-curve');
+      box.append(lineChart({width: box.clientWidth || 700, xs: xs, ys: ys,
+        refs: [{y: t.start, label: 'Départ : ' + usdt(t.start), short: 'Départ'}], label: 'Valeur du compte fictif',
+        xTicks: spreadTicks(xs, 4), xTicksSmall: spreadTicks(xs, 3), xTick: dayLabel,
+        yTick: v => Math.round(v).toLocaleString('fr-FR'), endLabel: usdt(ys[ys.length - 1]),
+        endShort: Math.round(ys[ys.length - 1]).toLocaleString('fr-FR'),
+        tip: i => [when(new Date(xs[i]).toISOString()), usdt(ys[i])]}));
+    }
+    const positions = $('#trader-positions');
+    if (!t.positions.length) positions.append(el('p', {class: 'muted', text: traderMode === 'live'
+      ? 'Aucune position : le trader attend un signal de ses règles.' : 'Aucune position ouverte à la fin du rejeu.'}));
+    for (const p of t.positions) positions.append(positionCard(p));
+    const trades = $('#trader-trades'), shown = allTrades ? t.trades : t.trades.slice(0, 6);
+    if (!t.trades.length) trades.append(el('p', {class: 'muted', text: 'Pas encore de trade terminé.'}));
+    for (const x of shown) trades.append(tradeCard(x));
+    if (t.trades.length > shown.length) trades.append(el('button', {class: 'btn', type: 'button',
+      text: 'Voir les ' + (t.trades.length - shown.length) + ' autres trades', onclick: () => { allTrades = true; renderTrader(); }}));
+    const lessons = $('#trader-lessons');
+    if (!t.lessons.length) lessons.append(el('p', {class: 'muted', text: 'Pas encore de leçon : il faut des trades terminés.'}));
+    for (const l of t.lessons) lessons.append(el('p', {class: 'lesson-line', text: l.text}));
+    const plays = $('#trader-plays');
+    if (!t.playbook.length) plays.append(el('p', {class: 'empty-box', text: 'Aucune stratégie retenue par les labos pour l\'instant : le trader attend.'}));
+    for (const p of t.playbook) plays.append(el('article', {class: 'card'},
+      el('div', {class: 'card-head'}, el('h3', {text: p.key}), chip(p.status === 'prometteur' ? 'ok' : 'warn', p.status)),
+      el('p', {text: p.why}),
+      el('p', {class: 'muted', text: (p.lab || '') + (p.expectancy === null || p.expectancy === undefined ? ''
+        : ' · ' + signed(p.expectancy, 3) + ' par trade après frais dans le labo')})));
+    const cut = Object.entries(t.eliminated || {});
+    if (cut.length) plays.append(el('article', {class: 'card'}, el('h3', {text: 'Coupées par le gardien'}),
+      ...cut.map(([key, why]) => el('p', {class: 'muted', text: key.replace('|', ' sur ') + ' : ' + why}))));
+  }
+  function readingList(lines) { return lines && lines.length ? el('ul', {}, ...lines.map(x => el('li', {text: x}))) : null; }
+  function positionCard(p) {
+    return el('article', {class: 'trade'},
+      el('div', {class: 'head'}, el('h3', {text: coin(p.symbol) + ' · ' + p.play}),
+        el('span', {class: 'result ' + cls(p.pnl_pct), text: signed(p.pnl_pct)})),
+      el('p', {class: 'muted', text: 'Acheté le ' + when(p.entry_time) + ' à ' + price(p.entry_price) + ' · maintenant '
+        + price(p.last_price) + ' · stop à ' + price(p.stop) + ' (' + signed(-100 * p.risk, 1) + ') · levier ×' + dec(p.leverage)}),
+      el('p', {}, el('strong', {text: 'Pourquoi il est entré : '}), p.why || ''),
+      p.reading && p.reading.length ? el('details', {'data-key': 'p' + p.id},
+        el('summary', {text: 'Ce que montrait le graphique à l\'achat'}), readingList(p.reading)) : null,
+      el('div', {class: 'row'}, el('button', {class: 'btn', type: 'button', text: 'Voir le graphique',
+        onclick: () => openChart(p.symbol, p.timeframe)})));
+  }
+  function tradeCard(t) {
+    const d = t.diagnosis || {};
+    return el('article', {class: 'trade'},
+      el('div', {class: 'head'}, el('h3', {text: coin(t.symbol) + ' · ' + t.play}),
+        el('span', {class: 'result ' + cls(t.net), text: signed(100 * t.net) + ' · ' + (d.title || '')})),
+      el('p', {text: d.text || ''}),
+      d.lesson ? el('p', {class: 'muted'}, el('strong', {text: 'La leçon : '}), d.lesson) : null,
+      el('p', {class: 'muted', text: 'Acheté le ' + when(t.entry_time) + ' à ' + price(t.entry_price) + ', vendu le '
+        + when(t.exit_time) + ' à ' + price(t.exit_price) + ' (' + t.reason + ')'
+        + (t.leverage > 1.05 ? ' · levier ×' + dec(t.leverage) : '')}),
+      el('details', {'data-key': 't' + t.id + t.exit_time}, el('summary', {text: 'Pourquoi il est entré'}),
+        el('p', {text: t.why || ''}), readingList(t.reading)),
+      el('div', {class: 'row'}, el('button', {class: 'btn', type: 'button', text: 'Voir le graphique',
+        onclick: () => openChart(t.symbol, t.timeframe)})));
+  }
+
+  // --- les graphiques ---
+  const TFS = [['15m', '15 min'], ['1h', '1 h'], ['4h', '4 h'], ['1d', '1 jour']];
+  let chartSymbol = null, chartTf = '4h', chartData = null;
+  function chartControls() {
+    const seg = $('#chart-tf');
+    seg.replaceChildren(...TFS.map(([tf, label]) => el('button', {type: 'button', 'aria-pressed': String(tf === chartTf),
+      text: label, onclick: () => { chartTf = tf; chartControls(); loadChart(); }})));
+  }
+  async function loadMarkets() {
+    const data = await getJSON('/api/marches');
+    const list = data.markets.length ? data.markets : [{symbol: 'BTC/USDT'}];
+    chartSymbol = chartSymbol || (list.find(m => m.symbol === 'BTC/USDT') || list[0]).symbol;
+    const select = $('#chart-symbol');
+    select.replaceChildren(...list.map(m => el('option', {value: m.symbol, selected: m.symbol === chartSymbol,
+      text: coin(m.symbol) + (m.change_24h === null || m.change_24h === undefined ? '' : ' (' + signed(100 * m.change_24h, 1) + ' sur 24 h)')})));
+    if (!list.some(m => m.symbol === chartSymbol)) select.prepend(el('option', {value: chartSymbol, text: coin(chartSymbol), selected: true}));
+  }
+  $('#chart-symbol').addEventListener('change', e => { chartSymbol = e.target.value; loadChart(); });
+  function openChart(symbol, tf) {
+    chartSymbol = symbol;
+    if (TFS.some(x => x[0] === tf)) chartTf = tf;
+    location.hash = '#graphiques';
+  }
+  async function loadChart() {
+    if (!chartSymbol) return;
+    $('#chart-status').textContent = 'Chargement de ' + coin(chartSymbol) + '…';
+    try {
+      chartData = await getJSON('/api/graphique?symbole=' + encodeURIComponent(chartSymbol) + '&unite=' + chartTf);
+    } catch (e) { $('#chart-status').textContent = e.message; return; }
+    renderChart();
+  }
+  function chartLegend(d) {
+    const item = (cls_, color, text) => el('span', {}, el('span', {class: 'swatch ' + cls_, style: 'background:' + color}), text);
+    return [item('', 'var(--up)', 'bougie en hausse'), item('', 'var(--down)', 'bougie en baisse'),
+      item('line', 'var(--series-1)', 'moyenne 50'), item('line', 'var(--series-7)', 'moyenne 200'),
+      d.levels.some(z => z.kind === 'support') ? item('', 'var(--series-3)', 'support') : null,
+      d.levels.some(z => z.kind === 'resistance') ? item('', 'var(--series-2)', 'résistance') : null,
+      d.position ? item('line', 'var(--text-secondary)', 'ton achat et ton stop') : null,
+      d.trades && d.trades.length ? el('span', {text: '▲ achat · ▼ vente du trader'}) : null];
+  }
+  function renderChart() {
+    const d = chartData;
+    if (!d) return;
+    const tf = (TFS.find(x => x[0] === d.timeframe) || [0, d.timeframe])[1];
+    $('#chart-status').textContent = coin(d.symbol) + ' en bougies de ' + tf + ' · dernier prix ' + price(d.last) + ' · '
+      + d.levels.length + (d.levels.length > 1 ? ' zones touchées' : ' zone touchée') + ' au moins 2 fois';
+    const box = $('#chart-box');
+    box.replaceChildren(candleChart({...d, width: box.clientWidth || 900, label: 'Graphique de ' + coin(d.symbol) + ' en ' + tf}));
+    $('#chart-legend').replaceChildren(...chartLegend(d).filter(Boolean));
+    $('#chart-reading').replaceChildren(...d.reading.sentences.map(x => el('li', {text: x})));
+    const plays = $('#chart-plays');
+    plays.replaceChildren();
+    if (!d.plays.length) plays.append(el('p', {class: 'empty-box', text: 'Aucune stratégie de ton trader dans cette unité de temps. '
+      + 'Ses stratégies sont sur l\'accueil ; essaie leur unité de temps.'}));
+    const SIGNALS = {achat: ['ok', 'signal d\'achat'], vente: ['bad', 'signal de vente'], rien: ['idle', 'rien pour l\'instant']};
+    for (const p of d.plays) {
+      const [kind, label] = SIGNALS[p.signal] || SIGNALS.rien;
+      plays.append(el('article', {class: 'card'}, el('div', {class: 'card-head'}, el('h3', {text: p.key}), chip(kind, label)),
+        el('p', {text: p.why || ''})));
+    }
+  }
+  function tri(x, y, dir) { return 'M' + x + ',' + (y - 5 * dir) + 'L' + (x + 5) + ',' + (y + 4 * dir) + 'L' + (x - 5) + ',' + (y + 4 * dir) + 'Z'; }
+  function candleChart(o) {
+    const W = Math.max(300, Math.round(o.width)), small = W < 560;
+    const H = small ? 300 : 400, ML = small ? 50 : 62, MR = small ? 84 : 190, MT = 12, MB = 26;
+    const c = o.candles, n = c.length;
+    let lo = Math.min(...c.map(k => k[3])), hi = Math.max(...c.map(k => k[2]));
+    const span0 = hi - lo || hi * 0.01 || 1;
+    const zones = o.levels.filter(z => z.high >= lo - 0.25 * span0 && z.low <= hi + 0.25 * span0);
+    for (const z of zones) { lo = Math.min(lo, z.low); hi = Math.max(hi, z.high); }
+    if (o.position) { lo = Math.min(lo, o.position.stop); hi = Math.max(hi, o.position.entry_price); }
+    const pad = (hi - lo) * 0.04 || 1;
+    lo -= pad; hi += pad;
+    const slot = (W - ML - MR) / n, body = Math.max(1, Math.min(8, slot * 0.66));
+    const X = i => ML + slot * (i + 0.5), Y = v => MT + (hi - v) / (hi - lo) * (H - MT - MB);
+    const root = svg('svg', {viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': o.label, tabindex: '0'});
+    const ticks = niceTicks(lo, hi, small ? 5 : 6), step = ticks.length > 1 ? ticks[1] - ticks[0] : 1;
+    for (const t of ticks) {
+      root.append(svg('line', {x1: ML, x2: W - MR, y1: Y(t), y2: Y(t), class: 'grid'}));
+      root.append(svg('text', {x: ML - 6, y: Y(t) + 4, 'text-anchor': 'end', class: 'tick'}, tickPrice(t, step)));
+    }
+    const labels = [];
+    for (const z of zones) {
+      const color = z.kind === 'support' ? 'var(--series-3)' : 'var(--series-2)', top = Y(z.high), bottom = Y(z.low);
+      root.append(svg('rect', {x: ML, width: W - MR - ML, y: top, height: Math.max(2, bottom - top), fill: color, opacity: 0.16}));
+      root.append(svg('line', {x1: ML, x2: W - MR, y1: Y(z.price), y2: Y(z.price), stroke: color, 'stroke-width': 1}));
+      labels.push({y: Y(z.price), color: color, text: small ? price(z.price) + ' ×' + z.touches
+        : (z.kind === 'support' ? 'Support ' : 'Résistance ') + price(z.price) + ' · ' + z.touches + ' fois'});
+    }
+    for (const [series, color] of [[o.ma200, 'var(--series-7)'], [o.ma50, 'var(--series-1)']]) {
+      let pts = [];
+      const flush = () => { if (pts.length > 1) root.append(svg('polyline', {points: pts.join(' '), class: 'line', stroke: color})); pts = []; };
+      (series || []).forEach((v, i) => { if (v === null || v === undefined) flush(); else pts.push(X(i) + ',' + Y(v)); });
+      flush();
+    }
+    c.forEach((k, i) => {
+      const color = k[4] >= k[1] ? 'var(--up)' : 'var(--down)';
+      root.append(svg('line', {x1: X(i), x2: X(i), y1: Y(k[2]), y2: Y(k[3]), stroke: color, 'stroke-width': 1}));
+      const top = Y(Math.max(k[1], k[4])), bottom = Y(Math.min(k[1], k[4]));
+      root.append(svg('rect', {x: X(i) - body / 2, width: body, y: top, height: Math.max(1, bottom - top), fill: color}));
+    });
+    if (o.position) {
+      for (const [v, color, text] of [[o.position.entry_price, 'var(--text-secondary)', (small ? 'Achat ' : 'Ton achat ') + price(o.position.entry_price)],
+                                      [o.position.stop, 'var(--down)', 'Stop ' + price(o.position.stop)]]) {
+        root.append(svg('line', {x1: ML, x2: W - MR, y1: Y(v), y2: Y(v), stroke: color, 'stroke-width': 1}));
+        labels.push({y: Y(v), color: color, text: text});
+      }
+    }
+    const ts = c.map(k => k[0]);
+    const at = t => { if (t === null || t === undefined || t < ts[0]) return -1; let i = 0; while (i + 1 < n && ts[i + 1] <= t) i++; return i; };
+    for (const tr of o.trades || []) {
+      const a = at(tr.entry), b = at(tr.exit);
+      if (a >= 0) root.append(svg('path', {d: tri(X(a), Y(c[a][3]) + 11, 1), fill: 'var(--text-primary)', stroke: 'var(--surface-1)', 'stroke-width': 2}));
+      if (b >= 0) root.append(svg('path', {d: tri(X(b), Y(c[b][2]) - 11, -1), fill: tr.net > 0 ? 'var(--up)' : 'var(--down)', stroke: 'var(--surface-1)', 'stroke-width': 2}));
+    }
+    labels.sort((a, b) => a.y - b.y);
+    let lastY = -Infinity;
+    for (const l of labels) {
+      const y = Math.min(H - MB, Math.max(l.y, lastY + 15));
+      lastY = y;
+      root.append(svg('rect', {x: W - MR + 6, y: y - 5, width: 10, height: 10, rx: 2, fill: l.color}));
+      root.append(svg('text', {x: W - MR + 20, y: y + 4, class: 'tick'}, l.text));
+    }
+    const intraday = ts.length > 1 && ts[1] - ts[0] < 86400000;
+    const fmt = ms => { const d = new Date(ms); return intraday ? dayLabel(ms) + ' ' + String(d.getHours()).padStart(2, '0') + 'h' : dayLabel(ms); };
+    for (let k = 0; k < (small ? 3 : 5); k++) {
+      const i = Math.round((n - 1) * (k + 0.5) / (small ? 3 : 5));
+      root.append(svg('text', {x: X(i), y: H - 8, 'text-anchor': 'middle', class: 'tick'}, fmt(ts[i])));
+    }
+    const cross = svg('line', {y1: MT, y2: H - MB, class: 'crosshair'});
+    root.append(cross);
+    const wrap = el('div', {class: 'mini-chart'}), tip = el('div', {class: 'tip', hidden: true});
+    wrap.append(root, tip);
+    let index = n - 1;
+    function showAt(i) {
+      index = Math.max(0, Math.min(n - 1, i));
+      const k = c[index], x = X(index);
+      cross.setAttribute('x1', x); cross.setAttribute('x2', x); cross.style.visibility = 'visible';
+      tip.replaceChildren(el('div', {class: 'tip-date', text: new Date(k[0]).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}),
+        el('div', {class: 'tip-row', text: 'Ouverture ' + price(k[1]) + ' · clôture ' + price(k[4])}),
+        el('div', {class: 'tip-row', text: 'Plus haut ' + price(k[2]) + ' · plus bas ' + price(k[3])}),
+        el('div', {class: 'tip-row', text: 'Sur la bougie : ' + signed(100 * (k[4] / k[1] - 1))}));
+      tip.hidden = false;
+      const r = root.getBoundingClientRect(), host = wrap.getBoundingClientRect();
+      const left = r.left - host.left + x / W * r.width;
+      tip.style.left = (left + tip.offsetWidth + 16 > host.width ? Math.max(4, left - tip.offsetWidth - 12) : left + 12) + 'px';
+      tip.style.top = '8px';
+    }
+    function hide() { cross.style.visibility = 'hidden'; tip.hidden = true; }
+    root.addEventListener('pointermove', e => {
+      const r = root.getBoundingClientRect();
+      showAt(Math.round(((e.clientX - r.left) / r.width * W - ML) / slot - 0.5));
+    });
+    root.addEventListener('pointerleave', hide);
+    root.addEventListener('focus', () => showAt(index));
+    root.addEventListener('blur', hide);
+    root.addEventListener('keydown', e => {
+      if (e.key === 'ArrowLeft') { showAt(index - 1); e.preventDefault(); }
+      if (e.key === 'ArrowRight') { showAt(index + 1); e.preventDefault(); }
+    });
+    return wrap;
+  }
+
+  // --- l'école ---
+  let schoolData = null;
+  async function loadSchool(sub) {
+    if (!schoolData) schoolData = await getJSON('/api/ecole');
+    if (sub) renderLesson(sub); else renderSchoolList();
+  }
+  function doneLessons() { try { return JSON.parse(localStorage.getItem('ecole-faites') || '[]'); } catch (e) { return []; } }
+  function markDone(id) {
+    try { const done = new Set(doneLessons()); done.add(id); localStorage.setItem('ecole-faites', JSON.stringify([...done])); } catch (e) {}
+  }
+  function renderSchoolList() {
+    $('#school-home').hidden = false;
+    $('#lesson').hidden = true;
+    const done = new Set(doneLessons()), box = $('#school-list');
+    box.replaceChildren(...schoolData.lessons.map(l => el('article', {class: 'card'},
+      el('div', {class: 'card-head'}, el('h3', {text: l.number + '. ' + l.title}), done.has(l.id) ? el('span', {class: 'done-mark', text: '✓ faite'}) : null),
+      el('p', {class: 'muted', text: l.minutes + ' min · ' + l.quiz.length + ' questions'}),
+      el('div', {class: 'row'}, el('a', {class: 'btn' + (done.has(l.id) ? '' : ' btn-primary'), href: '#ecole/' + l.id,
+        text: done.has(l.id) ? 'Revoir' : 'Commencer'})))));
+  }
+  function renderLesson(id) {
+    const l = schoolData.lessons.find(x => x.id === id);
+    if (!l) { renderSchoolList(); return; }
+    $('#school-home').hidden = true;
+    const box = $('#lesson');
+    box.hidden = false;
+    box.replaceChildren(el('p', {class: 'eyebrow', text: 'Leçon ' + l.number + ' sur ' + schoolData.lessons.length + ' · ' + l.minutes + ' min'}),
+      el('h1', {text: l.title}));
+    for (const b of l.blocks) {
+      if (b.text) box.append(el('p', {text: b.text}));
+      else if (b.example) box.append(el('div', {class: 'example'}, el('strong', {text: 'Exemple'}), el('p', {text: b.example})));
+      else if (b.figure) box.append(figure(b));
+    }
+    box.append(el('h2', {text: 'À retenir'}), el('ul', {class: 'remember'}, ...l.remember.map(r => el('li', {text: r}))),
+      el('h2', {text: 'Mini-quiz'}), quiz(l));
+    if (l.sources.length) box.append(el('p', {class: 'small-print'}, 'Sources : ', ...l.sources.flatMap((src, i) => [i ? ' · ' : null,
+      el('a', {href: src.url, target: '_blank', rel: 'noopener', text: src.title})])));
+    const next = l.next && schoolData.lessons.find(x => x.id === l.next);
+    box.append(el('div', {class: 'row'}, el('a', {class: 'btn', href: '#ecole', text: 'Toutes les leçons'}),
+      next ? el('a', {class: 'btn btn-primary', href: '#ecole/' + next.id, text: 'Leçon suivante : ' + next.title}) : null));
+    window.scrollTo(0, 0);
+  }
+  function quiz(l) {
+    const wrap = el('div', {class: 'quiz'});
+    l.quiz.forEach((q, qi) => {
+      const why = el('p', {class: 'why', hidden: true});
+      const buttons = q.choices.map((choice, ci) => el('button', {class: 'btn', type: 'button', text: choice, 'aria-pressed': 'false',
+        onclick: () => {
+          buttons.forEach(b => { b.setAttribute('aria-pressed', 'false'); b.classList.remove('right', 'wrong'); });
+          buttons[ci].setAttribute('aria-pressed', 'true');
+          buttons[ci].classList.add(ci === q.answer ? 'right' : 'wrong');
+          why.hidden = false;
+          why.textContent = (ci === q.answer ? '✓ Exact. ' : '✕ Pas tout à fait : la bonne réponse est « ' + q.choices[q.answer] + ' ». ') + q.why;
+          if (wrap.querySelectorAll('.why:not([hidden])').length === l.quiz.length) markDone(l.id);
+        }}));
+      wrap.append(el('div', {class: 'q'}, el('p', {text: (qi + 1) + '. ' + q.q}), el('div', {class: 'choices'}, ...buttons), why));
+    });
+    return wrap;
+  }
+  function figure(b) {
+    if (b.figure === 'candle') return candleAnatomy();
+    if (b.figure === 'risk') return riskSim(b.question);
+    if (b.figure === 'leverage') return leverageSim(b.question);
+    if (b.figure === 'fees') return feesSim(b.question);
+    if (b.figure === 'diagnoses') return diagnosesBox();
+    if (b.figure === 'chart') return lessonChart(b);
+    return null;
+  }
+  function candleAnatomy() {
+    const root = svg('svg', {viewBox: '0 0 440 250', role: 'img', 'aria-label': 'Une bougie verte (hausse) et une bougie rouge (baisse), avec leurs plus haut, plus bas, ouverture et clôture'});
+    const draw = (x, high, top, bottom, low, color) => {
+      root.append(svg('line', {x1: x, x2: x, y1: high, y2: low, stroke: color, 'stroke-width': 2}));
+      root.append(svg('rect', {x: x - 16, width: 32, y: top, height: bottom - top, rx: 3, fill: color}));
+    };
+    const label = (x1, x2, y, text, anchor) => {
+      root.append(svg('line', {x1: x1, x2: x2, y1: y, y2: y, class: 'grid'}));
+      root.append(svg('text', {x: anchor === 'end' ? x1 - 4 : x2 + 4, y: y + 4, 'text-anchor': anchor, class: 'tick'}, text));
+    };
+    draw(130, 20, 62, 168, 214, 'var(--up)');
+    label(96, 128, 20, 'Plus haut', 'end'); label(96, 112, 62, 'Clôture', 'end');
+    label(96, 112, 168, 'Ouverture', 'end'); label(96, 128, 214, 'Plus bas', 'end');
+    draw(310, 30, 70, 160, 204, 'var(--down)');
+    label(328, 344, 70, 'Ouverture', 'start'); label(328, 344, 160, 'Clôture', 'start');
+    label(312, 344, 30, 'mèche', 'start'); label(328, 344, 115, 'corps', 'start');
+    root.append(svg('text', {x: 130, y: 242, 'text-anchor': 'middle', class: 'tick'}, 'Verte : le prix a monté'));
+    root.append(svg('text', {x: 310, y: 242, 'text-anchor': 'middle', class: 'tick'}, 'Rouge : le prix a baissé'));
+    return el('div', {class: 'mini-chart'}, root);
+  }
+  function slider(label, min, max, step, value, fmt, onchange) {
+    const out = el('strong', {text: fmt(value)});
+    const input = el('input', {type: 'range', min: min, max: max, step: step, value: value, 'aria-label': label});
+    input.addEventListener('input', () => { out.textContent = fmt(Number(input.value)); onchange(); });
+    return {node: el('label', {}, el('span', {text: label}), out, input), get: () => Number(input.value)};
+  }
+  const nb = (v, d) => Number(v).toLocaleString('fr-FR', {maximumFractionDigits: d === undefined ? 2 : d});
+  function riskSim(question) {
+    const res = el('p', {class: 'out'});
+    const update = () => {
+      const loss = cap.get() * risk.get() / 100, size = loss / (stop.get() / 100), lev = size / cap.get();
+      res.textContent = 'Position : ' + nb(size, 0) + ' $. Si le stop est touché, tu perds ' + nb(loss) + ' $ ('
+        + nb(risk.get(), 1) + ' % du compte). ' + (lev > 1 ? 'La position dépasse le compte : il faudrait un levier de '
+        + dec(lev) + '.' : 'Pas besoin de levier.');
+    };
+    const cap = slider('Capital du compte', 100, 10000, 100, 1000, v => nb(v, 0) + ' $', update);
+    const risk = slider('Risque par trade', 0.5, 5, 0.5, 1, v => nb(v, 1) + ' %', update);
+    const stop = slider('Distance du stop sous l\'achat', 0.2, 10, 0.1, 2, v => nb(v, 1) + ' %', update);
+    update();
+    return el('div', {class: 'sim'}, question ? el('p', {class: 'question', text: question}) : null, cap.node, risk.node, stop.node, res);
+  }
+  function leverageSim(question) {
+    const res = el('p', {class: 'out'});
+    const update = () => {
+      const l = lev.get(), m = move.get(), result = l * m, limit = 100 / l;
+      res.textContent = (result <= -100 ? 'Liquidé : ta mise est perdue. ' : 'Sur ta mise : ' + signed(result, 1) + '. ')
+        + 'Avec un levier de ' + nb(l, 0) + ', ta mise est perdue dès que le prix va de ' + nb(limit, 1) + ' % contre toi.';
+    };
+    const lev = slider('Levier', 1, 20, 1, 5, v => '×' + nb(v, 0), update);
+    const move = slider('Mouvement du prix', -10, 10, 0.5, -2, v => signed(v, 1), update);
+    update();
+    return el('div', {class: 'sim'}, question ? el('p', {class: 'question', text: question}) : null, lev.node, move.node, res);
+  }
+  function feesSim(question) {
+    const res = el('p', {class: 'out'});
+    const FEES = [['Comptant', 0.30], ['Futures au marché', 0.14], ['Futures en limite', 0.04]];
+    let fee = 0.30;
+    const update = () => {
+      const net = move.get() - fee;
+      res.textContent = 'Après frais : ' + signed(net, 2) + ' par trade, soit environ ' + signed(100 * net, 0)
+        + ' sur 100 trades. Il faut capter plus de ' + nb(fee, 2) + ' % par trade, en moyenne, rien que pour payer les frais.';
+    };
+    const seg = el('div', {class: 'seg', role: 'group', 'aria-label': 'Frais d\'un aller-retour'});
+    const buttons = FEES.map(([label, value]) => el('button', {type: 'button', 'aria-pressed': String(value === fee),
+      text: label + ' (' + nb(value, 2) + ' %)', onclick: () => {
+        fee = value; buttons.forEach(b => b.setAttribute('aria-pressed', String(b === buttons[FEES.findIndex(f => f[1] === value)]))); update();
+      }}));
+    seg.append(...buttons);
+    const move = slider('Gain moyen capté par trade, avant frais', 0, 1.5, 0.05, 0.25, v => nb(v, 2) + ' %', update);
+    update();
+    return el('div', {class: 'sim'}, question ? el('p', {class: 'question', text: question}) : null, seg, el('div', {class: 'row'}), move.node, res);
+  }
+  const KIND_HELP = {
+    gagne: 'Le scénario prévu s\'est déroulé : le cas que la règle cherche.',
+    gain_partiel: 'Gagné, mais le trade était monté bien plus haut avant la sortie.',
+    frais: 'Le prix est allé dans le bon sens, pas assez pour payer les frais.',
+    faux_depart: 'Le prix est reparti contre le trade tout de suite, jusqu\'au stop.',
+    gain_rendu: 'Le trade a été gagnant, puis s\'est retourné jusqu\'au stop.',
+    stop: 'Le prix a hésité, puis touché le stop.',
+    temps: 'Le mouvement attendu n\'est pas venu à temps : le bot a coupé.',
+    sortie_regle: 'La règle de sortie a coupé avant que le trade ne devienne gagnant.',
+    liquidation: 'Avec le levier, la perte a atteint la marge : position fermée d\'office.',
+  };
+  function diagnosesBox() {
+    const box = el('div', {class: 'sim'});
+    box.append(el('p', {class: 'question', text: 'Les diagnostics que ton trader écrit après chaque vente :'}),
+      el('ul', {}, ...Object.entries(KIND_HELP).map(([k, help]) => el('li', {}, el('strong', {text: (schoolData.kinds[k] || k) + ' : '}), help))));
+    if (schoolData.examples.length) {
+      box.append(el('p', {class: 'question', text: 'Des exemples tirés de tes propres trades :'}));
+      for (const e of schoolData.examples) box.append(el('p', {}, el('strong', {text: coin(e.symbol) + ' · ' + e.play + ' · ' + signed(100 * e.net) + ' — ' + e.diagnosis.title + '. '}),
+        e.diagnosis.text + (e.replay ? ' (rejeu)' : '')));
+    } else {
+      box.append(el('p', {class: 'muted', text: 'Pas encore de trade de ton trader : ses premiers exemples apparaîtront ici.'}));
+    }
+    return box;
+  }
+  function lessonChart(b) {
+    const box = el('div', {}, el('p', {class: 'muted', text: 'Chargement du graphique…'}));
+    getJSON('/api/graphique?symbole=' + encodeURIComponent(b.symbol) + '&unite=' + b.timeframe).then(d => {
+      box.replaceChildren(candleChart({...d, width: box.clientWidth || 760, label: b.caption || coin(d.symbol)}),
+        el('div', {class: 'legend'}, ...chartLegend(d).filter(Boolean)), el('p', {class: 'small-print', text: b.caption || ''}));
+    }).catch(() => box.replaceChildren(el('p', {class: 'empty-box', text: 'Graphique indisponible pour l\'instant (le radar démarre, '
+      + 'ou la plateforme ne répond pas). Il apparaîtra ici dès que les prix arrivent ; en attendant, ouvre la page Graphiques.'})));
+    return box;
+  }
+
+  // --- l'actualité ---
+  function ago(iso) {
+    if (!iso) return '';
+    const s = (Date.now() - Date.parse(iso)) / 1000;
+    if (s < 3600) return 'il y a ' + Math.max(1, Math.round(s / 60)) + ' min';
+    if (s < 2 * 86400) return 'il y a ' + Math.round(s / 3600) + ' h';
+    return when(iso);
+  }
+  let newsReady = false;
+  async function refreshNews() {
+    const d = await getJSON('/api/actualite');
+    newsReady = d.news.length > 0 || !!d.fng;
+    renderFng(d.fng);
+    const list = $('#news-list');
+    $('#news-status').textContent = (d.news.length ? d.news.length + ' titres' + (d.updated ? ' · relevés ' + ago(d.updated) : '')
+      : 'Chargement des titres…') + (d.errors.length ? ' · ' + d.errors.join(' ; ') : '');
+    list.replaceChildren(...d.news.map(n => el('div', {class: 'news-item'},
+      el('a', {href: n.link, target: '_blank', rel: 'noopener noreferrer', text: n.title}),
+      el('div', {class: 'meta-line', text: n.source + ' · ' + ago(n.published)}),
+      n.moves && n.moves.length ? el('div', {class: 'meta-line'}, ...n.moves.map(m => el('span', {class: 'coin'},
+        el('strong', {text: m.coin}), el('span', {class: cls(m.change), text: m.change === null || m.change === undefined
+          ? 'prix à la publication inconnu' : signed(100 * m.change, 1) + ' depuis'})))) : null)));
+  }
+  function renderFng(f) {
+    const box = $('#fng-box');
+    box.replaceChildren();
+    if (!f) { box.append(el('p', {class: 'muted', text: 'Indice indisponible pour l\'instant.'})); return; }
+    box.append(el('p', {class: 'fng-value', text: Math.round(f.value) + ' / 100'}),
+      el('p', {class: 'muted', text: 'Indice peur et avidité : ' + f.zone + ' (' + new Date(f.date).toLocaleDateString('fr-FR') + ')'}));
+    const meter = el('div', {class: 'meter', role: 'img', 'aria-label': 'Indice : ' + Math.round(f.value) + ' sur 100, ' + f.zone});
+    meter.append(el('span', {class: 'mark', style: 'left:' + Math.max(0, Math.min(100, f.value)) + '%'}));
+    box.append(meter, el('div', {class: 'meter-scale'}, el('span', {text: '0 · peur extrême'}), el('span', {text: '50 · neutre'}),
+      el('span', {text: 'avidité extrême · 100'})));
+    if (f.history && f.history.length > 30) {
+      const xs = f.history.map(h => Date.parse(h[0])), ys = f.history.map(h => h[1]);
+      box.append(lineChart({width: box.clientWidth || 700, xs: xs, ys: ys,
+        refs: [{y: 25, label: 'Peur extrême (25)', short: '25'}, {y: 75, label: 'Avidité extrême (75)', short: '75'}],
+        label: 'Indice peur et avidité, douze derniers mois', xTicks: spreadTicks(xs, 4), xTicksSmall: spreadTicks(xs, 3),
+        xTick: monthLabel, yTick: v => String(Math.round(v)), endLabel: Math.round(ys[ys.length - 1]) + ' · ' + f.zone,
+        endShort: String(Math.round(ys[ys.length - 1])), tip: i => [new Date(xs[i]).toLocaleDateString('fr-FR'), Math.round(ys[i]) + ' / 100']}));
+    }
+    box.append(el('p', {class: 'note', text: f.study_text}));
+  }
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { if (view === 'graphiques') renderChart(); if (view === 'accueil') renderTrader(); }, 250);
+  });
+
   // --- rythme : chaque source seulement quand sa page est affichée ---
-  const last = {state: 0, journal: 0, radar: 0, prices: 0, trials: 0};
+  const last = {state: 0, journal: 0, radar: 0, prices: 0, trials: 0, trader: 0, news: 0, chart: 0};
   const busy = {};
   async function every(name, ms, fn) {
     const now = Date.now();
@@ -1040,6 +1686,9 @@ JS = r"""
     if (view === 'radar') every('radar', radarReady ? 10000 : 2000, refreshRadar);
     if (view === 'prix') every('prices', pricesReady ? 10000 : 2000, refreshPrices);
     if (view === 'essais') every('trials', 5000, refreshTrials);
+    if (view === 'accueil') every('trader', 15000, refreshTrader);
+    if (view === 'actualite') every('news', newsReady ? 60000 : 2000, refreshNews);
+    if (view === 'graphiques') every('chart', 60000, loadChart);
   }
   radarControls();
   show(location.hash.slice(1));
