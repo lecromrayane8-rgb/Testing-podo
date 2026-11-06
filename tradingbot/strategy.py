@@ -1,4 +1,4 @@
-"""Stratégies : huit familles de règles, avec les mêmes signaux en backtest et en direct.
+"""Stratégies : onze familles de règles, avec les mêmes signaux en backtest et en direct.
 
 Acheter un repli (retour à la moyenne) :
 - retour_moyenne : RSI court survendu dans une tendance haussière ; revend au rebond
@@ -16,6 +16,14 @@ Suivre une tendance :
 Sauter sur un mouvement :
 - impulsion : le prix vient de prendre au moins `impulse_pct` en `impulse_bars` bougies (un mouvement
   soudain, comme ceux du radar) ; revend sous le plus bas des M bougies précédentes (le mouvement s'essouffle).
+
+Supports et résistances (tradingbot/levels.py : les niveaux où le prix s'est déjà retourné plusieurs fois) :
+- support : la bougie descend jusqu'à un support solide puis clôture au-dessus, en hausse (un rebond) ; revend quand
+  le prix touche la résistance suivante, ou si le support cède ;
+- resistance : la clôture franchit nettement une résistance solide (une cassure) ; revend si le prix retombe sous
+  l'ancien niveau, devenu support.
+Les niveaux utilisés sont ceux connus à la clôture précédente : la bougie du signal ne compte pas dans son propre
+niveau.
 
 Pour toutes : stop-loss à k × ATR sous le prix d'achat, stop temporel optionnel (0 = aucun),
 filtre de tendance optionnel (clôture au-dessus de la moyenne longue, 0 = aucun filtre).
@@ -38,12 +46,14 @@ from dataclasses import dataclass
 import pandas as pd
 
 from .indicators import atr, bollinger, macd, rsi, sma, supertrend
+from .levels import level_series
 
 STRATEGY_TYPES = (
     "retour_moyenne", "bollinger", "cassure", "bollinger_cassure", "croisement", "macd", "momentum", "supertrend",
-    "impulsion",
+    "impulsion", "support", "resistance",
 )
 MEAN_REVERSION = ("retour_moyenne", "bollinger")
+LEVEL_FAMILIES = ("support", "resistance")
 
 
 @dataclass(frozen=True)
@@ -67,6 +77,10 @@ class StrategyParams:
     st_mult: float = 3.0
     impulse_bars: int = 5  # impulsion : hausse d'au moins impulse_pct (0,01 = 1 %) en impulse_bars bougies
     impulse_pct: float = 0.01
+    level_window: int = 5  # supports et résistances : un sommet ou un creux net sur 5 bougies de chaque côté
+    level_lookback: int = 150  # seuls comptent les sommets et creux des 150 dernières bougies
+    level_touches: int = 2  # un niveau solide a été touché au moins 2 fois
+    level_tol: float = 0.5  # largeur d'une zone : 0,5 fois la taille moyenne d'une bougie
     atr_period: int = 14
     stop_atr_mult: float = 2.5
     max_bars_in_trade: int = 24  # 0 = pas de stop temporel
@@ -94,6 +108,10 @@ class StrategyParams:
             raise ValueError("MIN_ATR_PCT et VOLUME_MULT doivent être >= 0, VOLUME_PERIOD >= 1")
         if self.impulse_bars < 1 or not 0 < self.impulse_pct < 1:
             raise ValueError("IMPULSE_BARS doit être >= 1 et IMPULSE_PCT entre 0 et 1 (0,01 = 1 %)")
+        if self.level_window < 1 or self.level_lookback <= 2 * self.level_window or self.level_touches < 1 \
+                or not self.level_tol > 0:
+            raise ValueError("LEVEL_WINDOW >= 1, LEVEL_LOOKBACK > 2 x LEVEL_WINDOW, LEVEL_TOUCHES >= 1 et "
+                             "LEVEL_TOL > 0")
         if not 0 <= self.squeeze_quantile < 1 or self.squeeze_period < 2:
             raise ValueError("SQUEEZE_QUANTILE doit être entre 0 et 1 (0,2 = 20 %), SQUEEZE_PERIOD >= 2")
         if self.active_hours:
@@ -111,6 +129,8 @@ class StrategyParams:
             "momentum": [self.momentum_period + 2],
             "supertrend": [self.st_period + 2],
             "impulsion": [self.impulse_bars + 2, self.breakout_exit_period + 1],
+            "support": [self.level_lookback + self.level_window + self.atr_period + 2],
+            "resistance": [self.level_lookback + self.level_window + self.atr_period + 2],
         }[self.strategy_type]
         volume = [self.volume_period] if self.volume_mult else []
         squeeze = [self.bb_period + self.squeeze_period + 1] if self.squeeze_quantile else []
@@ -131,6 +151,10 @@ class StrategyParams:
     def exit_label(self) -> str:
         if self.strategy_type == "impulsion":
             return "essoufflement"
+        if self.strategy_type == "support":
+            return "résistance ou support cassé"
+        if self.strategy_type == "resistance":
+            return "retour sous le niveau"
         return "rebond" if self.strategy_type in MEAN_REVERSION else "fin de tendance"
 
 
@@ -172,6 +196,17 @@ def compute_signals(df: pd.DataFrame, p: StrategyParams) -> pd.DataFrame:
         change = close / close.shift(p.momentum_period) - 1
         entry = _crossing_up(change > 0)
         exit_ = change < 0
+    elif t in LEVEL_FAMILIES:
+        lv = level_series(out, p.level_window, p.level_lookback, p.level_tol, p.level_touches, p.atr_period)
+        out["support"], out["resistance"] = lv["support"], lv["resistance"]
+        support, resistance, below, target, tol = (
+            lv[k].shift(1) for k in ("support", "resistance", "next_support", "next_resistance", "level_tol"))
+        if t == "support":  # rebond : venu d'au-dessus, le prix touche le support, puis clôture au-dessus et en hausse
+            entry = (out["low"] <= below + tol) & (close > below) & (close > out["open"])
+            exit_ = (out["high"] >= target - tol) | (close < support - tol)  # résistance suivante, ou support cassé
+        else:  # cassure : clôture nettement au-dessus de la résistance ; sortie si le prix retombe sous le niveau
+            entry = _crossing_up(close > resistance + tol)
+            exit_ = close < support - tol
     elif t == "impulsion":
         # Seulement la bougie où le mouvement apparaît : pas de rachat à chaque bougie d'une même envolée.
         rise = close / close.shift(p.impulse_bars) - 1

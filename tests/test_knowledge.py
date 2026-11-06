@@ -65,7 +65,8 @@ def test_the_bots_base_says_where_each_idea_stands(tmp_path):
     page = knowledge(tmp_path)
     status = {i["key"]: i["status"] for i in page["ideas"]}
     assert status == {"momentum-serie": "a-tester", "prix-moyenne": "a-tester", "momentum-croise": "a-tester",
-                      "surreaction": "defavorable", "intraday": "defavorable"}
+                      "supports": "a-tester", "chiffres-ronds": "info", "surreaction": "defavorable",
+                      "intraday": "defavorable"}
     lab_file(tmp_path / "laboratoire.json", [
         {"variant": "Momentum 28", "timeframe": "1d", "trades": 80, "expectancy_pct": 0.42, "verdict": "à surveiller"},
         {"variant": "Prix au-dessus de la MM 50", "timeframe": "1d", "trades": 60, "expectancy_pct": -0.1,

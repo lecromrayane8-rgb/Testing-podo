@@ -1,4 +1,4 @@
-"""Point d'entrée : python main.py {site,backtest,robustesse,labo,labo-portefeuille,tournoi,portefeuille,prix,telegram,check,run,tableau,reset-guard} --help
+"""Point d'entrée : python main.py {site,trader,backtest,robustesse,labo,labo-portefeuille,tournoi,portefeuille,prix,telegram,check,run,tableau,reset-guard} --help
 
 Sans argument (double-clic sur la version Windows), le site du bot s'ouvre dans le navigateur.
 """
@@ -25,7 +25,7 @@ from tradingbot.backtest import format_comparison, format_report, run_backtest
 from tradingbot.broker import CcxtBroker, PaperBroker, atomic_write
 from tradingbot.config import ConfigError, Settings, load_dotenv
 from tradingbot.dashboard import ROBUSTNESS_FILE, write_dashboard
-from tradingbot.execution import ExecutionParams
+from tradingbot.execution import FUTURES, ExecutionParams
 from tradingbot.data import load_csv, load_or_fetch, make_exchange, ohlcv_to_frame, timeframe_to_ms
 from tradingbot.lab import (
     ALL_VARIANTS, LAB_FILE, PROMISING, SHORT_TERM_VARIANTS, VARIANTS, env_lines, format_lab, load_lab,
@@ -42,6 +42,11 @@ from tradingbot.portfolio import (
     overall_verdict as portfolio_verdict, save as save_portfolio_lab,
 )
 from tradingbot.scanner import ScanResult, by_volume, pick_markets, scan_volatile, tradable
+from tradingbot.trader import (
+    ACCOUNT_FILE as TRADER_ACCOUNT, REPLAY_DAYS, REPLAY_FILE, TRADER_DIR, Account as TraderAccount,
+    choose_playbook, replay as replay_trader, run as run_trader, settings_from_env as trader_settings,
+    summary as trader_summary,
+)
 from tradingbot.webapp import PORT, serve
 
 log = logging.getLogger("tradingbot")
@@ -201,7 +206,9 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
     markets = sorted({m for group in datasets.values() for m in group})
     variants = SHORT_TERM_VARIANTS if args.combinaisons else VARIANTS
     # Ordres limites : on attend son prix au lieu de payer l'écart et le glissement (frais maker du .env).
-    execution = replace(s.execution, order_type="limit") if args.ordres_limites else s.execution
+    # Futures : les frais plus bas des contrats à terme, financement compris (argent fictif seulement).
+    execution = FUTURES if args.futures else s.execution
+    execution = replace(execution, order_type="limit") if args.ordres_limites else execution
     log.info("Laboratoire : %d variantes × %d unités de temps sur %d marchés, %s", len(variants), len(datasets),
              len(markets), describe_execution(execution))
     rows = run_lab(datasets, execution, s.risk, variants, workers=args.coeurs)
@@ -228,9 +235,10 @@ def cmd_lab(s: Settings, args: argparse.Namespace) -> None:
 
 
 def describe_execution(ex: ExecutionParams) -> str:
+    funding = f", financement {100 * ex.funding_rate_8h:.3f} % par 8 h" if ex.funding_rate_8h else ""
     if ex.order_type == "limit":
-        return f"ordres limites (frais maker {100 * ex.maker_fee_rate:.3f} %)"
-    return f"ordres au marché (frais {100 * ex.fee_rate:.3f} %, glissement {100 * ex.slippage:.3f} %)"
+        return f"ordres limites (frais maker {100 * ex.maker_fee_rate:.3f} %{funding})"
+    return f"ordres au marché (frais {100 * ex.fee_rate:.3f} %, glissement {100 * ex.slippage:.3f} %{funding})"
 
 
 def cmd_check(s: Settings, args: argparse.Namespace) -> None:
@@ -575,6 +583,55 @@ def cmd_portfolio(s: Settings, args: argparse.Namespace) -> None:
         time.sleep(args.secondes)
 
 
+def cmd_trader(s: Settings, args: argparse.Namespace) -> None:
+    """Le trader fictif : les stratégies retenues par le labo, sur les cryptos les plus échangées, une explication par
+    trade. Avec --rejouer : les mêmes règles rejouées sur l'historique récent, pour voir des trades tout de suite."""
+    settings = trader_settings(os.environ)
+    execution = settings.execution(s.execution)
+    folder = s.data_dir / TRADER_DIR
+    exchange = make_exchange(s.exchange)
+
+    def universe() -> list[str]:
+        return [r.symbol for r in by_volume(exchange, top=settings.coins)]
+
+    if args.rejouer:
+        plays = choose_playbook(s.data_dir, settings, s.execution)
+        if not plays:
+            raise NothingRetained("Le labo n'a retenu aucune stratégie jouable : rien à rejouer pour l'instant.")
+        keep_awake()
+        coins = universe()
+        frames = {}
+        for tf in sorted({p.timeframe for p in plays}, key=timeframe_to_ms):
+            for symbol in coins:
+                try:
+                    frames[(symbol, tf)] = load_or_fetch(s.exchange, symbol, tf, REPLAY_DAYS.get(tf, 90),
+                                                         s.data_dir / "cache", exchange)
+                except (ccxt.ExchangeError, ccxt.NetworkError) as exc:
+                    log.warning("%s %s ignorée : %s", symbol, tf, exc)
+        account = replay_trader(frames, plays, settings, execution, folder / REPLAY_FILE)
+        view = trader_summary(account.state)
+        print(f"\n=== Rejeu du trader : {', '.join(p.key for p in plays)} sur {len(coins)} cryptos ===")
+        print(f"{view['count']} trades, valeur finale {view['value']:.2f} USDT fictifs pour {view['start']:.0f} au "
+              f"départ ({view['pnl_pct']:+.1f} %). Rejoué sur un passé qui a servi à choisir ces stratégies : "
+              "forcément flatteur, ce n'est pas une preuve.")
+        for lesson in view["lessons"]:
+            print("-", lesson["text"])
+        return
+
+    def refresh():
+        return choose_playbook(s.data_dir, settings, s.execution), universe()
+
+    account = TraderAccount(folder / TRADER_ACCOUNT, settings, execution, datetime.now(timezone.utc))
+    keep_awake()  # le trader surveille ses stops : l'ordinateur doit rester éveillé
+    attach_telegram(s, journal=False)
+    plays, coins = refresh()
+    log.info("Trader fictif (%s, levier jusqu'à %.0f, risque %.1f %% par trade) : %s, sur %d cryptos",
+             settings.profile, settings.leverage, 100 * settings.risk_per_trade,
+             ", ".join(p.key for p in plays) or "aucune stratégie retenue pour l'instant, il attend", len(coins),
+             extra=ALERT)
+    run_trader(exchange, account, refresh, seconds=args.secondes, once=args.une_fois, initial=(plays, coins))
+
+
 HOT_REFRESH_S = 60  # la liste des cryptos agitées demande tout le marché : une fois par minute suffit
 
 
@@ -699,6 +756,8 @@ def main(argv: list[str] | None = None) -> int:
     lb.add_argument("--memecoins", action="store_true", help="ajouter les memecoins cotés et assez échangés")
     lb.add_argument("--ordres-limites", action="store_true",
                     help="simuler des ordres limites (frais maker, sans écart ni glissement à l'entrée)")
+    lb.add_argument("--futures", action="store_true",
+                    help="frais des contrats à terme (0,05 %% au marché, 0,02 %% en limite, financement toutes les 8 h)")
     lb.add_argument("--combinaisons", action="store_true",
                     help="ajouter les combinaisons court terme (filtres de volatilité, de volume, d'heures et de "
                          "compression) et les impulsions (sauter sur un mouvement soudain)")
@@ -732,6 +791,10 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("--variantes", type=int, default=2, help="nombre de variantes retenues à faire tourner")
     pf.add_argument("--secondes", type=float, default=60.0, help="délai entre deux relevés de prix")
     pf.add_argument("--une-fois", action="store_true", help="un seul tour (rotation si elle est due), puis s'arrêter")
+    tr = sub.add_parser("trader", help="le trader fictif : les stratégies du labo sur beaucoup de cryptos, expliquées")
+    tr.add_argument("--rejouer", action="store_true", help="rejouer ses règles sur l'historique récent, puis s'arrêter")
+    tr.add_argument("--secondes", type=float, default=20.0, help="délai entre deux tours")
+    tr.add_argument("--une-fois", action="store_true", help="un seul tour, puis s'arrêter")
     sub.add_parser("telegram", help="relier les alertes du bot à Telegram et envoyer un message de test")
     sub.add_parser("check", help="vérifier la connexion et les soldes")
     sub.add_parser("run", help="lancer le ou les bots (selon MODE et BOTS dans .env)")
@@ -761,6 +824,7 @@ def main(argv: list[str] | None = None) -> int:
         "site": cmd_site,
         "labo-portefeuille": cmd_portfolio_lab,
         "portefeuille": cmd_portfolio,
+        "trader": cmd_trader,
     }
     try:
         commands[args.command](settings, args)

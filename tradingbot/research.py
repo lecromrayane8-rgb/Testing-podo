@@ -19,6 +19,9 @@ from dataclasses import dataclass, field
 from .strategy import StrategyParams
 
 TREND = {"stop_atr_mult": 3.0, "max_bars_in_trade": 0}  # suivre une tendance : stop large, pas de stop temporel
+# Supports et résistances : un sommet ou un creux net sur 5 bougies de chaque côté, parmi les 150 dernières, touché au
+# moins 2 fois ; une zone large d'une demi-bougie moyenne. Des réglages ronds et courants, fixés d'avance.
+LEVELS = {"level_window": 5, "level_lookback": 150, "level_touches": 2, "level_tol": 0.5}
 
 
 @dataclass(frozen=True)
@@ -29,7 +32,8 @@ class Idea:
     sources: tuple[str, ...]
     rules: dict[str, StrategyParams] = field(default_factory=dict)  # règles par crypto, ajoutées au labo
     portfolio: tuple[str, ...] = ()  # variantes du labo portefeuille (tradingbot/portfolio.py)
-    caution: str = ""  # quand la recherche est défavorable à l'idée
+    caution: str = ""  # pourquoi l'idée ne devient pas une règle de plus
+    unfavorable: bool = True  # sans règle : la recherche est défavorable (sinon, information seulement)
 
 
 IDEAS = (
@@ -46,6 +50,25 @@ IDEAS = (
                                                             trend_period=0, **TREND),
                 "Prix au-dessus de la MM 50": StrategyParams(strategy_type="croisement", fast_period=1, slow_period=50,
                                                             trend_period=0, **TREND)}),
+    Idea("supports", "Les supports et les résistances",
+         "Les supports et résistances annoncent bien des arrêts de tendance, et les tendances accélèrent une fois un "
+         "niveau franchi : les ordres s'y accumulent, surtout aux chiffres ronds.",
+         ("osler_2000", "osler_2003", "kavajecz", "brock"),
+         rules={"Rebond sur support": StrategyParams(strategy_type="support", trend_period=0, stop_atr_mult=1.5,
+                                                     max_bars_in_trade=48, **LEVELS),
+                "Rebond sur support + MM200": StrategyParams(strategy_type="support", trend_period=200,
+                                                             stop_atr_mult=1.5, max_bars_in_trade=48, **LEVELS),
+                "Cassure de résistance": StrategyParams(strategy_type="resistance", trend_period=0, stop_atr_mult=2.5,
+                                                        max_bars_in_trade=0, **LEVELS),
+                "Cassure de résistance + volume x2": StrategyParams(strategy_type="resistance", trend_period=0,
+                                                                    stop_atr_mult=2.5, max_bars_in_trade=0,
+                                                                    volume_mult=2.0, **LEVELS)}),
+    Idea("chiffres-ronds", "Les chiffres ronds",
+         "Les prix du Bitcoin s'accumulent aux chiffres ronds (plus de 10 % finissent par 00), mais rien de "
+         "particulier ne se passe ensuite.",
+         ("urquhart_clustering", "osler_2003"),
+         caution="Le bot les montre sur les graphiques et dans ses explications, sans en faire une règle à part : "
+                 "l'étude ne trouve pas de rendement particulier après un chiffre rond.", unfavorable=False),
     Idea("momentum-croise", "Garder les cryptos qui ont le plus monté",
          "Avec la taille et le marché, le momentum entre cryptos est l'un des trois facteurs qui expliquent leurs "
          "rendements.",
@@ -61,8 +84,8 @@ IDEAS = (
                  "comprendre, mais ne leur fait confiance qu'après le labo."),
     Idea("intraday", "Trader en minutes plutôt qu'en jours",
          "Sur le Bitcoin, trader en 5 minutes fait moins bien qu'en jours, et l'achat-conservation y bat les "
-         "stratégies testées.",
-         ("resta",),
+         "stratégies testées. Chez les particuliers, deux fois plus de day traders perdent qu'ils ne gagnent.",
+         ("resta", "jordan_diltz", "kuo_lin"),
          caution="La recherche est défavorable, et le labo court terme de l'utilisateur l'a confirmé : les frais "
                  "mangent les petits mouvements."),
 )

@@ -824,7 +824,8 @@ JS = r"""
     if (data.ideas && data.ideas.length) {
       const cards = el('div', {class: 'cards wide'});
       const STATUS = {retenue: ['ok', 'utilisée par les bots'], recalee: ['bad', 'recalée par ton labo'],
-        defavorable: ['warn', 'recherche défavorable'], 'a-tester': ['idle', 'à tester']};
+        defavorable: ['warn', 'recherche défavorable'], 'a-tester': ['idle', 'à tester'],
+        info: ['idle', 'pour comprendre']};
       for (const idea of data.ideas) {
         const [kind, label] = STATUS[idea.status] || ['idle', idea.status];
         let best = '';

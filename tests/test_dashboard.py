@@ -246,9 +246,10 @@ def test_each_lab_has_its_own_section_and_chart(tmp_path):
     s = settings(tmp_path)
     row = {"variant": "Cassure 20/10", "timeframe": "5m", "trades": 500, "gross_expectancy_pct": 0.12,
            "expectancy_pct": -0.18, "verdict": "perd de l'argent"}
-    for name, _ in LAB_FILES[1:]:  # les deux labos court terme, pas le long terme
+    for name, _ in LAB_FILES[1:]:  # les labos court terme, pas le long terme
         (tmp_path / name).write_text(json.dumps({"rows": [row], "verdict": "VERDICT"}), encoding="utf-8")
     page = write_dashboard(s, NOW).read_text(encoding="utf-8")
     assert "<h2>Laboratoire long terme</h2>" in page and "Lance le laboratoire" in page  # pas encore lancé
     assert "<h2>Laboratoire court terme</h2>" in page and "<h2>Laboratoire court terme, ordres limites</h2>" in page
-    assert page.count('class="cost-chart"') == 2 and 'id="cost-chart-lab1"' in page and 'id="cost-chart-lab2"' in page
+    assert page.count('class="cost-chart"') == len(LAB_FILES) - 1 and 'id="cost-chart-lab3"' in page
+    assert "<h2>Laboratoire scalping, frais futures</h2>" in page

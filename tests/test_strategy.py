@@ -218,3 +218,48 @@ def test_impulse_never_looks_ahead_and_ignores_small_moves():
 def test_impulse_settings_are_validated(kwargs):
     with pytest.raises(ValueError, match="IMPULSE_BARS"):
         StrategyParams(strategy_type="impulsion", **kwargs)
+
+
+def test_support_bounce_buys_near_the_floor_and_sells_near_the_ceiling():
+    from tests.test_levels import range_market
+    df = frame_from_closes(range_market(900, seed=3), spread=0.001)
+    data = compute_signals(df, StrategyParams(strategy_type="support", trend_period=0))
+    entries, exits = data.index[data["entry"]], data.index[data["exit"]]
+    assert len(entries) >= 5 and len(exits) >= 5
+    assert (data.loc[entries, "close"] < 103).all()  # on achète en bas du range...
+    assert (data.loc[data["exit"] & (data["close"] > 105), "close"] > 106).all()  # ...et on revend en haut
+
+
+def test_resistance_breakout_buys_the_break_then_sells_when_price_falls_back():
+    from tests.test_levels import range_market
+    closes = np.concatenate([range_market(400, seed=2), np.linspace(110, 118, 12), np.linspace(118, 104, 15)])
+    data = compute_signals(frame_from_closes(closes, spread=0.001),
+                           StrategyParams(strategy_type="resistance", trend_period=0))
+    entries = np.flatnonzero(data["entry"])
+    assert len(entries) >= 1 and 400 <= entries[-1] < 412  # la cassure du plafond du range
+    after = np.flatnonzero(data["exit"].to_numpy() & (np.arange(len(data)) > entries[-1]))
+    assert len(after) and closes[after[0]] < 110.5  # retombé sous l'ancienne résistance
+
+
+def test_level_families_never_look_ahead():
+    closes = list(100 * np.exp(np.cumsum(np.random.default_rng(5).normal(0, 0.02, 700))))
+    for kind in ("support", "resistance"):
+        p = StrategyParams(strategy_type=kind, trend_period=0)
+        full = compute_signals(frame_from_closes(closes), p)
+        cut = compute_signals(frame_from_closes(closes[:450]), p)
+        assert (full["entry"].iloc[:450].to_numpy() == cut["entry"].to_numpy()).all(), kind
+        assert (full["exit"].iloc[:450].to_numpy() == cut["exit"].to_numpy()).all(), kind
+
+
+@pytest.mark.parametrize("kwargs", [{"level_window": 0}, {"level_lookback": 8, "level_window": 5},
+                                    {"level_touches": 0}, {"level_tol": 0}])
+def test_level_settings_are_validated(kwargs):
+    with pytest.raises(ValueError, match="LEVEL_"):
+        StrategyParams(strategy_type="support", **kwargs)
+
+
+def test_level_families_wait_for_enough_history_and_name_their_exit():
+    p = StrategyParams(strategy_type="support", trend_period=0, level_lookback=150, level_window=5, atr_period=14)
+    assert p.warmup_bars >= 150 + 5 + 14
+    assert p.exit_label == "résistance ou support cassé"
+    assert StrategyParams(strategy_type="resistance").exit_label == "retour sous le niveau"

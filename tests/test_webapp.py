@@ -13,7 +13,7 @@ import pytest
 
 from tradingbot import webapp
 from tradingbot.webapp import (
-    ACTIONS, HEADER, HEADER_VALUE, Handler, Poller, Site, TaskManager, already_running, bind, clean_value,
+    ACTIONS, FIELDS, HEADER, HEADER_VALUE, Handler, Poller, Site, TaskManager, already_running, bind, clean_value,
     finite_json, lab_summaries, next_step, steps_for, update_env,
 )
 
@@ -84,17 +84,19 @@ def test_an_action_runs_the_same_command_as_its_launcher_and_streams_its_journal
     assert task.to_dict()["status"] == "terminé" and task.to_dict()["last"] == "Terminé."
 
 
-def test_the_autopilot_runs_the_four_labs_then_starts_the_tournaments_and_the_portfolio(tmp_path, fake_bot):
+def test_the_autopilot_runs_the_five_labs_then_starts_the_trader_the_tournaments_and_the_portfolio(tmp_path, fake_bot):
     tasks = manager(tmp_path, fake_bot)
     pilot = tasks.start("pilote")
     assert wait(lambda: pilot.status != "en cours")
     lines, _ = pilot.read(0)
     steps = [line for line in lines if "=== Étape" in line]
-    assert len(steps) == 4 and steps[0].endswith(": labo-portefeuille")  # la plus rapide d'abord
-    assert any("« Tournoi court terme » lancé automatiquement" in line for line in lines)
+    assert len(steps) == 5 and steps[0].endswith(": labo-portefeuille")  # la plus rapide d'abord
+    assert any("--futures" in step for step in steps)  # le scalping avec les frais des futures
+    assert any("« Mon trader » lancé automatiquement" in line for line in lines)
+    assert any("« Rejouer mon trader sur l'historique » lancé automatiquement" in line for line in lines)  # un calcul
     assert any("« Portefeuille momentum » lancé automatiquement" in line for line in lines)
     started = {t.action.key for t in tasks.tasks.values()}
-    assert {"tournoi-court", "tournoi-long", "portefeuille"} <= started
+    assert {"trader", "trader-rejeu", "tournoi-court", "tournoi-long", "portefeuille"} <= started
     tournament = next(t for t in tasks.tasks.values() if t.action.key == "tournoi-court")
     assert wait(lambda: tournament.status != "en cours")
     assert "--sans-navigateur" in tournament.read(0)[0][0]  # le site montre déjà le tableau de bord
@@ -107,8 +109,8 @@ def test_a_failing_step_does_not_stop_the_night_research(tmp_path, fake_bot):
     tasks = manager(tmp_path, fake_bot, FAKE_FAIL="labo,labo-portefeuille")
     research = tasks.start("recherche")
     assert wait(lambda: research.status != "en cours")
-    assert research.status == "échec" and research.to_dict()["failed"] == 4
-    assert sum("on passe à la suivante" in line for line in research.read(0)[0]) == 4
+    assert research.status == "échec" and research.to_dict()["failed"] == 5
+    assert sum("on passe à la suivante" in line for line in research.read(0)[0]) == 5
     pilot = tasks.start("pilote")
     assert wait(lambda: pilot.status != "en cours")
     assert {t.action.key for t in tasks.tasks.values()} == {"recherche", "pilote"}  # rien n'a marché : pas de tournoi
@@ -202,6 +204,9 @@ def test_the_home_page_always_says_what_to_do_next():
     assert next_step(only_portfolio, [], [], retained)["action"] == "portefeuille"  # son labo a suffi
     alone = [SimpleNamespace(action=ACTIONS["portefeuille"])]
     assert next_step(labs[1:], alone, [{"running": False}], {**retained, "running": True})["view"] == "tableau"
+    assert next_step(labs, [], [], None, {"plays": 2})["action"] == "trader"  # le trader d'abord
+    trading = [SimpleNamespace(action=ACTIONS["trader"])]
+    assert next_step(labs[1:], trading, [], None, {"plays": 2})["view"] == "tableau"
 
 
 def test_lab_results_are_summarised_for_the_home_page(tmp_path):
@@ -409,3 +414,58 @@ def test_the_portfolio_is_summarised_for_the_home_page(tmp_path):
     assert book["holdings"] == ["SOL"] and book["pnl_pct"] == pytest.approx(1.25) and book["rotations"] == 1
     assert book["retained"]  # toujours retenue par le dernier labo
     json.dumps(summary, allow_nan=False)
+
+
+class ChartExchange:
+    def __init__(self, df):
+        self.df = df
+
+    def fetch_ohlcv(self, symbol, timeframe, limit):
+        return self.df[["ts", "open", "high", "low", "close", "volume"]].iloc[-limit:].values.tolist()
+
+
+def test_a_chart_shows_its_levels_its_reading_and_what_the_trader_strategies_say(server):
+    from tests.conftest import frame_from_closes
+    from tests.test_levels import range_market
+    s, base = server
+    radar_ready(s)
+    s.charts.exchange = ChartExchange(frame_from_closes(range_market(400), spread=0.002))
+    (s.root / "data" / "trader").mkdir(parents=True)
+    (s.root / "data" / "trader" / "compte.json").write_text(json.dumps({"version": 1, "playbook": [
+        {"name": "Rebond sur support", "timeframe": "4h", "key": "Rebond sur support (4h)", "status": "à surveiller",
+         "why": "Le prix est descendu sur un support solide."}], "trades": [], "positions": []}), encoding="utf-8")
+    assert request(base, "/api/graphique?symbole=BTC/USDT&unite=4h")[0] == 403  # seulement depuis la page
+    page = {HEADER: HEADER_VALUE}
+    assert request(base, "/api/graphique?symbole=XRP/USDT&unite=4h", headers=page)[0] == 400  # pas suivie
+    assert request(base, "/api/graphique?symbole=BTC/USDT&unite=3h", headers=page)[0] == 400
+    status, body, _ = request(base, "/api/graphique?symbole=BTC/USDT&unite=4h", headers=page)
+    chart = json.loads(body)
+    assert status == 200 and len(chart["candles"]) == 150 and len(chart["ma50"]) == 150
+    kinds = {z["kind"] for z in chart["levels"]}
+    assert kinds == {"support", "resistance"} and all(z["touches"] >= 2 for z in chart["levels"])
+    assert chart["reading"]["sentences"] and chart["plays"][0]["signal"] in ("achat", "vente", "rien")
+    markets = json.loads(request(base, "/api/marches")[1])
+    assert [m["symbol"] for m in markets["markets"]] and markets["timeframes"] == ["15m", "1h", "4h", "1d"]
+
+
+def test_the_trader_is_shown_with_its_replay_and_its_settings(server):
+    s, base = server
+    view = json.loads(request(base, "/api/trader")[1])
+    assert view["live"]["exists"] is False and view["replay"]["exists"] is False
+    assert view["settings"]["profile"] == "futures" and view["profiles"] == ["futures", "spot"]
+    (s.root / "data" / "trader").mkdir(parents=True)
+    (s.root / "data" / "trader" / "rejeu.json").write_text(json.dumps({"version": 1, "replay": True, "start": 1000,
+                                                                      "value": 1100, "trades": []}), encoding="utf-8")
+    replay = json.loads(request(base, "/api/trader")[1])["replay"]
+    assert replay["exists"] and replay["replay"] and replay["pnl_pct"] == pytest.approx(10)
+
+
+def test_the_trader_settings_stay_in_paper_money_and_within_bounds():
+    fields = {f.key: f for f in FIELDS}
+    assert clean_value(fields["TRADER_PROFILE"], "Spot") == "spot"
+    assert clean_value(fields["TRADER_LEVERAGE"], "5") == "5.0"
+    assert clean_value(fields["TRADER_POSITIONS"], "8") == "8"
+    for key, bad in [("TRADER_PROFILE", "live"), ("TRADER_LEVERAGE", "50"), ("TRADER_RISK", "0.2"),
+                     ("TRADER_POSITIONS", "2.5"), ("TRADER_COINS", "0")]:
+        with pytest.raises(ValueError):
+            clean_value(fields[key], bad)

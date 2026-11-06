@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from .execution import ExecutionParams
+from .explain import read_chart
 from .risk import RiskGuard, RiskParams, TradeStats, elimination_reason, position_size
 from .strategy import StrategyParams, compute_signals, exit_reason, initial_stop
 
@@ -28,6 +29,13 @@ class Trade:
     reason: str
     entry_mark: float = math.nan  # prix du graphique, avant glissement et frais
     exit_mark: float = math.nan
+    entry_index: int = -1  # bougies d'entrée et de sortie
+    exit_index: int = -1
+    stop: float = math.nan  # stop de départ
+    funding: float = 0.0  # financement payé (futures)
+    mfe: float = math.nan  # plus haut atteint pendant le trade, par rapport au prix d'entrée du graphique
+    mae: float = math.nan  # plus bas atteint
+    context: dict | None = None  # la lecture du graphique à la bougie du signal (avec explain=True)
 
     @property
     def pnl(self) -> float:
@@ -94,11 +102,14 @@ def run_backtest(
     risk: RiskParams = RiskParams(),
     initial_capital: float = 10_000.0,
     execution: ExecutionParams = ExecutionParams(),
+    explain: bool = False,
 ) -> BacktestResult:
     """Ordres limites : placés à l'ouverture de la bougie qui suit le signal (≈ meilleur prix du
     carnet à ce moment), exécutés seulement si le prix passe strictement au-delà de la limite
     pendant leur durée de vie. Si une bougie touche à la fois le stop et la limite de sortie,
-    on suppose le pire (le stop)."""
+    on suppose le pire (le stop). Futures : le financement est payé à la sortie, au prorata du temps passé.
+    `explain` : chaque trade garde la lecture du graphique au signal, et le plus haut et le plus bas atteints
+    (plus lent : seulement pour montrer des trades, pas dans le labo)."""
     ex = execution
     data = compute_signals(df, strategy)
     index = data.index
@@ -133,11 +144,14 @@ def run_backtest(
 
     def close_position(i: int, price: float, reason: str, fee: float, mark: float) -> None:
         nonlocal cash, pos, fees_paid, eliminated
-        proceeds = pos.qty * price * (1 - fee)
-        fees_paid += pos.qty * price * fee
+        hours = (index[i] - pos.entry_time).total_seconds() / 3600
+        funding = pos.qty * pos.entry_price * ex.funding_rate_8h * hours / 8
+        proceeds = pos.qty * price * (1 - fee) - funding
+        fees_paid += pos.qty * price * fee + funding
         cash += proceeds
         trades.append(Trade(
             pos.entry_time, index[i], pos.entry_price, price, pos.qty, pos.cost, proceeds, reason, pos.entry_mark, mark,
+            pos.entry_index, i, pos.stop, funding,
         ))
         stats.add((proceeds - pos.cost) / pos.cost)
         eliminated = eliminated or elimination_reason(stats, risk.eliminate_after_trades)
@@ -208,6 +222,15 @@ def run_backtest(
     if pos:
         close_position(n - 1, c[-1] * (1 - ex.slippage), "fin du test", ex.fee_rate, c[-1])
         equity[-1] = cash
+
+    if explain:
+        for t in trades:
+            base = t.entry_mark if t.entry_mark > 0 else t.entry_price
+            t.mfe = float(h[t.entry_index:t.exit_index + 1].max()) / base - 1
+            t.mae = float(l[t.entry_index:t.exit_index + 1].min()) / base - 1
+            signal = max(t.entry_index - 1, 0)  # la bougie dont la clôture a donné le signal
+            t.context = read_chart(df.iloc[max(0, signal - 400):signal + 1],
+                                   fees=2 * (ex.fee_rate + ex.slippage))
 
     equity_series = pd.Series(equity, index=index, name="equity")
     result = BacktestResult(trades, equity_series)

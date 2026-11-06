@@ -467,3 +467,60 @@ def test_no_paper_portfolio_without_a_retained_variant(tmp_path, monkeypatch, ca
     portfolio_lab(data / "laboratoire-portefeuille.json", {"Momentum croisé 7 j, 3 cryptos": "instable"}, ["A/USDT"])
     assert main.main(["portefeuille", "--une-fois"]) == 0  # une réponse, pas une panne
     assert "aucune variante" in caplog.text and not (data / "portefeuille").exists()
+
+
+def test_the_trader_command_plays_the_lab_strategies_once_and_saves_its_account(tmp_path, monkeypatch, caplog):
+    import logging
+    from tests.test_trader import ReplayExchange
+    from tradingbot.scanner import ScanResult
+    caplog.set_level(logging.INFO, logger="tradingbot")
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    monkeypatch.setenv("DATA_DIR", str(data))
+    monkeypatch.setenv("TRADER_LEVERAGE", "2")
+    data.mkdir()
+    (data / "laboratoire.json").write_text(json.dumps({"rows": [
+        {"variant": "Momentum 28", "timeframe": "1h", "verdict": "à surveiller", "expectancy_pct": 0.3, "trades": 60}],
+        "execution": {"order_type": "market", "fee_rate": 0.001, "maker_fee_rate": 0.001, "slippage": 0.0005}}),
+        encoding="utf-8")
+    walk = frame_from_closes(100 * np.exp(np.cumsum(np.random.default_rng(3).normal(0, 0.01, 400))))
+    exchange = ReplayExchange({"BTC/USDT": walk})
+    exchange.i = len(walk) - 1
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: exchange)
+    monkeypatch.setattr(main, "by_volume", lambda exchange, top: [ScanResult("BTC/USDT", 0.1, 1e9, 0.0)])
+    monkeypatch.setattr(main, "keep_awake", lambda: True)
+    assert main.main(["trader", "--une-fois"]) == 0
+    state = json.loads((data / "trader" / "compte.json").read_text(encoding="utf-8"))
+    assert state["settings"]["max_leverage"] == 2 and state["playbook"][0]["key"] == "Momentum 28 (1h)"
+    assert state["universe"] == ["BTC/USDT"] and state["value"] == pytest.approx(1000)
+    start = [r for r in caplog.records if r.getMessage().startswith("Trader fictif")]
+    assert start and getattr(start[0], "alert", False)
+
+
+def test_the_trader_replay_shows_explained_trades_and_says_it_is_not_a_proof(tmp_path, monkeypatch, capsys):
+    from tradingbot.scanner import ScanResult
+    monkeypatch.chdir(tmp_path)
+    data = tmp_path / "data"
+    monkeypatch.setenv("DATA_DIR", str(data))
+    data.mkdir()
+    (data / "laboratoire.json").write_text(json.dumps({"rows": [
+        {"variant": "Cassure 20/10", "timeframe": "1h", "verdict": "à surveiller", "expectancy_pct": 0.3,
+         "trades": 60}]}), encoding="utf-8")
+    walk = frame_from_closes(100 * np.exp(np.cumsum(np.random.default_rng(4).normal(0, 0.01, 1500))))
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: None)
+    monkeypatch.setattr(main, "by_volume", lambda exchange, top: [ScanResult(s, 0.1, 1e9, 0.0)
+                                                                  for s in ("BTC/USDT", "ETH/USDT")])
+    monkeypatch.setattr(main, "load_or_fetch", lambda ex, symbol, tf, days, cache, exchange=None: walk)
+    monkeypatch.setattr(main, "keep_awake", lambda: True)
+    assert main.main(["trader", "--rejouer"]) == 0
+    state = json.loads((data / "trader" / "rejeu.json").read_text(encoding="utf-8"))
+    assert state["replay"] and state["trades"] and all(t["diagnosis"]["text"] for t in state["trades"])
+    assert "ce n'est pas une preuve" in capsys.readouterr().out
+
+
+def test_without_a_retained_strategy_the_replay_has_nothing_to_show(tmp_path, monkeypatch, caplog):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: None)
+    assert main.main(["trader", "--rejouer"]) == 0
+    assert "rien à rejouer" in caplog.text

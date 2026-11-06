@@ -32,7 +32,7 @@ import time
 import urllib.request
 import webbrowser
 from collections import deque
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -47,13 +47,19 @@ from .risk import RiskParams
 from .dashboard import FILENAME as DASHBOARD_FILE, write_dashboard
 from .data import load_or_fetch, ohlcv_to_frame, timeframe_to_ms
 from .desk import DESK_FILE, Desk
-from .lab import LAB_FILE, LAB_FILES, LIMIT_LAB_FILE, PROMISING, SHORT_LAB_FILE, load_lab
+from .explain import read_chart
+from .indicators import sma
+from .lab import ALL_VARIANTS, FUTURES_LAB_FILE, LAB_FILE, LAB_FILES, LIMIT_LAB_FILE, PROMISING, SHORT_LAB_FILE, load_lab
 from .prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, board_to_dict, connect, label, short_error, snapshot
 from .knowledge import knowledge
 from .moves import OPTIONS, STUDY_DAYS, round_trip_cost, study
 from .portfolio import PORTFOLIO_DIR, PORTFOLIO_LAB_FILE, RETAINED as PORTFOLIO_RETAINED, load as load_portfolio_lab
 from .radar import JOURNAL_FILE, STRONG, WINDOWS, MoveJournal, Radar, journal_stats
 from .robustness import MIN_TRADES
+from .strategy import compute_signals
+from .trader import (
+    ACCOUNT_FILE as TRADER_ACCOUNT, PROFILES, REPLAY_FILE as TRADER_REPLAY_FILE, TRADER_DIR, summary as trader_summary,
+)
 
 log = logging.getLogger(__name__)
 
@@ -91,17 +97,32 @@ SHORT_TOURNAMENT = ("tournoi", "--labo", f"{SHORT_LAB_FILE},{LIMIT_LAB_FILE}", "
 LONG_TOURNAMENT = ("tournoi", "--avec-marches-du-labo", "--top", "20", "--sans-navigateur")
 PORTFOLIO_LAB = ("labo-portefeuille",)  # la règle de la recherche (momentum croisé), la plus rapide : en premier
 PORTFOLIO = ("portefeuille",)
+FUTURES_LAB = (*SHORT_LAB[:-2], "--futures", "--resultats", FUTURES_LAB_FILE)  # scalping, frais des futures
+TRADER = ("trader",)
+TRADER_REPLAY = ("trader", "--rejouer")
 
 GROUPS = ("Le plus simple", "Chercher une stratégie", "Faire tourner en argent fictif", "Vérifier")
 ACTIONS = {a.key: a for a in (
     Action("pilote", "Pilote automatique", GROUPS[0],
-           "Cherche des stratégies sur l'historique réel (les quatre labos, dont la règle de portefeuille issue de la "
-           "recherche), puis lance tout seul, en argent fictif, les tournois et le portefeuille avec ce qui a été "
-           "retenu. Tu n'as plus qu'à regarder.",
-           "1 à 3 h de calcul, puis tout tourne", CALCUL, then=("tournoi-court", "tournoi-long", "portefeuille")),
+           "Cherche des stratégies sur l'historique réel (les cinq labos, dont le scalping avec les frais des futures "
+           "et la règle de portefeuille issue de la recherche), puis lance tout seul, en argent fictif, ton trader, "
+           "les tournois et le portefeuille avec ce qui a été retenu. Tu n'as plus qu'à regarder.",
+           "2 à 4 h de calcul, puis tout tourne", CALCUL,
+           then=("trader", "trader-rejeu", "tournoi-court", "tournoi-long", "portefeuille")),
+    Action("trader", "Mon trader", GROUPS[0],
+           "Ton trader fictif : il joue les stratégies retenues par le labo sur les 20 cryptos les plus échangées, met "
+           "un stop à chaque trade et t'explique chaque achat et chaque vente. Levier possible (argent fictif). Il "
+           "relit les labos chaque heure.", "tourne jusqu'à ce que tu l'arrêtes", endless=True),
     Action("recherche", "Recherche de nuit", GROUPS[1],
-           "Les quatre labos à la suite : portefeuille, court terme, court terme en ordres limites, long terme.",
-           "1 à 3 h", CALCUL),
+           "Les cinq labos à la suite : portefeuille, court terme, court terme en ordres limites, scalping avec les "
+           "frais des futures, long terme.", "2 à 4 h", CALCUL),
+    Action("trader-rejeu", "Rejouer mon trader sur l'historique", GROUPS[1],
+           "Les règles de ton trader rejouées sur les derniers mois : des exemples de trades expliqués tout de suite. "
+           "Flatteur par nature (ces stratégies ont été choisies sur ce passé) : ce n'est pas une preuve.",
+           "1 à 5 min", CALCUL),
+    Action("labo-futures", "Labo scalping, frais futures", GROUPS[1],
+           "Le labo court terme avec les frais des contrats à terme : 0,05 % par ordre au marché et le financement, "
+           "deux fois moins cher qu'au comptant. Argent fictif seulement.", "environ 1 h", CALCUL),
     Action("labo-portefeuille", "Labo portefeuille", GROUPS[1],
            "Une règle issue de la recherche : chaque semaine, garder les 3 ou 5 cryptos qui ont le plus monté parmi "
            "les 30 plus échangées. Testée sur des années de bougies d'un jour, hors échantillon, contre le panier de "
@@ -147,8 +168,11 @@ def steps_for(key: str, root: Path) -> list[tuple[str, ...]]:
     """Les commandes du bot qu'une action lance, dans l'ordre."""
     long_lab = ("labo", "--csv-dir", "actions") if any((root / "actions").glob("*.csv")) else ("labo",)
     return {
-        "pilote": [PORTFOLIO_LAB, SHORT_LAB, LIMIT_LAB, long_lab],
-        "recherche": [PORTFOLIO_LAB, SHORT_LAB, LIMIT_LAB, long_lab],
+        "pilote": [PORTFOLIO_LAB, SHORT_LAB, LIMIT_LAB, FUTURES_LAB, long_lab],
+        "recherche": [PORTFOLIO_LAB, SHORT_LAB, LIMIT_LAB, FUTURES_LAB, long_lab],
+        "trader": [TRADER],
+        "trader-rejeu": [TRADER_REPLAY],
+        "labo-futures": [FUTURES_LAB],
         "labo-portefeuille": [PORTFOLIO_LAB],
         "portefeuille": [PORTFOLIO],
         "labo-court": [SHORT_LAB],
@@ -371,21 +395,24 @@ class TaskManager:
     def running(self) -> list[Task]:
         return [t for t in self.all() if t.status == RUNNING]
 
-    def blocker(self, key: str) -> str | None:
-        """Pourquoi l'action ne peut pas démarrer maintenant (None : elle peut)."""
+    def blocker(self, key: str, finishing: "Task | None" = None) -> str | None:
+        """Pourquoi l'action ne peut pas démarrer maintenant (None : elle peut). `finishing` : la tâche qui se termine
+        et lance la suite (elle compte encore comme en cours, mais ne bloque plus rien)."""
         action = ACTIONS[key]
         for t in self.running():
+            if t is finishing:
+                continue
             if t.action.key == key:
                 return f"« {action.title} » tourne déjà."
             if action.slot and t.action.slot == action.slot:
                 return f"Attends la fin de « {t.action.title} » : un seul calcul à la fois (ils se partagent le processeur)."
         return None
 
-    def start(self, key: str) -> Task:
+    def start(self, key: str, finishing: Task | None = None) -> Task:
         if key not in ACTIONS:
             raise ValueError(f"Action inconnue : {key}")
         with self.lock:
-            if reason := self.blocker(key):
+            if reason := self.blocker(key, finishing):
                 raise ValueError(reason)
             task = Task(next(self.ids), ACTIONS[key], steps_for(key, self.root), self.command, self.root, self.env,
                         self._finished)
@@ -398,9 +425,9 @@ class TaskManager:
     def _finished(self, task: Task, status: str) -> None:
         if status == STOPPED or len(task.failed) == len(task.steps):
             return
-        for key in task.action.then:  # le pilote automatique enchaîne sur les tournois
+        for key in task.action.then:  # le pilote automatique enchaîne sur le trader, les tournois et le portefeuille
             try:
-                self.start(key)
+                self.start(key, finishing=task)
                 task.emit(f"→ « {ACTIONS[key].title} » lancé automatiquement.")
             except ValueError as exc:
                 task.emit(f"→ « {ACTIONS[key].title} » non lancé : {exc}")
@@ -496,6 +523,13 @@ class RadarSource:
         with self.lock:
             return symbol in self.radar.info
 
+    def top(self, n: int = 60) -> list[dict]:
+        """Les cryptos suivies, de la plus échangée à la moins échangée (pour choisir un graphique)."""
+        with self.lock:
+            rows = sorted(self.radar.info.items(), key=lambda kv: -kv[1][0])[:n]
+            return [{"symbol": sym, "volume_24h": vol, "change_24h": chg, "last": self.radar.latest.get(sym)}
+                    for sym, (vol, chg) in rows]
+
     def view(self, window: int, rising_only: bool, top: int = 25) -> dict:
         with self.lock:
             moves, span = self.radar.moves(window, top, rising_only), self.radar.span
@@ -508,6 +542,38 @@ class RadarSource:
                        "change_24h": m.change_24h, "volume_24h": m.volume_24h, "strong": m.strong,
                        "rise": m.strong_rise} for m in moves],
         }
+
+
+class Charts:
+    """Les graphiques du site : bougies clôturées, un cache court par crypto et par unité de temps."""
+
+    TTL = {"1m": 15, "5m": 30, "15m": 60, "1h": 60, "4h": 120, "1d": 300}
+    TIMEFRAMES = ("15m", "1h", "4h", "1d")
+    LIMIT = 400  # assez pour la moyenne sur 200 bougies et les niveaux des 150 dernières
+
+    def __init__(self, make_exchange, exchange_id: str):
+        self.make_exchange, self.exchange_id = make_exchange, exchange_id
+        self.exchange = None
+        self.cache: dict[tuple[str, str], tuple[float, object]] = {}
+        self.lock = threading.Lock()
+
+    def candles(self, symbol: str, timeframe: str):
+        if timeframe not in self.TTL:
+            raise ValueError("Unité de temps inconnue")
+        key = (symbol, timeframe)
+        with self.lock:
+            hit = self.cache.get(key)
+            if hit and time.monotonic() < hit[0]:
+                return hit[1]
+            if self.exchange is None:
+                self.exchange = self.make_exchange(self.exchange_id)
+            df = ohlcv_to_frame(self.exchange.fetch_ohlcv(symbol, timeframe, limit=self.LIMIT))
+            now_ms = int(time.time() * 1000)
+            df = df[df["ts"] + timeframe_to_ms(timeframe) <= now_ms]  # seulement les bougies terminées
+            self.cache[key] = (time.monotonic() + self.TTL[timeframe], df)
+            if len(self.cache) > 200:
+                self.cache.pop(next(iter(self.cache)))
+            return df
 
 
 class Market:
@@ -594,8 +660,9 @@ class Field:
     key: str
     title: str
     help: str
-    kind: str  # bots, money, fee, exchange, secret, chat, path
+    kind: str  # bots, money, fee, exchange, secret, chat, path, profile, number, count
     default: str = ""  # ce que le bot utilise quand la ligne est vide
+    bounds: tuple[float, float] = (0.0, 0.0)  # number et count : valeurs permises
 
 
 FIELDS = (
@@ -615,6 +682,16 @@ FIELDS = (
           "chat"),
     Field("OBSIDIAN_VAULT", "Coffre Obsidian (facultatif)", "Dossier où le bot écrit aussi son journal en notes. "
           "Vide = pas de notes.", "path"),
+    Field("TRADER_CAPITAL", "Mon trader : capital fictif", "En USDT. Change-le avant le premier lancement (le compte "
+          "garde ensuite son histoire).", "money", "1000"),
+    Field("TRADER_PROFILE", "Mon trader : type de compte", "futures (frais des contrats à terme, levier possible) ou "
+          "spot (au comptant, sans levier). Toujours en argent fictif.", "profile", "futures"),
+    Field("TRADER_LEVERAGE", "Mon trader : levier maximum", "De 1 à 20. Le total des positions peut aller jusqu'à ce "
+          "multiple du compte. Le levier ne crée aucun gain : il grossit gains et pertes.", "number", "3", (1, 20)),
+    Field("TRADER_RISK", "Mon trader : risque par trade", "Perte si le stop est touché, en part du compte : 0.01 = 1 %. "
+          "Entre 0.001 et 0.05.", "number", "0.01", (0.001, 0.05)),
+    Field("TRADER_POSITIONS", "Mon trader : positions en même temps", "De 1 à 20.", "count", "5", (1, 20)),
+    Field("TRADER_COINS", "Mon trader : cryptos suivies", "Les plus échangées, de 1 à 100.", "count", "20", (1, 100)),
 )
 FIELD_KEYS = {f.key: f for f in FIELDS}
 
@@ -640,6 +717,22 @@ def clean_value(field: Field, raw: str) -> str:
         if field.kind == "fee" and not 0 <= number <= 0.01:
             raise ValueError(f"{field.title} : entre 0 et 0.01 (0.001 = 0,1 %)")
         return repr(number)
+    if field.kind == "profile":
+        value = value.lower()
+        if value not in PROFILES:
+            raise ValueError(f"{field.title} : futures ou spot (reçu « {value} »)")
+        return value
+    if field.kind in ("number", "count"):
+        low, high = field.bounds
+        try:
+            number = float(value.replace(",", "."))
+        except ValueError:
+            raise ValueError(f"{field.title} : un nombre est attendu (reçu « {value} »)") from None
+        if field.kind == "count" and number != int(number):
+            raise ValueError(f"{field.title} : un nombre entier est attendu")
+        if not low <= number <= high:
+            raise ValueError(f"{field.title} : entre {low:g} et {high:g}")
+        return str(int(number)) if field.kind == "count" else repr(number)
     if field.kind == "exchange":
         value = value.lower()
         if value not in ccxt.exchanges:
@@ -760,10 +853,12 @@ def portfolio_summary(data_dir: Path, running: bool) -> dict:
             "books": books, "running": running}
 
 
-def next_step(labs: list[dict], running: list[Task], tournaments: list[dict], portfolio: dict | None = None) -> dict:
+def next_step(labs: list[dict], running: list[Task], tournaments: list[dict], portfolio: dict | None = None,
+              trader: dict | None = None) -> dict:
     """Une seule chose à faire maintenant, en une phrase."""
     keys = {t.action.key for t in running}
     portfolio = portfolio or {"lab": {"done": False, "retained": 0}, "books": [], "running": False}
+    trader = trader or {"plays": 0}
     computing = next((t for t in running if t.action.slot == CALCUL), None)
     if computing:
         then = " Les tournois et le portefeuille démarreront tout seuls à la fin." if computing.action.then else ""
@@ -775,8 +870,13 @@ def next_step(labs: list[dict], running: list[Task], tournaments: list[dict], po
         return {"title": "Lance le pilote automatique",
                 "text": "Le bot cherche, sur l'historique réel, des stratégies qui gagnent après frais (1 à 3 h), "
                         "puis les fait tourner en argent fictif. Aucun argent réel n'est engagé.", "action": "pilote"}
-    short = sum(lab["retained"] for lab in done if lab["file"] != LAB_FILE)
+    short = sum(lab["retained"] for lab in done if lab["file"] in (SHORT_LAB_FILE, LIMIT_LAB_FILE))
     long_ = sum(lab["retained"] for lab in done if lab["file"] == LAB_FILE)
+    if trader["plays"] and "trader" not in keys:
+        return {"title": "Lance ton trader",
+                "text": f"Les labos ont retenu {trader['plays']} stratégie(s) jouable(s). Ton trader fictif les joue sur "
+                        "les cryptos les plus échangées et t'explique chaque trade. Aucun argent réel.",
+                "action": "trader"}
     if short and "tournoi-court" not in keys:
         return {"title": "Lance le tournoi court terme",
                 "text": f"Les labos court terme ont retenu {short} stratégie(s). Le tournoi les fait tourner en argent "
@@ -791,7 +891,7 @@ def next_step(labs: list[dict], running: list[Task], tournaments: list[dict], po
                 "text": f"Le labo portefeuille a retenu {portfolio['lab']['retained']} variante(s) de la règle issue de "
                         "la recherche. Le portefeuille l'applique en argent fictif, une rotation par semaine.",
                 "action": "portefeuille"}
-    if any(t["running"] for t in tournaments) or portfolio["running"]:
+    if any(t["running"] for t in tournaments) or portfolio["running"] or "trader" in keys:
         return {"title": "Tout tourne en argent fictif : laisse le temps faire",
                 "text": "Une stratégie n'est « candidate au testnet » qu'après 30 trades nettement positifs, frais "
                         "compris ; le portefeuille, lui, se juge sur des semaines. Le gardien coupe tout seul ce qui "
@@ -827,6 +927,7 @@ class Site:
         self.study_market = Market(make_exchange, exchange_id, data_dir / "cache")
         self.desk_market = Market(make_exchange, exchange_id, data_dir / "cache")
         self.studies = Studies(self._study)
+        self.charts = Charts(make_exchange, exchange_id)
         self.code = self._code() if lan_address else None
 
     def start_background(self) -> None:
@@ -892,6 +993,75 @@ class Site:
         prices = {s: p for s in self.desk.symbols() if (p := self.radar.price(s))}
         return self.desk.summary(prices)
 
+    def trader_settings(self):
+        from .trader import TraderSettings, settings_from_env
+        try:
+            return settings_from_env({**parse_dotenv(self.env_path), **self.pristine})
+        except ValueError:
+            return TraderSettings()
+
+    def playable(self, data_dir: Path) -> int:
+        """Combien de stratégies des labos le trader peut jouer avec ses frais."""
+        from .trader import choose_playbook
+        settings = self.settings()
+        return len(choose_playbook(data_dir, self.trader_settings(), settings.execution if settings else
+                                   ExecutionParams()))
+
+    def trader_view(self) -> dict:
+        folder = self.data_dir() / TRADER_DIR
+        def load(name):
+            try:
+                return json.loads((folder / name).read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return None
+        running = any(t.action.key == "trader" for t in self.tasks.running())
+        return {"live": {**trader_summary(load(TRADER_ACCOUNT)), "running": running},
+                "replay": trader_summary(load(TRADER_REPLAY_FILE)),
+                "settings": asdict(self.trader_settings()), "profiles": list(PROFILES)}
+
+    def chart(self, symbol: str, timeframe: str) -> dict:
+        """Un graphique comme un trader le lit : bougies, supports et résistances, moyennes, lecture et signaux."""
+        df = self.charts.candles(symbol, timeframe)
+        if len(df) < 30:
+            raise ValueError("Pas assez d'historique pour ce graphique.")
+        settings = self.settings()
+        ex = settings.execution if settings else ExecutionParams()
+        reading = read_chart(df, fees=2 * (ex.fee_rate + ex.slippage))
+        last = float(df["close"].iloc[-1])
+        shown = df.iloc[-150:]
+        def series(values):
+            return [None if not math.isfinite(v) else float(v) for v in values.iloc[-150:].tolist()]
+        levels = [{**z, "kind": "support" if z["price"] < last else "resistance"}
+                  for z in reading.pop("levels") if z["touches"] >= 2]
+        state = None
+        try:
+            state = json.loads((self.data_dir() / TRADER_DIR / TRADER_ACCOUNT).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        plays = []
+        for play in (state or {}).get("playbook") or []:
+            if play.get("timeframe") != timeframe or play.get("name") not in ALL_VARIANTS:
+                continue
+            row = compute_signals(df, ALL_VARIANTS[play["name"]]).iloc[-1]
+            plays.append({"key": play["key"], "status": play.get("status"), "why": play.get("why"),
+                          "signal": "achat" if row.entry else "vente" if row.exit else "rien"})
+        start = int(shown["ts"].iloc[0])
+        def stamp(iso_text):
+            try:
+                return int(datetime.fromisoformat(iso_text).timestamp() * 1000)
+            except (TypeError, ValueError):
+                return None
+        trades = [t for t in (state or {}).get("trades") or [] if t.get("symbol") == symbol
+                  and t.get("timeframe") == timeframe and (stamp(t.get("exit_time")) or 0) >= start][-10:]
+        position = next((pos for pos in (state or {}).get("positions") or [] if pos.get("symbol") == symbol), None)
+        return {"symbol": symbol, "timeframe": timeframe, "last": last,
+                "candles": shown[["ts", "open", "high", "low", "close", "volume"]].values.tolist(),
+                "ma50": series(sma(df["close"], 50)), "ma200": series(sma(df["close"], 200)),
+                "levels": levels, "reading": reading, "plays": plays, "position": position,
+                "trades": [{"entry": stamp(t["entry_time"]), "exit": stamp(t["exit_time"]),
+                            "entry_price": t["entry_price"], "exit_price": t["exit_price"], "net": t["net"],
+                            "title": (t.get("diagnosis") or {}).get("title"), "play": t["play"]} for t in trades]}
+
     def settings(self) -> Settings | None:
         """Réglages relus à chaque demande (le formulaire ou le Bloc-notes ont pu les changer) ; comme pour les
         commandes, une variable d'environnement passe avant la ligne de .env."""
@@ -935,11 +1105,12 @@ class Site:
         labs = lab_summaries(data_dir)
         tournaments = tournament_summaries(data_dir, {t.action.key for t in running})
         portfolio = portfolio_summary(data_dir, any(t.action.key == "portefeuille" for t in running))
+        trader = {"plays": self.playable(data_dir), "running": any(t.action.key == "trader" for t in running)}
         mode = settings.mode if settings else "?"
         return {
             "mode": mode, "mode_label": MODE_LABELS.get(mode, mode), "exchange": settings.exchange if settings else "?",
             "settings_error": self.settings_error,
-            "next": next_step(labs, running, tournaments, portfolio),
+            "next": next_step(labs, running, tournaments, portfolio, trader), "trader": trader,
             "tasks": [t.to_dict() for t in sorted(self.tasks.all(), key=lambda t: -t.id)],
             "actions": [{"key": a.key, "title": a.title, "group": a.group, "description": a.description,
                          "duration": a.duration, "blocked": self.blocked(a.key, mode)} for a in ACTIONS.values()],
@@ -1005,7 +1176,8 @@ class Site:
             field = FIELD_KEYS.get(key)
             if field is None:
                 raise ValueError(f"Ce réglage ne se change pas depuis le site : {key}")
-            if not str(raw).strip() and field.kind in ("secret", "money", "fee", "exchange"):
+            if not str(raw).strip() and field.kind in ("secret", "money", "fee", "exchange", "profile", "number",
+                                                       "count"):
                 continue  # vide : on garde la valeur actuelle (le token enregistré, ou la valeur par défaut)
             cleaned[key] = clean_value(field, raw)
         if not self.env_path.exists() and (self.root / ".env.example").exists():
@@ -1153,6 +1325,16 @@ class Handler(BaseHTTPRequestHandler):
             self.json(self.site.trials())
         elif url.path == "/api/savoir":
             self.json(knowledge(self.site.data_dir()))
+        elif url.path == "/api/trader":
+            self.json(self.site.trader_view())
+        elif url.path == "/api/marches":
+            self.json({"markets": self.site.radar.top(60), "timeframes": list(Charts.TIMEFRAMES)})
+        elif url.path == "/api/graphique":
+            if self.headers.get(HEADER) != HEADER_VALUE:  # un graphique télécharge : seulement à la demande de la page
+                self.fail(403, "Graphique refusé : il doit venir de la page du site.")
+                return
+            symbol = self.site.trial_symbol((query.get("symbole") or [""])[0])
+            self.json(self.site.chart(symbol, (query.get("unite") or ["4h"])[0]))
         elif url.path == "/api/prix":
             data, error, updated = self.site.prices_poller.get()
             self.json({"board": data, "error": error, "updated": iso(updated)})

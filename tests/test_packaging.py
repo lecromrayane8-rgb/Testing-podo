@@ -19,7 +19,7 @@ def without_browser(steps):
 
 def test_every_launcher_keeps_windows_line_endings():
     launchers = sorted(WINDOWS.rglob("*.bat"))
-    assert len(launchers) == 19
+    assert len(launchers) == 22
     for bat in launchers:
         data = bat.read_bytes()
         assert data.count(b"\n") == data.count(b"\r\n") > 0, bat.name
@@ -28,7 +28,10 @@ def test_every_launcher_keeps_windows_line_endings():
 def test_the_site_runs_exactly_the_commands_of_the_launchers(tmp_path):
     assert commands("7 - Labo court terme.bat") == steps_for("labo-court", tmp_path)
     assert commands("10 - Labo court terme ordres limites.bat") == steps_for("labo-limites", tmp_path)
-    assert commands("13 - Recherche de nuit.bat")[:4] == steps_for("recherche", tmp_path)
+    assert commands("13 - Recherche de nuit.bat")[:5] == steps_for("recherche", tmp_path)
+    assert commands("16 - Labo scalping futures.bat") == steps_for("labo-futures", tmp_path)
+    assert commands("17 - Mon trader.bat") == steps_for("trader", tmp_path)
+    assert commands("18 - Rejouer mon trader.bat") == steps_for("trader-rejeu", tmp_path)
     assert commands("14 - Labo portefeuille.bat") == steps_for("labo-portefeuille", tmp_path)
     assert commands("15 - Portefeuille momentum.bat") == steps_for("portefeuille", tmp_path)
     assert commands("8 - Tournoi court terme.bat") == without_browser(steps_for("tournoi-court", tmp_path))
@@ -57,6 +60,6 @@ def test_the_main_launchers_open_the_site_and_the_others_start_from_the_bot_fold
     for bat in OTHERS.glob("*.bat"):
         assert 'cd /d "%~dp0.."' in bat.read_text(encoding="utf-8"), bat.name  # .env et data sont un dossier plus haut
     calls = [line for line in (OTHERS / "0 - Menu.bat").read_text(encoding="utf-8").splitlines() if line.startswith("call")]
-    assert len(calls) == 16 and all(line.startswith('call "%~dp0') for line in calls)
+    assert len(calls) == 19 and all(line.startswith('call "%~dp0') for line in calls)
     for line in calls:
         assert (OTHERS / line.removeprefix('call "%~dp0').rstrip('"')).exists(), line

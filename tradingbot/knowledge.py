@@ -56,6 +56,22 @@ SOURCES = {  # clé -> (référence courte, page de l'étude)
                  SCISPACE + "the-predictive-power-of-price-patterns-2cp7mk7862"),
     "jiang": ("Jiang, Kelly et Xiu, 2023 · Journal of Finance",
               SCISPACE + "re-imag-in-ing-price-trends-25je0svpuj"),
+    "osler_2000": ("Osler, 2000 · Federal Reserve Bank of New York Economic Policy Review",
+                   SCISPACE + "support-for-resistance-technical-analysis-and-intraday-38rn3y8pdl"),
+    "osler_2003": ("Osler, 2003 · Journal of Finance",
+                   SCISPACE + "currency-orders-and-exchange-rate-dynamics-an-explanation-4onp7fxzvh"),
+    "kavajecz": ("Kavajecz et Odders-White, 2004 · Review of Financial Studies",
+                 SCISPACE + "technical-analysis-and-liquidity-provision-3np0j2q06y"),
+    "brock": ("Brock, Lakonishok et LeBaron, 1992 · Journal of Finance",
+              SCISPACE + "simple-technical-trading-rules-and-the-stochastic-properties-hn3yetappo"),
+    "marshall": ("Marshall, Qian et Young, 2009 · Applied Financial Economics",
+                 SCISPACE + "is-technical-analysis-profitable-on-us-stocks-with-certain-2ar1bxogk8"),
+    "urquhart_clustering": ("Urquhart, 2017 · Price Clustering in Bitcoin, Economics Letters",
+                            SCISPACE + "price-clustering-in-bitcoin-15prisys51"),
+    "jordan_diltz": ("Jordan et Diltz, 2003 · Financial Analysts Journal",
+                     SCISPACE + "the-profitability-of-day-traders-3wayepefr4"),
+    "kuo_lin": ("Kuo et Lin, 2013 · Journal of Banking and Finance",
+                SCISPACE + "overconfident-individual-day-traders-evidence-from-the-294umla5o8"),
 }
 
 # Une fiche par idée. `family` : la famille du bot qu'elle décrit (ses résultats de labo s'affichent à côté) ;
@@ -141,6 +157,28 @@ ENTRIES = (
                  "minutes fait moins bien qu'en jours (Resta et al.). Le journal des mouvements jaunes du radar le "
                  "mesure en direct.",
      "sources": ("caporale_momentum", "resta")},
+    {"key": "support", "family": "support", "title": "Supports : acheter un rebond sur un plancher",
+     "group": "Supports et résistances",
+     "measures": "Les prix où le marché s'est déjà retourné plusieurs fois : des creux au même niveau forment un "
+                 "support, des sommets au même niveau une résistance. Le bot les trace comme un trader, à partir des "
+                 "sommets et creux nets des 150 dernières bougies.",
+     "reading": "Quand le prix redescend sur un support solide et repart en hausse, le bot achète, avec un stop juste "
+                "dessous ; il revend à la résistance suivante, ou si le support cède.",
+     "research": "Les supports et résistances publiés par six banques prévoyaient bien les arrêts de tendance sur les "
+                 "devises (Osler, 2000) ; ils correspondent aux prix où le carnet d'ordres est le plus fourni "
+                 "(Kavajecz et Odders-White). La raison : les ordres de prise de bénéfice s'accumulent aux chiffres "
+                 "ronds (Osler, 2003).",
+     "sources": ("osler_2000", "kavajecz", "osler_2003")},
+    {"key": "resistance", "family": "resistance", "title": "Résistances : acheter une cassure",
+     "group": "Supports et résistances",
+     "measures": "Le plafond où les vendeurs sont revenus plusieurs fois.",
+     "reading": "Quand une bougie clôture nettement au-dessus, les vendeurs ont cédé : le bot achète, et revend si le "
+                "prix retombe sous l'ancien plafond, devenu plancher.",
+     "research": "Une fois un niveau franchi, les tendances vont plus vite que d'habitude : des ordres stop attendent "
+                 "juste derrière (Osler, 2003). Acheter la cassure du plus haut récent rapportait sur le Dow Jones de "
+                 "1897 à 1986, frais non comptés (Brock, Lakonishok et LeBaron), mais presque plus sur les actions "
+                 "américaines de 1990 à 2004 (Marshall, Qian et Young).",
+     "sources": ("osler_2003", "brock", "marshall")},
     {"key": "volume", "uses": "volume_mult", "title": "Volume et attention", "group": "Filtres d'achat",
      "measures": "Le volume échangé pendant la bougie, comparé à sa moyenne.",
      "reading": "Un mouvement suivi par deux ou trois fois plus d'échanges que d'habitude a des acheteurs derrière lui.",
@@ -232,7 +270,7 @@ def idea_view(idea: Idea, rows: list[dict], prows: list[dict]) -> dict:
     retained = sum(r.get("verdict") in RETAINED for r in mine) + sum(r.get("verdict") in PORTFOLIO_RETAINED
                                                                       for r in pmine)
     if not idea.rules and not idea.portfolio:
-        status, text = "defavorable", idea.caution
+        status, text = ("defavorable" if idea.unfavorable else "info"), idea.caution
     elif not mine and not pmine:
         status, text = "a-tester", "Pas encore passée par ton labo : le pilote automatique la teste."
     elif retained:
