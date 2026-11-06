@@ -1743,6 +1743,7 @@ JS = r"""
   function renderBotPage() {
     const d = fleetData, box = $('#bot-page'), b = d.bot;
     box.replaceChildren();
+    if (b && b.slot !== botSlot) { box.append(el('p', {class: 'muted', text: 'Chargement…'})); return; }  // l'ancien bot
     if (!b) { box.append(el('p', {class: 'empty-box', text: d.ready ? 'Ce bot n\'existe pas (ou plus).' : 'Pas encore de bots : choisis-les sur l\'écran Direct.'})); return; }
     $('#bot-back').setAttribute('href', '#' + b.section);
     $('#bot-back').textContent = '← ' + (TEAMS[b.section] || 'Tous les bots');
