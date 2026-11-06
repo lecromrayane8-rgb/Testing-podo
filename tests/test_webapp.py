@@ -481,9 +481,11 @@ def test_the_school_and_the_news_are_served_to_the_page(server):
     s.news.get = lambda url: pages[url] if url in pages else (_ for _ in ()).throw(ConnectionError("hors ligne"))
     s.news.closes = None
     radar_ready(s, symbols=("BTC/USDT", "SOL/USDT"), price=103.0)
-    request(base, "/api/actualite")  # le premier appel lance la relève en arrière-plan
-    assert wait(lambda: json.loads(request(base, "/api/actualite")[1])["news"])
-    page = json.loads(request(base, "/api/actualite")[1])
+    assert request(base, "/api/actualite")[0] == 403  # seulement depuis la page du site
+    page_headers = {HEADER: HEADER_VALUE}
+    request(base, "/api/actualite", headers=page_headers)  # le premier appel lance la relève en arrière-plan
+    assert wait(lambda: json.loads(request(base, "/api/actualite", headers=page_headers)[1])["news"])
+    page = json.loads(request(base, "/api/actualite", headers=page_headers)[1])
     assert page["fng"]["value"] == 40 and page["fng"]["zone"] == "peur"
     assert any("Cointelegraph" in e for e in page["errors"])  # un site en panne est signalé, pas fatal
     btc = next(n for n in page["news"] if "BTC" in n["coins"])

@@ -1310,7 +1310,11 @@ JS = r"""
     $('#chart-status').textContent = 'Chargement de ' + coin(chartSymbol) + '…';
     try {
       chartData = await getJSON('/api/graphique?symbole=' + encodeURIComponent(chartSymbol) + '&unite=' + chartTf);
-    } catch (e) { $('#chart-status').textContent = e.message; return; }
+    } catch (e) {
+      $('#chart-status').textContent = e.message + ' Nouvel essai dans quelques secondes…';
+      last.chart = Date.now() - 55000;  // le radar démarre peut-être : on réessaie dans 5 s plutôt que dans une minute
+      return;
+    }
     renderChart();
   }
   function chartLegend(d) {

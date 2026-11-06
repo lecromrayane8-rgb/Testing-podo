@@ -1384,6 +1384,9 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/ecole":
             self.json(school(self.site.data_dir()))
         elif url.path == "/api/actualite":
+            if self.headers.get(HEADER) != HEADER_VALUE:  # elle va chercher des prix : seulement pour la page du site
+                self.fail(403, "Actualité refusée : elle doit venir de la page du site.")
+                return
             self.json(self.site.news_view())
         elif url.path == "/api/marches":
             self.json({"markets": self.site.radar.top(60), "timeframes": list(Charts.TIMEFRAMES)})
