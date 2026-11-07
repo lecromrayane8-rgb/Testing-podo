@@ -222,7 +222,7 @@ textarea.copy{width:100%;min-height:160px;font-family:var(--f-mono);font-size:12
 <header class="wrap top">
   <div class="brand">
     <div class="brand-name">Plan Masse<b>14J</b></div>
-    <div class="budget-pill num" id="pill">96,55 € / 100 €</div>
+    <div class="budget-pill num" id="pill">— € · 14 j</div>
   </div>
 </header>
 
@@ -257,61 +257,61 @@ const store = {
 /* ============ RECETTES ============ */
 // k = kcal, p = protéines, g = glucides, l = lipides (par portion, estimations)
 const R = {
-  teriyaki:{name:"Poulet teriyaki laqué, riz & brocolis", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"35 min", k:940,p:56,g:158,l:9, keep:"3 jours au frigo",
-    ingr:["510 g de filets de poulet (décongelés la veille au frigo)","540 g de riz cru","450 g de brocolis surgelés","Sauce : 4 c. à soupe de sauce soja, 3 c. à soupe de miel, 2 gousses d'ail râpées, 3 c. à soupe d'eau","1 c. à soupe d'huile de colza"],
+  teriyaki:{name:"Poulet teriyaki laqué, riz & brocolis", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"35 min", k:835,p:55,g:134,l:9, keep:"3 jours au frigo",
+    ingr:["510 g de filets de poulet (décongelés la veille au frigo)","450 g de riz cru","450 g de brocolis surgelés","Sauce : 4 c. à soupe de sauce soja, 3 c. à soupe de miel, 2 gousses d'ail râpées, 3 c. à soupe d'eau","1 c. à soupe d'huile de colza"],
     steps:["Rince le riz, puis cuis-le avec 1,5 fois son volume d'eau, couvert, 12 min à feu doux. Laisse reposer 10 min hors du feu.","Coupe le poulet en dés et saisis-le 6 à 7 min à feu vif dans l'huile, sans trop remuer pour qu'il dore.","Mélange soja, miel, ail et eau. Verse sur le poulet et laisse réduire 3 min : la sauce doit devenir sirupeuse et laquer la viande.","Cuis les brocolis 8 min dans l'eau bouillante salée (ou 6 min au micro-ondes, couverts, avec un fond d'eau).","Répartis dans 3 boîtes : riz, brocolis, poulet laqué, et le reste de sauce par-dessus."],
     tip:"Une pincée de piment ou de gingembre dans la sauce si tu en as au placard. Au réchauffage : 2 min au micro-ondes avec 1 c. à soupe d'eau sur le riz."},
-  chili:{name:"Chili con carne fumé", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"45 min (dont 30 de mijotage)", k:1020,p:53,g:168,l:15, keep:"4 jours au frigo (encore meilleur le lendemain)",
-    ingr:["500 g de bœuf haché 5 % surgelé","1 boîte de haricots rouges égouttés","1 boîte de tomates concassées","1 oignon + 2 carottes en petits dés","2 gousses d'ail","2 c. à café de paprika (+ cumin si tu en as)","1 c. à café de miel","540 g de riz cru","1 c. à soupe d'huile"],
+  chili:{name:"Chili con carne fumé", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"45 min (dont 30 de mijotage)", k:915,p:52,g:145,l:15, keep:"4 jours au frigo (encore meilleur le lendemain)",
+    ingr:["500 g de bœuf haché 5 % surgelé","1 boîte de haricots rouges égouttés","1 boîte de tomates concassées","1 oignon + 2 carottes en petits dés","2 gousses d'ail","2 c. à café de paprika (+ cumin si tu en as)","1 c. à café de miel","450 g de riz cru","1 c. à soupe d'huile"],
     steps:["Fais revenir oignon et carottes 5 min dans l'huile.","Ajoute le bœuf, émiette-le et laisse dorer 5 min.","Ajoute ail et paprika, remue 1 min pour torréfier les épices.","Verse tomates, haricots, miel et 10 cl d'eau. Couvre et laisse mijoter 25 min, puis 5 min sans couvercle pour épaissir. Sale, poivre.","Pendant ce temps, cuis le riz (même méthode que le teriyaki) et répartis."],
     tip:"Le miel casse l'acidité de la tomate : c'est lui qui donne le côté « fumé-sucré ». Garde riz et chili côte à côte dans la boîte, pas mélangés."},
-  curry:{name:"Curry de poulet coco-épinards", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"30 min", k:1020,p:55,g:146,l:24, keep:"3 jours au frigo",
-    ingr:["510 g de filets de poulet","240 ml de lait de coco (≈ 2/3 de la boîte)","300 g d'épinards hachés surgelés","1 oignon, 2 gousses d'ail","1,5 c. à soupe de curry en poudre","540 g de riz cru","1 c. à soupe d'huile"],
+  curry:{name:"Curry de poulet coco-épinards", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"30 min", k:915,p:54,g:123,l:24, keep:"3 jours au frigo",
+    ingr:["510 g de filets de poulet","240 ml de lait de coco (≈ 2/3 de la boîte)","300 g d'épinards hachés surgelés","1 oignon, 2 gousses d'ail","1,5 c. à soupe de curry en poudre","450 g de riz cru","1 c. à soupe d'huile"],
     steps:["Lance le riz.","Fais revenir l'oignon émincé 4 min, ajoute ail et curry 1 min.","Ajoute le poulet en dés, fais-le colorer 5 min.","Verse le lait de coco et les épinards encore surgelés. Laisse mijoter 10 min à feu moyen jusqu'à une sauce crémeuse. Sale.","Répartis riz + curry dans 3 boîtes."],
     tip:"Il reste ≈ 150 ml de lait de coco : verse-le dans un bac à glaçons et congèle-le. Il servira pour le dahl de la semaine 2."},
-  colin:{name:"Colin pané corn flakes-paprika, potatoes rôties", cat:"plat", mode:"frais", yield:"1 assiette (×2 dans la semaine)", time:"15 min le soir", k:805,p:43,g:86,l:32, keep:"Potatoes : 4 jours au frigo. Le poisson se cuit minute.",
-    ingr:["165 g de filet de colin surgelé (sorti la veille au frigo)","15 g de pétales de maïs écrasés + 1/2 c. à café de paprika + sel","1 c. à soupe de fromage blanc (pour faire coller la croûte)","400 g de pommes de terre rôties (préparées au batch)","150 g de poêlée de légumes surgelée","1 c. à soupe d'huile pour la poêlée + 1 c. à soupe en filet sur les potatoes et le poisson"],
-    steps:["AU BATCH : coupe 800 g de pommes de terre en cubes avec la peau, 2 c. à soupe d'huile, paprika, sel. Four 200 °C, 30-35 min. Répartis en 2 boîtes.","LE SOIR : sèche bien le poisson avec du papier absorbant, tartine-le de fromage blanc et presse le mélange corn flakes-paprika dessus.","Four 200 °C, 12-14 min, avec la boîte de potatoes à côté pour les réchauffer et les recroustiller.","Pendant ce temps, poêlée de légumes 8 min à la poêle avec un filet d'huile."],
+  colin:{name:"Colin pané corn flakes-paprika, potatoes rôties", cat:"plat", mode:"frais", yield:"1 assiette (×2 dans la semaine)", time:"15 min le soir", k:715,p:43,g:86,l:22, keep:"Potatoes : 4 jours au frigo. Le poisson se cuit minute.",
+    ingr:["165 g de filet de colin surgelé (sorti la veille au frigo)","15 g de pétales de maïs écrasés + 1/2 c. à café de paprika + sel","1 c. à soupe de yaourt soja nature (pour faire coller la croûte)","400 g de pommes de terre rôties (préparées au batch)","150 g de poêlée de légumes surgelée","1 c. à soupe d'huile pour la poêlée"],
+    steps:["AU BATCH : coupe 800 g de pommes de terre en cubes avec la peau, 2 c. à soupe d'huile, paprika, sel. Four 200 °C, 30-35 min. Répartis en 2 boîtes.","LE SOIR : sèche bien le poisson avec du papier absorbant, tartine-le de yaourt soja nature et presse le mélange corn flakes-paprika dessus.","Four 200 °C, 12-14 min, avec la boîte de potatoes à côté pour les réchauffer et les recroustiller.","Pendant ce temps, poêlée de légumes 8 min à la poêle avec un filet d'huile."],
     tip:"Pas de four le soir ? Poêle chaude, 3 min par face côté croûte en premier. Les potatoes se réchauffent alors à la poêle."},
-  bolo:{name:"Bolognaise express aux carottes", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"30 min", k:800,p:56,g:107,l:16, keep:"4 jours au frigo",
-    ingr:["500 g de bœuf haché 5 %","1 boîte de tomates concassées","1 oignon + 2 carottes râpées","2 gousses d'ail","450 g de pâtes complètes","1 c. à soupe d'huile, herbes de Provence si tu en as"],
+  bolo:{name:"Bolognaise express aux carottes", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"30 min", k:730,p:53,g:92,l:16, keep:"4 jours au frigo",
+    ingr:["500 g de bœuf haché 5 %","1 boîte de tomates concassées","1 oignon + 2 carottes râpées","2 gousses d'ail","390 g de pâtes complètes","1 c. à soupe d'huile, herbes de Provence si tu en as"],
     steps:["Fais fondre oignon et carottes râpées 5 min dans l'huile.","Ajoute le bœuf, émiette, laisse dorer 5 min, puis l'ail.","Verse les tomates + 5 cl d'eau, laisse mijoter 15-20 min. Sale, poivre.","Cuis les pâtes 1 min de moins que le temps indiqué (elles finiront de cuire au réchauffage).","Répartis pâtes + sauce dans 3 boîtes."],
     tip:"Les carottes râpées « disparaissent » dans la sauce : plus de volume, plus de légumes, même goût."},
-  dahl:{name:"Dahl de lentilles corail coco & œufs mollets", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"30 min", k:905,p:44,g:121,l:27, keep:"4 jours au frigo (œufs à part, écalés)",
-    ingr:["300 g de lentilles corail","150 ml de lait de coco (celui congelé en semaine 1)","1 boîte de tomates concassées","1 oignon, 2 gousses d'ail, 1 c. à soupe de curry","240 g d'épinards surgelés","6 œufs","240 g de riz cru","1 c. à soupe d'huile"],
+  dahl:{name:"Dahl de lentilles corail coco & œufs mollets", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"30 min", k:835,p:43,g:105,l:27, keep:"4 jours au frigo (œufs à part, écalés)",
+    ingr:["300 g de lentilles corail","150 ml de lait de coco (celui congelé en semaine 1)","1 boîte de tomates concassées","1 oignon, 2 gousses d'ail, 1 c. à soupe de curry","240 g d'épinards surgelés","6 œufs","180 g de riz cru","1 c. à soupe d'huile"],
     steps:["Fais revenir l'oignon 4 min, ajoute ail et curry 1 min.","Ajoute les lentilles rincées, les tomates et 60 cl d'eau. Cuis 15-18 min en remuant de temps en temps.","Ajoute épinards et lait de coco, 5 min de plus. Sale bien.","Œufs : 6 min 30 dans l'eau bouillante pour des mollets (9 min pour des durs), puis eau froide et écale.","Cuis le riz. Dans chaque boîte : riz, dahl, et 2 œufs dans un petit sachet ou une boîte à part."],
     tip:"Le dahl épaissit au frigo : ajoute 2 c. à soupe d'eau avant de réchauffer. C'est le plat le plus calorique du plan."},
-  wraps:{name:"Wraps de poulet croustillant, sauce blanche à l'ail", cat:"plat", mode:"frais", yield:"3 wraps (déjeuner du dimanche)", time:"20 min", k:1035,p:69,g:111,l:35, keep:"À manger tout de suite",
-    ingr:["170 g de poulet en lanières","1 œuf battu","25 g de pétales de maïs écrasés + 1 c. à café de paprika + sel","3 tortillas","Sauce : 60 g de fromage blanc + 1/2 gousse d'ail râpée + sel, poivre","1 carotte râpée","1 c. à soupe d'huile"],
+  wraps:{name:"Wraps de poulet croustillant, sauce blanche à l'ail", cat:"plat", mode:"frais", yield:"3 wraps (déjeuner du dimanche)", time:"20 min", k:1030,p:66,g:111,l:36, keep:"À manger tout de suite",
+    ingr:["170 g de poulet en lanières","1 œuf battu","25 g de pétales de maïs écrasés + 1 c. à café de paprika + sel","3 tortillas","Sauce : 60 g de yaourt soja nature + 1/2 gousse d'ail râpée + sel, poivre","1 carotte râpée","1 c. à soupe d'huile"],
     steps:["Passe les lanières de poulet dans l'œuf, puis dans les corn flakes au paprika (comme un poulet frit, sans friteuse).","Poêle chaude avec l'huile : 3 min par face, jusqu'à ce que ce soit doré.","Mélange la sauce. Chauffe les tortillas 20 s à la poêle sèche.","Garnis : sauce, carotte râpée, poulet croustillant. Roule serré."],
     tip:"Version maison du poulet frit en wrap. Ajoute du piment dans la sauce si tu aimes."},
-  salade:{name:"Salade de pâtes au thon, sauce moutarde", cat:"plat", mode:"frais", yield:"1 assiette (dîner du dimanche)", time:"15 min", k:805,p:56,g:103,l:19, keep:"2 jours au frigo",
-    ingr:["150 g de pâtes complètes","1 boîte de thon au naturel","1 œuf dur","1 carotte râpée, 1/4 d'oignon finement ciselé","Sauce : 40 g de fromage blanc + 1 c. à café de moutarde + 1 c. à soupe d'huile + sel, poivre"],
+  salade:{name:"Salade de pâtes au thon, sauce moutarde", cat:"plat", mode:"frais", yield:"1 assiette (dîner du dimanche)", time:"15 min", k:735,p:52,g:88,l:20, keep:"2 jours au frigo",
+    ingr:["130 g de pâtes complètes","1 boîte de thon au naturel","1 œuf dur","1 carotte râpée, 1/4 d'oignon finement ciselé","Sauce : 40 g de yaourt soja nature + 1 c. à café de moutarde + 1 c. à soupe d'huile + sel, poivre"],
     steps:["Cuis les pâtes et l'œuf (9 min) en même temps dans la même casserole.","Rince les pâtes à l'eau froide.","Mélange la sauce, puis tout le reste."],
     tip:"Un dîner du dimanche sans cuisson longue, pendant que le batch tourne au four."},
-  pizza:{name:"Cheat meal : pizza maison poulet-mozza", cat:"plat", mode:"frais", yield:"1 grande pizza (samedi soir)", time:"35 min", k:1350,p:76,g:166,l:43, keep:"À manger chaud, c'est le moment plaisir",
-    ingr:["Pâte express : 200 g de farine + 150 g de fromage blanc + 1 sachet de levure chimique + 1 pincée de sel + 1 c. à soupe d'huile","1/2 boîte de tomates concassées + 1 pincée de sel et d'ail","1 boule de mozzarella (125 g)","65 g de poulet (le reste du sachet) en petits dés, saisi 3 min au paprika","100 g de poêlée de légumes surgelée","1 œuf (à casser au centre à mi-cuisson)"],
-    steps:["Four à 230 °C (le plus chaud possible).","Mélange farine, levure, sel, huile et fromage blanc à la main jusqu'à une boule souple. Étale finement sur du papier cuisson (farine sur les mains si ça colle).","Étale la tomate, puis le poulet, la poêlée égouttée et la mozzarella en morceaux.","12 min au four, casse l'œuf au centre, puis 5-6 min de plus jusqu'à ce que le bord soit doré."],
-    tip:"Pas de levure de boulanger, pas de pousse : la pâte au fromage blanc est prête en 5 min et reste moelleuse. C'est ton cheat meal du samedi soir, déjà compté dans le budget. Profite, et le lendemain tu reprends le plan normalement."},
-  oats:{name:"Gâteau de semoule banane-cacahuète", cat:"petitdej", mode:"tup", yield:"1 bocal", time:"8 min (à l'avance)", k:655,p:26,g:101,l:16, keep:"3 jours au frigo",
-    ingr:["90 g de semoule de blé fine","300 ml de lait demi-écrémé","1/2 banane écrasée","20 g de beurre de cacahuète","1 c. à café de miel, 1 pincée de sel","Au batch, pour 3 bocaux : 270 g de semoule + 900 ml de lait"],
-    steps:["Fais chauffer le lait avec le miel et le sel jusqu'au frémissement.","Verse la semoule en pluie et remue 3-4 min à feu doux : ça épaissit vite.","Hors du feu, ajoute le beurre de cacahuète et la banane écrasée.","Verse dans les bocaux, laisse tiédir, puis au frigo. Ça se tient comme un gâteau."],
-    tip:"Se mange froid à la cuillère ou 1 min au micro-ondes avec un trait de lait. La semoule cuite est bien plus douce pour l'estomac que l'avoine crue. Si le blé te gêne aussi, fais la même chose avec 80 g de riz (riz au lait, 30 min de cuisson)."},
-  pancakes:{name:"Pancakes moelleux à la banane", cat:"petitdej", mode:"frais", yield:"4-5 pancakes", time:"15 min", k:640,p:27,g:103,l:13, keep:"À manger chaud",
-    ingr:["90 g de farine","1/2 sachet de levure chimique","1 banane bien mûre écrasée","2 œufs","150 ml de lait","1 c. à soupe de miel pour servir"],
-    steps:["Écrase la banane, ajoute les œufs et le lait, puis la farine et la levure. Fouette jusqu'à ce qu'il n'y ait plus de grumeaux.","Laisse reposer 5 min.","Poêle légèrement huilée, feu moyen : une louche par pancake, 2 min par face (retourne quand des bulles apparaissent).","Empile, arrose de miel."],
+  pizza:{name:"Cheat meal : pizza maison poulet-mozza", cat:"plat", mode:"frais", yield:"1 grande pizza (samedi soir)", time:"35 min", k:1355,p:71,g:166,l:47, keep:"À manger chaud, c'est le moment plaisir",
+    ingr:["Pâte express : 200 g de farine + 150 g de yaourt soja nature + 1 sachet de levure chimique + 1 pincée de sel + 1 c. à soupe d'huile","1/2 boîte de tomates concassées + 1 pincée de sel et d'ail","1 boule de mozzarella sans lactose (125 g)","65 g de poulet (le reste du sachet) en petits dés, saisi 3 min au paprika","100 g de poêlée de légumes surgelée","1 œuf (à casser au centre à mi-cuisson)"],
+    steps:["Four à 230 °C (le plus chaud possible).","Mélange farine, levure, sel, huile et yaourt soja à la main jusqu'à une boule souple. Étale finement sur du papier cuisson (farine sur les mains si ça colle).","Étale la tomate, puis le poulet, la poêlée égouttée et la mozzarella en morceaux.","12 min au four, casse l'œuf au centre, puis 5-6 min de plus jusqu'à ce que le bord soit doré."],
+    tip:"Pas de levure de boulanger, pas de pousse : la pâte au yaourt est prête en 5 min et reste moelleuse. C'est ton cheat meal du samedi soir, déjà compté dans le budget. Profite, et le lendemain tu reprends le plan normalement."},
+  oats:{name:"Gâteau de semoule banane-cacahuète", cat:"petitdej", mode:"tup", yield:"1 bocal", time:"8 min (à l'avance)", k:600,p:25,g:87,l:17, keep:"3 jours au frigo",
+    ingr:["80 g de semoule de blé fine","300 ml de boisson soja nature","1/2 banane écrasée","20 g de beurre de cacahuète","1 c. à café de miel, 1 pincée de sel","Au batch, pour 3 bocaux : 240 g de semoule + 900 ml de boisson soja"],
+    steps:["Fais chauffer la boisson soja avec le miel et le sel jusqu'au frémissement.","Verse la semoule en pluie et remue 3-4 min à feu doux : ça épaissit vite.","Hors du feu, ajoute le beurre de cacahuète et la banane écrasée.","Verse dans les bocaux, laisse tiédir, puis au frigo. Ça se tient comme un gâteau."],
+    tip:"Se mange froid à la cuillère ou 1 min au micro-ondes avec un trait de boisson soja. La semoule cuite est bien plus douce pour l'estomac que l'avoine crue. Si le blé te gêne aussi, fais la même chose avec 80 g de riz (riz au lait de soja, 30 min de cuisson)."},
+  pancakes:{name:"Pancakes moelleux à la banane", cat:"petitdej", mode:"frais", yield:"4-5 pancakes", time:"15 min", k:635,p:27,g:100,l:14, keep:"À manger chaud",
+    ingr:["90 g de farine","1/2 sachet de levure chimique","1 banane bien mûre écrasée","2 œufs","150 ml de boisson soja","1 c. à soupe de miel pour servir"],
+    steps:["Écrase la banane, ajoute les œufs et la boisson soja, puis la farine et la levure. Fouette jusqu'à ce qu'il n'y ait plus de grumeaux.","Laisse reposer 5 min.","Poêle légèrement huilée, feu moyen : une louche par pancake, 2 min par face (retourne quand des bulles apparaissent).","Empile, arrose de miel."],
     tip:"Le petit-déj du week-end. La levure les rend épais et moelleux comme au diner américain."},
-  bowl:{name:"Bowl fromage blanc, corn flakes & cacahuètes caramélisées", cat:"collation", mode:"tup", yield:"1 bol", time:"1 min", k:370,p:24,g:40,l:13, keep:"Cacahuètes caramélisées : 2 semaines en bocal",
-    ingr:["200 g de fromage blanc 0 %","30 g de pétales de maïs nature (corn flakes sans sucre ajouté)","25 g de cacahuètes caramélisées au miel","CACAHUÈTES CARAMÉLISÉES (6 portions, au batch) : 150 g de cacahuètes + 3 c. à soupe de miel"],
-    steps:["AU BATCH : poêle sèche, fais dorer les cacahuètes 3 min. Ajoute le miel, remue 2 min jusqu'à ce qu'elles soient enrobées et collantes. Étale sur du papier cuisson, laisse durcir, casse en morceaux, mets en bocal.","À 10 h : fromage blanc, puis corn flakes et cacahuètes au dernier moment pour le croquant."],
+  bowl:{name:"Bowl yaourt soja, corn flakes & cacahuètes caramélisées", cat:"collation", mode:"tup", yield:"1 bol", time:"1 min", k:360,p:17,g:36,l:17, keep:"Cacahuètes caramélisées : 2 semaines en bocal",
+    ingr:["200 g de yaourt au soja nature","30 g de pétales de maïs nature (corn flakes sans sucre ajouté)","25 g de cacahuètes caramélisées au miel","CACAHUÈTES CARAMÉLISÉES (6 portions, au batch) : 150 g de cacahuètes + 3 c. à soupe de miel"],
+    steps:["AU BATCH : poêle sèche, fais dorer les cacahuètes 3 min. Ajoute le miel, remue 2 min jusqu'à ce qu'elles soient enrobées et collantes. Étale sur du papier cuisson, laisse durcir, casse en morceaux, mets en bocal.","À 10 h : yaourt soja, puis corn flakes et cacahuètes au dernier moment pour le croquant."],
     tip:"Transporte corn flakes et cacahuètes dans un petit sachet à part si tu manges dehors."},
-  smoothie:{name:"Smoothie banane-cacahuète", cat:"collation", mode:"frais", yield:"1 grand verre (500 ml)", time:"3 min", k:540,p:20,g:80,l:16, keep:"À boire tout de suite",
-    ingr:["350 ml de lait","1 banane (congelée, c'est encore meilleur)","20 g de beurre de cacahuète","30 g de pétales de maïs nature","1 c. à soupe de miel"],
-    steps:["Tout dans le blender, 40 secondes : les pétales de maïs épaississent et apportent les glucides sans lourdeur.","Sans blender : écrase très bien la banane, mélange avec le beurre de cacahuète et le miel, secoue avec le lait dans un shaker, et mange les corn flakes à côté."],
+  smoothie:{name:"Smoothie banane-cacahuète", cat:"collation", mode:"frais", yield:"1 grand verre (500 ml)", time:"3 min", k:515,p:20,g:72,l:17, keep:"À boire tout de suite",
+    ingr:["350 ml de boisson soja","1 banane (congelée, c'est encore meilleur)","20 g de beurre de cacahuète","30 g de pétales de maïs nature","1 c. à soupe de miel"],
+    steps:["Tout dans le blender, 40 secondes : les pétales de maïs épaississent et apportent les glucides sans lourdeur.","Sans blender : écrase très bien la banane, mélange avec le beurre de cacahuète et le miel, secoue avec la boisson soja dans un shaker, et mange les corn flakes à côté."],
     tip:"Une banane qui noircit ? Épluche-la, coupe-la en rondelles et congèle-la : texture milkshake garantie."},
   muffins:{name:"Muffins œufs-épinards + cacahuètes", cat:"collation", mode:"tup", yield:"4 muffins (2 collations)", time:"25 min", k:300,p:21,g:5,l:22, keep:"4 jours au frigo",
-    ingr:["4 œufs","100 g d'épinards surgelés, décongelés et bien pressés","1/4 d'oignon finement haché","2 c. à soupe de fromage blanc","Paprika, sel, poivre","25 g de cacahuètes par collation"],
-    steps:["Bats les œufs avec le fromage blanc, le sel, le poivre et le paprika.","Ajoute épinards et oignon.","Verse dans 4 moules à muffins huilés (ou ramequins, ou mugs).","Four 180 °C, 18-20 min : ils doivent être gonflés et pris au centre."],
+    ingr:["4 œufs","100 g d'épinards surgelés, décongelés et bien pressés","1/4 d'oignon finement haché","2 c. à soupe de yaourt soja nature","Paprika, sel, poivre","25 g de cacahuètes par collation"],
+    steps:["Bats les œufs avec le yaourt soja, le sel, le poivre et le paprika.","Ajoute épinards et oignon.","Verse dans 4 moules à muffins huilés (ou ramequins, ou mugs).","Four 180 °C, 18-20 min : ils doivent être gonflés et pris au centre."],
     tip:"Se mangent froids ou 30 s au micro-ondes. Une collation salée et protéinée pour changer du sucré."},
   balls:{name:"Bouchées croustillantes cacahuète-miel", cat:"collation", mode:"tup", yield:"6 bouchées (2 collations)", time:"10 min, sans cuisson", k:340,p:10,g:42,l:15, keep:"7 jours au frigo",
     ingr:["60 g de pétales de maïs nature","35 g de beurre de cacahuète","30 g de miel","20 g de cacahuètes concassées","1 pincée de sel"],
@@ -322,8 +322,8 @@ const R = {
     steps:["Égoutte, rince et SÈCHE bien les pois chiches dans un torchon (c'est le secret du croustillant).","Huile, paprika, sel.","Four 200 °C, 25-30 min, en secouant la plaque à mi-cuisson."],
     tip:"Comme le four tourne déjà le dimanche pour le batch, mets-les en même temps."},
   wrapthon:{name:"Wrap thon express", cat:"collation", mode:"frais", yield:"1 wrap", time:"3 min", k:270,p:21,g:34,l:5, keep:"À manger dans la journée",
-    ingr:["1 tortilla","1/2 boîte de thon au naturel","30 g de fromage blanc + paprika","1/2 carotte râpée"],
-    steps:["Écrase le thon avec le fromage blanc et le paprika.","Étale sur la tortilla, ajoute la carotte, roule."],
+    ingr:["1 tortilla","1/2 boîte de thon au naturel","30 g de yaourt soja nature + paprika","1/2 carotte râpée"],
+    steps:["Écrase le thon avec le yaourt soja et le paprika.","Étale sur la tortilla, ajoute la carotte, roule."],
     tip:"L'autre moitié de la boîte se garde 2 jours au frigo dans une boîte fermée."}
 };
 const CATS = {plat:"Plats", petitdej:"Petits-déjeuners", collation:"Collations"};
@@ -332,7 +332,7 @@ const CATS = {plat:"Plats", petitdej:"Petits-déjeuners", collation:"Collations"
 const DOW = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
 const SNACK16 = ["balls","smoothie","balls","muffins","wrapthon","muffins","poischiches"];
 const TIMES = [["7h30","Petit-déj"],["10h","Collation"],["12h30","Déjeuner"],["16h","Collation"],["20h","Dîner"]];
-const TARGET = {k:3300,p:175,g:450,l:95}; // calibré pour 1,90 m, 85-90 kg : surplus ≈ +350 kcal, ≈ 2 g de protéines/kg
+const TARGET = {k:3050,p:165,g:390,l:85}; // 1,90 m, 85-90 kg, prise de masse sèche : surplus ≈ +250 kcal, ≈ 1,9 g de protéines/kg, sans lactose
 
 function plan(d){ // d = 1..14
   const w = d<=7 ? 1 : 2, dow = (d-1)%7;
@@ -360,13 +360,13 @@ const SHOP = [
     ["boeuf","Bœuf haché 5 % surgelé","1 kg",8.50,"Chili ×3, bolognaise ×3 (165 g par portion)"],
     ["colin","Filets de colin d'Alaska surgelés","2 × 400 g",5.60,"Colin pané ×4"],
     ["thon","Thon au naturel","4 boîtes",4.40,"Salades ×2, wraps thon ×2"]]],
-  ["Frais & crèmerie", [
+  ["Frais & sans lactose", [
     ["oeufs","Œufs","plateau de 30",7.20,"Muffins, pancakes, dahl, wraps, pizzas"],
-    ["fb","Fromage blanc 0 %","3 × 1 kg",6.00,"Bowl de 10 h ×12, sauces, pâte à pizza"],
-    ["mozza","Mozzarella","2 × 125 g",1.60,"Pizzas du cheat meal"],
-    ["lait","Lait demi-écrémé","5 L",4.50,"Gâteau de semoule, smoothies, pancakes"]]],
+    ["yaourt","Yaourt au soja nature","6 × 500 g",8.40,"Bowl de 10 h ×12, sauces, pâte à pizza"],
+    ["mozza","Mozzarella sans lactose","2 × 125 g",2.40,"Pizzas du cheat meal"],
+    ["soja","Boisson soja nature (enrichie en calcium)","5 × 1 L",6.50,"Gâteau de semoule, smoothies, pancakes"]]],
   ["Féculents", [
-    ["riz","Riz long","3 kg",4.50,"180 g cru par plat"],
+    ["riz","Riz long","2 kg",3.00,"150 g cru par plat"],
     ["pates","Pâtes complètes","1 kg",1.50,"Bolognaise, salades"],
     ["semoule","Semoule de blé fine","1 kg",1.30,"Gâteau de semoule ×10"],
     ["mais","Pétales de maïs nature (sans sucre ajouté)","2 × 500 g",2.60,"Bowls, smoothies, bouchées, panures"],
@@ -393,7 +393,7 @@ const SHOP = [
     ["cacahuetes","Cacahuètes non salées","500 g",2.00,"Cacahuètes caramélisées, bouchées, collation muffins"],
     ["miel","Miel","500 g",2.50,"Teriyaki, cacahuètes caramélisées, pancakes"],
     ["huile","Huile de colza","1 L",2.50,"Cuisson"],
-    ["soja","Sauce soja","250 ml",1.00,"Teriyaki"],
+    ["saucesoja","Sauce soja","250 ml",1.00,"Teriyaki"],
     ["levure","Levure chimique","6 sachets",0.70,"Pâte à pizza, pancakes"],
     ["epices","Paprika + curry en poudre","2 pots",2.00,"Chili, curry, panures, pois chiches"]]]
 ];
@@ -405,16 +405,16 @@ const eur = n => n.toFixed(2).replace(".",",")+" €";
 const BATCH = [
   {id:"s1d", when:"Semaine 1 · dimanche (veille du J1)", title:"S1 · Dimanche", dur:"≈ 1h45", covers:"Lundi → mercredi",
    makes:["Lun midi · Teriyaki","Mar midi · Teriyaki","Mer midi · Teriyaki","Lun soir · Chili","Mar soir · Chili","Mer soir · Chili","3 bocaux gâteau de semoule","6 bouchées croustillantes","Cacahuètes caramélisées ×6"],
-   steps:[["0:00","Sors le poulet (510 g) et le bœuf (500 g) du congélateur la veille au soir. Sors 3 boîtes, 3 bocaux."],["0:05","Chili : oignon + carottes dans une cocotte, puis le bœuf. Lance le mijotage 25 min."],["0:15","Riz : 1,08 kg cru pour 6 portions (2 casseroles)."],["0:20","Poulet teriyaki à la poêle + sauce laquée."],["0:35","Brocolis à l'eau bouillante, 8 min."],["0:45","Cacahuètes caramélisées au miel à la poêle. Laisse durcir à plat."],["0:55","Bouchées croustillantes : mélange, forme 6 tas, au frigo."],["1:05","Gâteau de semoule : 270 g de semoule dans 900 ml de lait, puis 3 bocaux."],["1:15","Laisse tiédir 20 min max, puis répartis dans les 6 boîtes. Note le jour sur chaque couvercle (scotch + feutre)."],["1:40","Tout au frigo. Vaisselle. C'est fini."]]},
+   steps:[["0:00","Sors le poulet (510 g) et le bœuf (500 g) du congélateur la veille au soir. Sors 3 boîtes, 3 bocaux."],["0:05","Chili : oignon + carottes dans une cocotte, puis le bœuf. Lance le mijotage 25 min."],["0:15","Riz : 900 g cru pour 6 portions (2 casseroles)."],["0:20","Poulet teriyaki à la poêle + sauce laquée."],["0:35","Brocolis à l'eau bouillante, 8 min."],["0:45","Cacahuètes caramélisées au miel à la poêle. Laisse durcir à plat."],["0:55","Bouchées croustillantes : mélange, forme 6 tas, au frigo."],["1:05","Gâteau de semoule : 240 g de semoule dans 900 ml de boisson soja, puis 3 bocaux."],["1:15","Laisse tiédir 20 min max, puis répartis dans les 6 boîtes. Note le jour sur chaque couvercle (scotch + feutre)."],["1:40","Tout au frigo. Vaisselle. C'est fini."]]},
   {id:"s1m", when:"Semaine 1 · mercredi soir", title:"S1 · Mercredi", dur:"≈ 1h15", covers:"Jeudi → samedi (samedi soir : cheat meal)",
    makes:["Jeu midi · Curry","Ven midi · Curry","Sam midi · Curry","2 boîtes de potatoes","4 muffins","2 bocaux gâteau de semoule"],
-   steps:[["0:00","Four à 200 °C. Pommes de terre en cubes (800 g), huile, paprika, sel : au four 30-35 min."],["0:05","Riz : 540 g cru."],["0:10","Curry poulet coco-épinards (510 g de poulet sortis le matin)."],["0:30","Congèle le reste de lait de coco en bac à glaçons."],["0:35","Muffins œufs-épinards dans le four (baisse à 180 °C quand les potatoes sortent)."],["0:55","Gâteau de semoule : 180 g de semoule dans 600 ml de lait, 2 bocaux pour jeudi et vendredi."],["1:00","Répartis curry, riz, potatoes. Étiquettes. Frigo."],["1:10","Sors 1 filet de colin du congélateur pour demain soir."]]},
+   steps:[["0:00","Four à 200 °C. Pommes de terre en cubes (800 g), huile, paprika, sel : au four 30-35 min."],["0:05","Riz : 450 g cru."],["0:10","Curry poulet coco-épinards (510 g de poulet sortis le matin)."],["0:30","Congèle le reste de lait de coco en bac à glaçons."],["0:35","Muffins œufs-épinards dans le four (baisse à 180 °C quand les potatoes sortent)."],["0:55","Gâteau de semoule : 160 g de semoule dans 600 ml de boisson soja, 2 bocaux pour jeudi et vendredi."],["1:00","Répartis curry, riz, potatoes. Étiquettes. Frigo."],["1:10","Sors 1 filet de colin du congélateur pour demain soir."]]},
   {id:"s2d", when:"Semaine 2 · dimanche (J7)", title:"S2 · Dimanche", dur:"≈ 1h45", covers:"Lundi → mercredi",
    makes:["Lun midi · Bolognaise","Mar midi · Bolognaise","Mer midi · Bolognaise","Lun soir · Dahl","Mar soir · Dahl","Mer soir · Dahl","6 œufs mollets","3 bocaux gâteau de semoule","6 bouchées croustillantes","Cacahuètes caramélisées ×6"],
-   steps:[["0:00","Sors le bœuf (500 g) la veille. Sors les glaçons de lait de coco."],["0:05","Four 200 °C : pois chiches grillés pour ton goûter du jour."],["0:10","Bolognaise : oignon, carottes râpées, bœuf, tomates. Mijote 20 min."],["0:15","Dahl : oignon, curry, lentilles, tomates, eau. 15-18 min."],["0:25","Casserole d'eau : 6 œufs (6 min 30), puis eau froide. Dans la même eau, les pâtes (450 g), 1 min de moins que le paquet."],["0:40","Riz pour le dahl (240 g). Ajoute épinards + coco au dahl."],["0:50","Cacahuètes caramélisées + bouchées croustillantes + 3 bocaux de gâteau de semoule."],["1:15","Répartis les 6 boîtes. Œufs écalés dans une boîte à part."],["1:40","Frigo, étiquettes, vaisselle."]]},
+   steps:[["0:00","Sors le bœuf (500 g) la veille. Sors les glaçons de lait de coco."],["0:05","Four 200 °C : pois chiches grillés pour ton goûter du jour."],["0:10","Bolognaise : oignon, carottes râpées, bœuf, tomates. Mijote 20 min."],["0:15","Dahl : oignon, curry, lentilles, tomates, eau. 15-18 min."],["0:25","Casserole d'eau : 6 œufs (6 min 30), puis eau froide. Dans la même eau, les pâtes (390 g), 1 min de moins que le paquet."],["0:40","Riz pour le dahl (180 g). Ajoute épinards + coco au dahl."],["0:50","Cacahuètes caramélisées + bouchées croustillantes + 3 bocaux de gâteau de semoule."],["1:15","Répartis les 6 boîtes. Œufs écalés dans une boîte à part."],["1:40","Frigo, étiquettes, vaisselle."]]},
   {id:"s2m", when:"Semaine 2 · mercredi soir", title:"S2 · Mercredi", dur:"≈ 1h15", covers:"Jeudi → samedi (samedi soir : cheat meal)",
    makes:["Jeu midi · Teriyaki","Ven midi · Teriyaki","Sam midi · Teriyaki","2 boîtes de potatoes","4 muffins","2 bocaux gâteau de semoule"],
-   steps:[["0:00","Four à 200 °C. Potatoes (800 g) au four 30-35 min."],["0:05","Riz : 540 g cru."],["0:10","Poulet teriyaki (510 g sortis le matin) + brocolis."],["0:35","Muffins œufs-épinards au four à 180 °C."],["0:55","Gâteau de semoule : 2 bocaux (180 g de semoule, 600 ml de lait)."],["1:00","Répartis, étiquette, frigo."],["1:10","Sors 1 filet de colin pour demain soir."]]}
+   steps:[["0:00","Four à 200 °C. Potatoes (800 g) au four 30-35 min."],["0:05","Riz : 450 g cru."],["0:10","Poulet teriyaki (510 g sortis le matin) + brocolis."],["0:35","Muffins œufs-épinards au four à 180 °C."],["0:55","Gâteau de semoule : 2 bocaux (160 g de semoule, 600 ml de boisson soja)."],["1:00","Répartis, étiquette, frigo."],["1:10","Sors 1 filet de colin pour demain soir."]]}
 ];
 
 /* ============ ÉTAT & DATES ============ */
@@ -467,7 +467,7 @@ function renderJour(){
     <div class="macros">${mac("k","Énergie",tot.k,TARGET.k,"kcal")}${mac("p","Protéines",tot.p,TARGET.p,"g")}${mac("g","Glucides",tot.g,TARGET.g,"g")}${mac("l","Lipides",tot.l,TARGET.l,"g")}</div>
     ${nts}
     <div class="timeline">${meals}</div>
-    <p class="muted" style="font-size:13px">Calibré pour 1,90 m et 85-90 kg. Valeurs estimées. Objectif : ≈ ${TARGET.k} kcal et ${TARGET.p} g de protéines par jour (≈ 2 g/kg). Vise +0,3 à +0,5 kg par semaine. Si ton poids ne bouge pas après 10 jours, ajoute 30 g de riz cru par plat et 1 c. à soupe d'huile dans la sauce.</p>`;
+    <p class="muted" style="font-size:13px">Prise de masse sèche, sans lactose, calibrée pour 1,90 m et 85-90 kg. Valeurs estimées. Objectif : ≈ ${TARGET.k} kcal et ${TARGET.p} g de protéines par jour. Vise +0,2 à +0,4 kg par semaine : au-delà, c'est surtout du gras. Si ton poids ne bouge pas après 10 jours, ajoute 20 g de riz cru par plat. S'il monte plus vite que 0,5 kg par semaine, retire les cacahuètes du bowl.</p>`;
   const sel = $("chips").querySelector(".sel"); if(sel) sel.scrollIntoView({inline:"center",block:"nearest"});
 }
 
@@ -484,7 +484,7 @@ function renderSemaine(){
   };
   const wl = store.get("weights", []);
   const first = wl.length?wl[0].kg:null;
-  const wlHtml = wl.length ? wl.slice().reverse().map(x=>`<div><span>${fmtDate(fromISO(x.date),{day:"numeric",month:"short"})}</span><span>${x.kg.toFixed(1).replace(".",",")} kg${first!==null&&x!==wl[0]?` <span class="muted">(${x.kg-first>=0?"+":""}${(x.kg-first).toFixed(1).replace(".",",")})</span>`:""}</span></div>`).join("") : `<p class="muted">Pèse-toi à jeun le matin du J1, du J7 et du J14. Profil : 1,90 m, 85-90 kg. Vise +0,3 à +0,5 kg par semaine.</p>`;
+  const wlHtml = wl.length ? wl.slice().reverse().map(x=>`<div><span>${fmtDate(fromISO(x.date),{day:"numeric",month:"short"})}</span><span>${x.kg.toFixed(1).replace(".",",")} kg${first!==null&&x!==wl[0]?` <span class="muted">(${x.kg-first>=0?"+":""}${(x.kg-first).toFixed(1).replace(".",",")})</span>`:""}</span></div>`).join("") : `<p class="muted">Pèse-toi à jeun le matin du J1, du J7 et du J14. Profil : 1,90 m, 85-90 kg, prise de masse sèche. Vise +0,2 à +0,4 kg par semaine.</p>`;
   $("v-semaine").innerHTML = `
     <h2>Planning 14 jours</h2>
     <div class="card"><div class="row"><div class="field"><label class="label" for="startDate">Jour 1 (un lundi de préférence)</label><input type="date" id="startDate" value="${start}"></div>
@@ -509,11 +509,11 @@ function renderCourses(){
   $("v-courses").innerHTML = `
     <div class="budget"><div class="label" style="color:inherit;opacity:.75">Total estimé · 14 jours · 70 repas</div>
       <div class="total num">${eur(TOTAL).replace(" €","")}<small> €</small></div>
-      <div class="gauge"><i style="width:${(TOTAL/100*100).toFixed(1)}%"></i></div>
-      <div class="sub num"><span>≈ ${eur(TOTAL/14)} / jour</span><span>Marge : ${eur(100-TOTAL)}</span></div>
+      <div class="gauge"><i style="width:${Math.min(100,TOTAL).toFixed(1)}%"></i></div>
+      <div class="sub num"><span>≈ ${eur(TOTAL/14)} / jour</span><span>${TOTAL<=100?"Marge : "+eur(100-TOTAL):"Sans lactose : +"+eur(TOTAL-100)}</span></div>
       <div class="sub num"><span>Dans le caddie : ${nGot}/${ALL_ITEMS.length}</span><span>${eur(gotSum)}</span></div></div>
     <div class="row"><button class="btn small" id="copyList">Copier la liste</button><button class="btn small" id="resetList">Tout décocher</button></div>
-    <p class="muted" style="font-size:13px">Prix estimés en hard-discount (Lidl, Aldi, Leclerc marque repère). Prends les marques distributeur et les grands formats. Au placard (non compté) : sel, poivre, moutarde.</p>
+    <p class="muted" style="font-size:13px">Prix estimés en hard-discount (Lidl, Aldi, Leclerc marque repère). Prends les marques distributeur et les grands formats. Au placard (non compté) : sel, poivre, moutarde. Tout le plan est sans lactose.</p>
     ${rayons}
     <div class="card"><h3>Matériel conseillé</h3><p>10 boîtes Tupperware (idéalement en verre, ça va au micro-ondes), 5 bocaux, un rouleau de scotch de masquage + un feutre pour dater, un moule à muffins (ou des ramequins), une grande casserole et une cocotte.</p></div>`;
 }
@@ -607,7 +607,7 @@ document.addEventListener("change", e=>{
 });
 document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("sheet").hidden) closeSheet(); });
 
-$("pill").textContent = eur(TOTAL)+" / 100 €";
+$("pill").textContent = eur(TOTAL)+" · 14 j";
 route();
 </script>
 
