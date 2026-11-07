@@ -168,7 +168,7 @@ LESSONS = (
           "why": "Objectif 56 − 51 = 5 ; risque 51 − 49 = 2 ; 5 ÷ 2 = 2,5."},
      ],
      "sources": ["osler_2000", "osler_2003", "kavajecz"]},
-    {"id": "risque", "title": "Le stop et la taille de position", "minutes": 4,
+    {"id": "risque", "title": "Le stop, le stop suiveur et la taille de position", "minutes": 5,
      "blocks": [
          {"text": "Le stop-loss est un prix de sortie fixé à l'avance : si le prix y descend, tu vends. La perte est "
                   "limitée. Sans stop, une seule mauvaise journée peut effacer des mois de gains."},
@@ -183,11 +183,22 @@ LESSONS = (
                   "environ 10 %. C'est la règle des traders prudents. Tes bots en argent fictif, eux, misent tout "
                   "leur capital à chaque trade (c'est ton choix, pour voir vite ce que vaut chaque stratégie) : un "
                   "stop touché leur coûte plusieurs pourcents. Le bot en argent réel, lui, reste à 1 %."},
+         {"text": "Le stop peut aussi bouger, mais seulement dans le bon sens. Le stop suiveur monte avec le prix "
+                  "(à la même distance du plus haut atteint) : il laisse courir un gain et en garde une partie quand "
+                  "le prix se retourne. Le stop sécurisé passe au prix d'entrée dès que le trade a gagné autant qu'il "
+                  "risquait : le trade ne peut presque plus perdre. En échange, ils coupent parfois un trade qui "
+                  "serait reparti : tes bots testent ces façons de sortir sur chaque crypto et gardent celle qui "
+                  "marche."},
      ],
      "remember": ["Un stop à chaque trade, décidé avant d'entrer.",
                   "Taille = capital × risque ÷ distance du stop.",
-                  "1 % de risque par trade : une série de pertes ne te ruine pas."],
+                  "1 % de risque par trade : une série de pertes ne te ruine pas.",
+                  "Un stop ne bouge que pour protéger : il monte (à l'achat), il ne recule jamais."],
      "quiz": [
+         {"q": "Achat à 100 $, stop à 98 $. Le prix monte à 106 $. Avec un stop suiveur à 2 $ du plus haut, où est "
+               "le stop ?",
+          "choices": ["104 $", "98 $", "106 $"], "answer": 0,
+          "why": "Il suit le plus haut (106 $) à 2 $ de distance : 104 $. Si le prix redescend, le trade sort en gain."},
          {"q": "Compte de 2 000 $, risque 1 %, stop à 4 % sous l'achat. Taille de la position ?",
           "choices": ["500 $", "2 000 $", "80 $"], "answer": 0,
           "why": "1 % de 2 000 = 20 $ ; 20 ÷ 0,04 = 500 $. Si le stop est touché, la perte est de 20 $."},

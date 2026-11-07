@@ -19,15 +19,17 @@ TES BOTS (argent fictif, en continu)
 2. Le labo en direct : chaque crypto est testée dès qu'elle entre dans la liste, puis toutes les 3
    heures : 39 techniques (RSI, Bollinger, cassures, moyennes mobiles, MACD, momentum, Supertrend,
    supports et résistances, impulsions, EMA 9/21, VWAP, stochastique, Keltner, ADX, Parabolic SAR,
-   Ichimoku, Heikin-Ashi...), à l'achat et à la vente à découvert, avec ou sans objectif, en bougies de
-   1 min à 4 h : 780 combinaisons par crypto, sur l'historique récent, frais compris. Une combinaison ne
-   devient un bot que si elle gagne sur les trois périodes de cet historique. Au plus 8 bots par
-   crypto : jusqu'à 480 bots en tout.
+   Ichimoku, Heikin-Ashi...), à l'achat et à la vente à découvert, avec quatre façons de sortir (par
+   la règle, objectif 2R, stop suiveur, objectif 2R + stop sécurisé), en bougies de 1 min à 4 h : 1560
+   combinaisons par crypto, sur l'historique récent, frais compris. Une combinaison ne devient un bot que
+   si elle gagne sur les trois périodes de cet historique. Au plus 8 bots par crypto : jusqu'à 480 bots.
 3. Les bots : chacun met tout son capital fictif (1000 USDT) à chaque trade, avec le levier de son
    horizon (×5 en scalping, ×3 en court terme, ×1 en long terme), un stop et souvent un objectif. Un
    stop touché peut coûter plusieurs pourcents de son capital, et un bot peut être liquidé. Un bot que
    le dernier test ne garde plus finit son trade puis s'arrête ; un bot liquidé, à moitié ruiné ou
    nettement perdant après 20 trades est arrêté, et sa combinaison mise de côté 24 heures.
+   Le stop suiveur monte avec le prix (à la même distance du plus haut atteint) ; le stop sécurisé passe
+   au prix d'entrée dès que le trade a gagné autant qu'il risquait. Ils ne reculent jamais.
 4. Les agents d'analyse : pour chaque bot, dans quelles conditions sa stratégie a gagné ou perdu
    (tendance de fond, volatilité, RSI, volume, heure), ses chances de gain estimées maintenant, et
    pourquoi chaque trade a gagné ou perdu. Ce sont des mesures : un bot n'entre que sur sa règle.
@@ -39,6 +41,10 @@ LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordina
 - Direct : la valeur de tous tes bots, leur résultat, l'humeur du marché, puis la liste de TOUS les
   bots (filtres scalping, court terme, long terme, en position, en veille ; tri par résultat), et le
   fil de ce qui vient de se passer. Touche un bot pour sa page.
+- Stratégies : le classement en direct de chaque stratégie (une technique dans une unité de temps, toutes
+  cryptos réunies), sur tout le direct, 7 jours ou aujourd'hui. Après 30 trades, une stratégie nettement
+  gagnante est « prouvée » et passe en priorité ; une nettement perdante est « recalée » et ses bots
+  s'arrêtent. Le classement du jour est pour information : sur une journée, c'est surtout du hasard.
 - Cryptos : les cryptos suivies, leur mouvement du jour et leurs bots. Touche une crypto : ses bots,
   son graphique (zoom avec la molette, les boutons + et −, ou en pinçant ; glisse pour remonter le
   temps), ses supports et résistances, la lecture d'un trader, son actualité et ce que le labo y a testé.

@@ -5,8 +5,9 @@ Comment il travaille, sans jamais s'arrêter :
    sans monnaies stables ni tokens à levier). Une crypto qui sort de la liste, ou dont l'amplitude sur 24 h tombe sous
    le seuil (« pas assez de mouvement »), passe en veille : ses bots n'ouvrent plus de trade, ils gèrent ceux en cours.
 2. Le labo en direct : chaque crypto est retestée toutes les 3 heures, et dès qu'elle entre dans la liste. Toutes les
-   techniques de la bibliothèque, à l'achat et à la vente à découvert, avec ou sans objectif, sur cinq unités de temps
-   (1 min à 4 h), sur l'historique récent, frais des contrats à terme compris. Une combinaison ne devient un bot que si
+   techniques de la bibliothèque, à l'achat et à la vente à découvert, avec quatre façons de sortir (par la règle,
+   objectif 2R, stop suiveur, objectif 2R + stop sécurisé), sur cinq unités de temps (1 min à 4 h), sur l'historique
+   récent, frais des contrats à terme compris. Une combinaison ne devient un bot que si
    elle gagne sur les trois périodes de cet historique (étude, validation, test final), avec assez de trades. Au plus
    K bots par crypto, des techniques et des unités variées. Les tests tournent à part (un fil pour télécharger, un
    processus pour calculer) : le direct n'attend jamais.
@@ -18,6 +19,10 @@ Comment il travaille, sans jamais s'arrêter :
    réel, pourquoi il a gagné ou perdu. Ce sont des mesures, jamais des ordres : un bot n'entre que sur le signal de sa
    règle testée. « Apprendre », c'est le re-test continu sur des données fraîches, pas des réglages changés après une
    perte (c'est ainsi qu'on finit par sur-ajuster le passé).
+5. Le classement en direct : chaque trade fini compte pour sa stratégie (une technique dans une unité de temps, toutes
+   cryptos réunies). Après 30 trades, une stratégie nettement gagnante (seuil durci par le nombre de stratégies) est
+   « prouvée » et passe en priorité aux tests ; une stratégie nettement perdante est « recalée » : les tests ne la
+   prennent plus et ses bots s'arrêtent après leur trade.
 
 Argent fictif seulement : rien ne part jamais sur une plateforme.
 """
@@ -35,7 +40,9 @@ import time
 from concurrent.futures import ProcessPoolExecutor, TimeoutError as FutureTimeout
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from statistics import NormalDist
 
 import ccxt
 import numpy as np
@@ -46,7 +53,7 @@ from .data import fetch_history, ohlcv_to_frame, timeframe_to_ms
 from .execution import FUTURES, ExecutionParams
 from .explain import pct, price as fmt_price, read_chart
 from .fleet import (
-    LOCK_FILE, MIN_PART_TRADES, SIDE_HINTS, SIDE_LABELS, SIDES, TARGETS, Book, Spec, _iso, _position_view, condition,
+    EXITS, LOCK_FILE, MIN_PART_TRADES, SIDE_HINTS, SIDE_LABELS, SIDES, Book, Spec, _iso, _position_view, condition,
     entry_rule, exit_rule, finite, load_json, lookback_for, save_json, signals_for, simulate, spec_from, technique,
     tf_label,
 )
@@ -94,6 +101,8 @@ KEEP_EVENTS = 400
 KEEP_RETIRED = 200
 MAX_COINS, MAX_BOTS_PER_COIN = 80, 10
 SHRINK = 20  # la probabilité estimée est tirée vers la moyenne de la stratégie, comme si on avait 20 trades de plus
+LIVE_MIN_TRADES = 30  # trades en direct d'une stratégie avant de la déclarer prouvée ou recalée
+LIVE_DAYS = 14  # jours gardés pour le classement du jour et des 7 derniers jours
 
 
 @dataclass(frozen=True)
@@ -302,10 +311,35 @@ def _label(r: dict) -> tuple[str, str]:
     return "2", "Gagnant sur l'étude et la validation (trop peu de trades récents pour le test final)"
 
 
-def _choose(rows: list[dict], k: int) -> list[dict]:
+def strategy_key(technique_name: str, timeframe: str) -> str:
+    """Une stratégie, pour le classement en direct : une technique dans une unité de temps (toutes cryptos réunies)."""
+    return f"{technique_name}|{timeframe}"
+
+
+def exit_label(target_r: float, stop_mode: str) -> str:
+    if stop_mode == "suiveur":
+        return "stop suiveur"
+    if stop_mode == "securise":
+        return "objectif 2R + stop sécurisé" if target_r else "stop sécurisé"
+    return "objectif 2R" if target_r else "sortie par la règle"
+
+
+def _rank_key(r: dict) -> float:
+    score = r["score"]
+    return -score if math.isfinite(score) else (-1e9 if score > 0 else 1e9)
+
+
+def _choose(rows: list[dict], k: int, verdicts: dict[str, str] | None = None) -> list[dict]:
     """Les k mieux classées d'une crypto : des familles et des unités de temps variées (au plus 2 par unité, une
-    combinaison par technique et unité)."""
-    ranked = sorted(rows, key=lambda r: -r["score"] if math.isfinite(r["score"]) else -1e9)
+    combinaison par technique et unité). Ce que le direct a appris passe avant : une stratégie prouvée en direct
+    (toutes cryptos réunies) est prise en premier, une stratégie recalée en direct n'est plus prise."""
+    verdicts = verdicts or {}
+
+    def verdict(r):
+        return verdicts.get(strategy_key(r["technique"], r["timeframe"]))
+
+    rows = [r for r in rows if verdict(r) != "recalee"]
+    ranked = sorted(rows, key=lambda r: (verdict(r) != "prouvee", _rank_key(r)))
     chosen, seen, per_tf, families = [], set(), {}, set()
     for strict in (True, False):
         for r in ranked:
@@ -324,9 +358,11 @@ def _choose(rows: list[dict], k: int) -> list[dict]:
 
 
 def retest_coin(symbol: str, frames: dict[str, pd.DataFrame], settings: dict, banned: tuple[str, ...] = (),
-              ex: ExecutionParams = FUTURES) -> dict:
-    """Toutes les combinaisons sur une crypto : le travail d'un re-test (envoyé à un processus à part)."""
+                verdicts: dict[str, str] | None = None, ex: ExecutionParams = FUTURES) -> dict:
+    """Toutes les combinaisons sur une crypto : le travail d'un re-test (envoyé à un processus à part). `verdicts` :
+    ce que le direct a appris de chaque stratégie (prouvée, recalée)."""
     s = SwarmSettings(**settings)
+    verdicts = verdicts or {}
     rows, books, feats = [], {}, {}
     for tf, df in frames.items():
         if df is None or len(df) < MIN_BARS:
@@ -344,8 +380,8 @@ def retest_coin(symbol: str, frames: dict[str, pd.DataFrame], settings: dict, ba
             for side in SIDES:
                 try:
                     sig = signals_for(df, params, side)
-                    for target in TARGETS:
-                        spec = Spec(TEAMS[tf], symbol, tf, name, side, target, s.leverage(tf))
+                    for target, mode in EXITS:
+                        spec = Spec(TEAMS[tf], symbol, tf, name, side, target, s.leverage(tf), mode)
                         book = simulate(df, spec, s.capital, ex, sig)
                         row = judge_row(book, start, end)
                         rows.append(row)
@@ -355,7 +391,7 @@ def retest_coin(symbol: str, frames: dict[str, pd.DataFrame], settings: dict, ba
                     log.warning("%s %s %s : combinaison ignorée (%s)", symbol, tf, name, exc)
     good = [r for r in rows if r["key"] in books and r["key"] not in banned]
     chosen = []
-    for r in _choose(good, s.bots_per_coin):
+    for r in _choose(good, s.bots_per_coin, verdicts):
         tf = r["timeframe"]
         code, text = _label(r)
         trades = books[r["key"]].s["trades"]
@@ -364,8 +400,9 @@ def retest_coin(symbol: str, frames: dict[str, pd.DataFrame], settings: dict, ba
                        "curve": _curve(trades, int(frames[tf]["ts"].iloc[0]), s.capital)})
     best = sorted(rows, key=lambda r: -r["score"] if math.isfinite(r["score"]) else 1e9)[:12]
     return {"symbol": symbol, "tested": len(rows), "eligible": len(good), "chosen": chosen,
-            "best": [{k: r[k] for k in ("timeframe", "technique", "side", "target_r", "sv_n", "sv_mean", "test_n",
-                                        "test_mean", "total_return", "drawdown")} | {"eligible": r["key"] in books}
+            "best": [{k: r[k] for k in ("timeframe", "technique", "side", "target_r", "stop_mode", "sv_n", "sv_mean",
+                                        "test_n", "test_mean", "total_return", "drawdown")}
+                     | {"eligible": r["key"] in books, "live": verdicts.get(strategy_key(r["technique"], r["timeframe"]))}
                      for r in best]}
 
 
@@ -396,12 +433,12 @@ class Retester:
         self.lock = threading.Lock()
         self.thread: threading.Thread | None = None
 
-    def submit(self, symbol: str, banned: tuple[str, ...] = ()) -> bool:
+    def submit(self, symbol: str, banned: tuple[str, ...] = (), verdicts: dict[str, str] | None = None) -> bool:
         with self.lock:
             if symbol in self.pending:
                 return False
             self.pending.add(symbol)
-        self.jobs.put((symbol, banned))
+        self.jobs.put((symbol, tuple(banned), dict(verdicts or {})))
         if self.thread is None or not self.thread.is_alive():
             self.thread = threading.Thread(target=self._loop, name="labo-en-direct", daemon=True)
             self.thread.start()
@@ -444,7 +481,7 @@ class Retester:
                 log.warning("Calcul à part impossible (%s) : les tests se font dans le direct, plus lentement.", exc)
         settings = asdict(self.settings)
         while True:
-            symbol, banned = self.jobs.get()
+            symbol, banned, verdicts = self.jobs.get()
             with self.lock:
                 self.current = symbol
             try:
@@ -452,7 +489,8 @@ class Retester:
                 result = None
                 if pool is not None:
                     try:
-                        result = pool.submit(retest_coin, symbol, frames, settings, banned).result(RETEST_TIMEOUT_S)
+                        result = pool.submit(retest_coin, symbol, frames, settings, banned,
+                                             verdicts).result(RETEST_TIMEOUT_S)
                     except FutureTimeout:
                         pool = self._replace(pool)
                         raise RuntimeError("test trop long, le processus de calcul a été remplacé") from None
@@ -460,7 +498,7 @@ class Retester:
                         log.warning("Calcul à part interrompu (%s) : il continue dans le fil.", exc)
                         pool = None
                 if result is None:
-                    result = retest_coin(symbol, frames, settings, banned)
+                    result = retest_coin(symbol, frames, settings, banned, verdicts)
                 self.results.put(result)
             except Exception as exc:  # jamais fatal : la crypto sera retestée plus tard
                 log.warning("Test de %s impossible : %s", symbol, exc)
@@ -636,6 +674,7 @@ class Swarm:
             if book.position:
                 forming = now_ms - now_ms % book.tf_ms
                 events += self._report(bot, book.range_bar(forming, None, price, price, at))
+        events += self._judge_strategies()
         events += self._retire(now_ms)
         if now_ms - int(self.state.get("mood_at") or 0) >= MOOD_EVERY_S * 1000:
             self._refresh_mood(now_ms)
@@ -737,9 +776,113 @@ class Swarm:
             else:
                 trade = bot["book"]["trades"][-1] if bot["book"]["trades"] else r
                 trade["analysis"] = trade_analysis(trade, (bot.get("backtest") or {}).get("profile"))
+                self._learn(spec, r)
                 text = (f"{name} : sort à {fmt_price(r['exit_price'])} ({r['reason']}), {pct(r['roi'])} sur son capital "
                         f"({pct(r['net'], 2)} sur la position, frais compris).")
                 out.append(self.event("sortie", text, bot=bot["id"], symbol=spec.symbol, roi=r["roi"]))
+        return out
+
+    # --- le classement des stratégies en direct ---
+    def _learn(self, spec: Spec, trade: dict) -> None:
+        """Chaque trade fini compte pour sa stratégie (technique et unité, toutes cryptos réunies), sa façon de sortir,
+        son sens, sa technique et son unité : rendement par trade sans levier, frais compris (comparable d'un bot à
+        l'autre). Jour par jour, pour le classement du jour et des 7 derniers jours."""
+        net = float(trade["net"])
+        if not math.isfinite(net):
+            return
+        day = _iso(self.clock() * 1000)[:10]
+        live = self.state.setdefault("live", {})
+        for key in (f"strategie:{strategy_key(spec.technique, spec.timeframe)}", f"technique:{spec.technique}",
+                    f"sortie:{exit_label(spec.target_r, spec.stop_mode)}", f"sens:{spec.side}",
+                    f"unite:{spec.timeframe}"):
+            rec = live.setdefault(key, {"n": 0, "total": 0.0, "total_sq": 0.0, "wins": 0, "days": {}})
+            rec["n"] += 1
+            rec["total"] += net
+            rec["total_sq"] += net * net
+            rec["wins"] += int(net > 0)
+            d = rec["days"].setdefault(day, [0, 0.0, 0])
+            d[0], d[1], d[2] = d[0] + 1, d[1] + net, d[2] + int(net > 0)
+            for old in sorted(rec["days"])[:-LIVE_DAYS]:
+                del rec["days"][old]
+        self.state_dirty = True
+
+    def verdicts(self) -> dict[str, str]:
+        """Après au moins 30 trades en direct : « recalee » si même le haut de sa fourchette à 95 % est négatif,
+        « prouvee » si le bas de sa fourchette est positif avec un seuil durci par le nombre de stratégies comparées
+        (sinon la chance en ferait gagner). Les autres restent à confirmer."""
+        live = self.state.get("live") or {}
+        keys = [k for k in live if k.startswith("strategie:")]
+        z = NormalDist().inv_cdf(1 - 0.025 / max(len(keys), 1))
+        out = {}
+        for key in keys:
+            rec = live[key]
+            if rec["n"] < LIVE_MIN_TRADES:
+                continue
+            stats = TradeStats(rec["n"], rec["total"], rec["total_sq"])
+            if stats.bounds()[1] < 0:
+                out[key.split(":", 1)[1]] = "recalee"
+            elif stats.bounds(z)[0] > 0:
+                out[key.split(":", 1)[1]] = "prouvee"
+        return out
+
+    def _judge_strategies(self) -> list[dict]:
+        """Une stratégie recalée en direct : ses bots finissent leur trade puis s'arrêtent, sans attendre le prochain
+        test de leur crypto. Chaque changement de verdict est annoncé."""
+        verdicts = self.verdicts()
+        before = self.state.setdefault("verdicts", {})
+        events = []
+        live = self.state.get("live") or {}
+        for key, verdict in verdicts.items():
+            if before.get(key) == verdict:
+                continue
+            rec = live.get(f"strategie:{key}") or {}
+            name, tf = key.rsplit("|", 1)
+            mean = rec.get("total", 0.0) / rec["n"] if rec.get("n") else 0.0
+            if verdict == "prouvee":
+                text = (f"{name} en {tf_label(tf)} est prouvée en direct ({rec.get('n')} trades, {pct(mean, 2)} par trade "
+                        "en moyenne, frais compris) : elle passe en priorité aux prochains tests.")
+            else:
+                text = (f"{name} en {tf_label(tf)} perd nettement en direct ({rec.get('n')} trades, {pct(mean, 2)} par "
+                        "trade) : ses bots finissent leur trade puis s'arrêtent, et les tests ne la prennent plus.")
+            events.append(self.event("prouvee" if verdict == "prouvee" else "recalee", text))
+        self.state["verdicts"] = verdicts
+        if verdicts != before:
+            self.state_dirty = True
+        for bot in self.bots.values():
+            spec = bot["spec"]
+            if verdicts.get(strategy_key(spec["technique"], spec["timeframe"])) == "recalee" \
+                    and bot["status"] != "sortie":
+                bot["status"] = "sortie"
+                self.dirty.add(bot["key"])
+        return events
+
+    def ranking(self) -> dict:
+        """Le classement des stratégies pour le site : tout le direct, le jour (UTC) et les 7 derniers jours."""
+        live = self.state.get("live") or {}
+        verdicts = self.state.get("verdicts") or {}
+        today = datetime.fromtimestamp(self.clock(), tz=timezone.utc).date()
+        week = {(today - timedelta(days=k)).isoformat() for k in range(7)}
+        out: dict[str, list] = {"strategie": [], "technique": [], "sortie": [], "sens": [], "unite": []}
+        for key, rec in live.items():
+            kind, _, name = key.partition(":")
+            if kind not in out or not rec.get("n"):
+                continue
+            stats = TradeStats(rec["n"], rec["total"], rec["total_sq"])
+            lo, hi = stats.bounds()
+            day = rec["days"].get(today.isoformat()) or [0, 0.0, 0]
+            w = [sum(v[0] for d, v in rec["days"].items() if d in week),
+                 sum(v[1] for d, v in rec["days"].items() if d in week)]
+            row = {"key": name, "n": rec["n"], "win": rec["wins"] / rec["n"], "mean": stats.mean,
+                   "lo": lo if math.isfinite(lo) else None, "hi": hi if math.isfinite(hi) else None,
+                   "today_n": day[0], "today_mean": day[1] / day[0] if day[0] else None,
+                   "week_n": w[0], "week_mean": w[1] / w[0] if w[0] else None}
+            if kind == "strategie":
+                name_, tf = name.rsplit("|", 1)
+                row.update(technique=name_, timeframe=tf, tf_label=tf_label(tf), verdict=verdicts.get(name))
+            out[kind].append(row)
+        for rows in out.values():
+            rows.sort(key=lambda r: -(r["mean"] if r["mean"] is not None and math.isfinite(r["mean"]) else -1e9))
+        out["min_trades"] = LIVE_MIN_TRADES
         return out
 
     # --- les cryptos suivies et leurs tests ---
@@ -795,10 +938,12 @@ class Swarm:
         banned = self.state["banned"]
         for key in [k for k, until in banned.items() if until <= now_ms]:
             del banned[key]
+        verdicts = None
         for symbol, info in sorted(self.state["coins"].items(), key=lambda kv: -(kv[1].get("amplitude") or 0)):
             if info.get("moving") and now_ms >= int(info.get("next_test") or 0):
                 keys = tuple(k for k in banned if k.startswith(symbol + "|"))
-                if self.tester.submit(symbol, keys):
+                verdicts = self.verdicts() if verdicts is None else verdicts
+                if self.tester.submit(symbol, keys, verdicts):
                     info["status"] = "test en cours"
                     info["next_test"] = now_ms + RETEST_S * 1000
                     self.state_dirty = True
@@ -825,7 +970,9 @@ class Swarm:
             info.update(status="test impossible", error=result["error"])
             info["next_test"] = now_ms + 600_000  # nouvel essai dans 10 minutes
             return []
-        chosen = result.get("chosen") or []
+        verdicts = self.state.get("verdicts") or {}  # un verdict tombé pendant le test passe avant son résultat
+        chosen = [r for r in result.get("chosen") or []
+                  if verdicts.get(strategy_key(r["technique"], r["timeframe"])) != "recalee"]
         info.update(status="actif" if chosen else "aucune stratégie gagnante", tested=_iso(now_ms),
                     n_tested=result.get("tested", 0), n_eligible=result.get("eligible", 0), best=result.get("best") or [],
                     error=None)
@@ -960,8 +1107,10 @@ class Swarm:
                 pass
 
     def summary(self) -> dict:
-        """Ce que lit le site : les cryptos, chaque bot en bref, les totaux, les événements."""
-        bots = [bot_brief(b) for b in self.bots.values()]
+        """Ce que lit le site : les cryptos, chaque bot en bref, les totaux, les événements, le classement."""
+        verdicts = self.state.get("verdicts") or {}
+        bots = [bot_brief(b) | {"live": verdicts.get(strategy_key(b["spec"]["technique"], b["spec"]["timeframe"]))}
+                for b in self.bots.values()]
         retired = self.state["retired_totals"]
         start = sum(b["start"] for b in bots) + retired["start"]
         value = sum(b["value"] for b in bots) + retired["end"]
@@ -987,6 +1136,7 @@ class Swarm:
                            "moving": sum(1 for c in self.state["coins"].values() if c.get("moving"))},
                 "coins": coins, "bots": bots, "events": list(reversed(self.state["events"]))[:80],
                 "retired": list(reversed(self.state["retired"]))[:40], "mood": self.state.get("mood"),
+                "ranking": self.ranking(),
                 "tester": self.tester.status() if self.tester else None}
 
 
@@ -1002,6 +1152,7 @@ def bot_brief(bot: dict) -> dict:
     return {"id": bot["id"], "symbol": spec.symbol, "coin": spec.coin, "timeframe": spec.timeframe,
             "tf_label": tf_label(spec.timeframe), "team": bot.get("team"), "technique": spec.technique,
             "family": spec.family, "side": spec.side, "target_r": spec.target_r, "leverage": spec.leverage,
+            "stop_mode": spec.stop_mode, "exit": exit_label(spec.target_r, spec.stop_mode),
             "status": bot["status"], "label": bot.get("label"), "start": s["start"], "value": value,
             "pnl": value - s["start"], "pnl_pct": value / s["start"] - 1, "count": s["count"], "wins": s["wins"],
             "win_rate": s["wins"] / s["count"] if s["count"] else None, "dead": s["dead"], "last_price": last,

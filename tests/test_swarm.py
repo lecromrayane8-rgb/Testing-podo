@@ -14,7 +14,7 @@ import pytest
 import tradingbot.swarm as swarm_module
 from tests.conftest import HOUR_MS, frame_from_closes
 from tradingbot.data import COLUMNS
-from tradingbot.fleet import Spec, fleet_running, lookback_for, simulate
+from tradingbot.fleet import EXITS, Spec, fleet_running, lookback_for, simulate
 from tradingbot.swarm import (
     BAN_S, DETAIL_DIR, ELIMINATE_AFTER, LIBRARY, STATE_FILE, SWARM_FILE, CandleStore, Swarm, SwarmSettings, Retester,
     bot_brief, bot_detail, buckets, features, insights, probability, profile, run, settings_from_env, retest_coin,
@@ -58,16 +58,17 @@ class FakeTester:
         self.submitted: list[tuple[str, tuple]] = []
         self.results: queue.Queue = queue.Queue()
 
-    def submit(self, symbol, banned=()):
+    def submit(self, symbol, banned=(), verdicts=None):
         self.submitted.append((symbol, tuple(banned)))
+        self.verdicts = verdicts
         return True
 
     def status(self):
         return {"queue": 0, "current": None, "done": len(self.submitted)}
 
 
-def spec(name="Cassure 20/10", side="long", target=0.0, leverage=3.0, symbol="X/USDT", tf="1h"):
-    return Spec("court", symbol, tf, name, side, target, leverage)
+def spec(name="Cassure 20/10", side="long", target=0.0, leverage=3.0, symbol="X/USDT", tf="1h", stop_mode="fixe"):
+    return Spec("court", symbol, tf, name, side, target, leverage, stop_mode)
 
 
 def chosen(s: Spec, **extra) -> dict:
@@ -90,14 +91,17 @@ COMPARED = ("side", "entry_ts", "exit_ts", "reason", "leverage")
 
 # Le parcours complet (tour après tour, comme en vrai) sur quelques techniques ; les signaux de toutes les techniques,
 # dans les deux sens, sont comparés bougie par bougie dans tests/test_fleet.py.
-@pytest.mark.parametrize("name,side,target", [
-    ("Cassure 20/10", "long", 0.0), ("Cassure 20/10", "short", 2.0), ("Repli RSI(2) < 10 + MM200", "long", 2.0),
-    ("Rebond sur support", "short", 2.0), ("Stochastique 14/3", "short", 0.0), ("Ichimoku 9/26/52", "long", 2.0),
+@pytest.mark.parametrize("name,side,target,mode", [
+    ("Cassure 20/10", "long", 0.0, "fixe"), ("Cassure 20/10", "short", 2.0, "fixe"),
+    ("Repli RSI(2) < 10 + MM200", "long", 2.0, "fixe"), ("Rebond sur support", "short", 2.0, "fixe"),
+    ("Stochastique 14/3", "short", 0.0, "fixe"), ("Ichimoku 9/26/52", "long", 2.0, "fixe"),
+    ("Cassure 20/10", "long", 0.0, "suiveur"), ("Supertrend 10/3", "short", 0.0, "suiveur"),
+    ("EMA 9/21", "long", 2.0, "securise"), ("Momentum 28", "short", 2.0, "securise"),
 ])
-def test_live_bots_take_exactly_the_trades_of_their_backtest(monkeypatch, random_walk, name, side, target):
+def test_live_bots_take_exactly_the_trades_of_their_backtest(monkeypatch, random_walk, name, side, target, mode):
     monkeypatch.setattr(Swarm, "_retire", lambda self, now_ms: [])  # le bot reste en place jusqu'au bout
     df = random_walk.iloc[:1150].copy()
-    s = spec(name, side, target)
+    s = spec(name, side, target, stop_mode=mode)
     backtest = [t for t in simulate(df, s).s["trades"] if t["reason"] != "fin du test"]
     index = {int(t): i for i, t in enumerate(df["ts"])}
     look = lookback_for(s.params)
@@ -123,13 +127,15 @@ def test_live_bots_take_exactly_the_trades_of_their_backtest(monkeypatch, random
         assert a["diagnosis"]["title"]  # chaque trade du direct est expliqué
 
 
-@pytest.mark.parametrize("name,side,target", [("Cassure 20/10", "long", 2.0), ("Supertrend 10/3", "short", 0.0),
-                                              ("Repli RSI(2) < 10 + MM200", "long", 0.0)])
-def test_after_a_break_the_bots_catch_up_exactly_like_their_backtest(monkeypatch, random_walk, name, side, target):
+@pytest.mark.parametrize("name,side,target,mode", [
+    ("Cassure 20/10", "long", 2.0, "fixe"), ("Supertrend 10/3", "short", 0.0, "suiveur"),
+    ("Repli RSI(2) < 10 + MM200", "long", 2.0, "securise"),
+])
+def test_after_a_break_the_bots_catch_up_exactly_like_their_backtest(monkeypatch, random_walk, name, side, target, mode):
     """Le PC éteint 3 jours (ou le réseau coupé) : au retour, les bougies manquées sont rejouées une par une."""
     monkeypatch.setattr(Swarm, "_retire", lambda self, now_ms: [])
     df = random_walk.iloc[:1150].copy()
-    s = spec(name, side, target)
+    s = spec(name, side, target, stop_mode=mode)
     backtest = [t for t in simulate(df, s).s["trades"] if t["reason"] != "fin du test"]
     index = {int(t): i for i, t in enumerate(df["ts"])}
     first = next(t for t in backtest if index[t["exit_ts"]] >= lookback_for(s.params) + 80)
@@ -349,7 +355,7 @@ def test_a_losing_bot_is_stopped_and_its_combination_set_aside_for_a_day(random_
 def test_retesting_a_coin_tries_every_combination_and_keeps_varied_winners(random_walk):
     frames = {"1h": random_walk.iloc[:1400], "15m": random_walk.iloc[1400:2800]}
     result = retest_coin("X/USDT", frames, asdict(SwarmSettings(bots_per_coin=4)))
-    assert result["tested"] == 2 * len(LIBRARY) * 2 * 2
+    assert result["tested"] == 2 * len(LIBRARY) * 2 * len(EXITS)  # 2 unités x techniques x 2 sens x 4 sorties
     assert len(result["chosen"]) <= 4 and len(result["best"]) == 12
     for r in result["chosen"]:
         assert r["study_mean"] > 0 and r["valid_mean"] > 0 and not r["liquidated"]
@@ -374,7 +380,7 @@ def test_strange_candles_never_stop_the_test_of_a_coin(random_walk, monkeypatch,
 
     monkeypatch.setattr(swarm_module, "signals_for", flaky)
     result = retest_coin("X/USDT", {"1h": random_walk.iloc[:900], "5m": None}, asdict(SwarmSettings()))
-    assert result["tested"] == (len(LIBRARY) - 2) * 2 * 2  # les deux Supertrend sautés, le reste testé
+    assert result["tested"] == (len(LIBRARY) - 2) * 2 * len(EXITS)  # les deux Supertrend sautés, le reste testé
     assert "combinaison ignorée" in caplog.text
 
 
@@ -390,7 +396,7 @@ def test_the_tester_works_apart_and_falls_back_when_the_process_pool_breaks(monk
         return {"1h": random_walk.iloc[:600]}
 
     monkeypatch.setattr(Retester, "_frames", frames)
-    monkeypatch.setattr(swarm_module, "retest_coin", lambda symbol, frames, settings, banned=(): {
+    monkeypatch.setattr(swarm_module, "retest_coin", lambda symbol, frames, settings, banned=(), verdicts=None: {
         "symbol": symbol, "tested": len(frames), "eligible": 0, "chosen": [], "best": [], "banned": list(banned)})
 
     class Broken:
@@ -473,6 +479,36 @@ def test_a_coin_that_leaves_the_list_frees_its_places_after_six_hours(random_wal
         swarm.next_fetch.clear()
         swarm.cycle(t + 6 * 3600_000 + k * 60_000)
     assert caplog.text.count("bougies indisponibles") == 1
+
+
+def test_live_results_rank_the_strategies_and_feed_back_into_the_choice(random_walk):
+    market = FakeMarket({"X/USDT": random_walk})
+    market.i = 400
+    tester = FakeTester()
+    swarm = make_swarm(market, tester=tester)
+    good, bad = spec("EMA 9/21", "long", 2.0), spec("Momentum 50", "short", 0.0, stop_mode="suiveur")
+    loser = swarm.add_bot(chosen(bad), market.now_ms())
+    for k in range(40):  # 40 trades en direct, toutes cryptos réunies
+        swarm._learn(good, {"net": 0.010 + 0.002 * (k % 3)})
+        swarm._learn(bad, {"net": -0.010 - 0.002 * (k % 3)})
+    events = swarm.cycle(market.now_ms())
+    assert swarm.state["verdicts"] == {"EMA 9/21|1h": "prouvee", "Momentum 50|1h": "recalee"}
+    assert {e["kind"] for e in events} >= {"prouvee", "recalee"}
+    assert loser["key"] not in swarm.bots  # recalée : ses bots s'arrêtent (celui-ci n'avait pas de position)
+    assert swarm.cycle(market.now_ms() + 1000) == []  # un verdict n'est annoncé qu'une fois
+    ranking = swarm.summary()["ranking"]
+    top = ranking["strategie"][0]
+    assert top["technique"] == "EMA 9/21" and top["n"] == 40 and top["today_n"] == 40 and top["week_n"] == 40
+    assert top["verdict"] == "prouvee" and top["lo"] > 0 and ranking["strategie"][-1]["verdict"] == "recalee"
+    assert {r["key"] for r in ranking["sortie"]} == {"objectif 2R", "stop suiveur"}
+    assert {r["key"] for r in ranking["sens"]} == {"long", "short"} and ranking["min_trades"] == 30
+    rows = [chosen(spec("Momentum 50", "short"), score=9.0), chosen(spec("Cassure 20/10"), score=5.0),
+            chosen(spec("EMA 9/21", "long", 2.0), score=1.0)]
+    picked = swarm_module._choose(rows, 2, swarm.state["verdicts"])
+    assert [r["technique"] for r in picked] == ["EMA 9/21", "Cassure 20/10"]  # prouvée d'abord, recalée jamais
+    swarm.state["coins"]["X/USDT"] = {"moving": True, "followed": True, "next_test": 0}
+    swarm.cycle(market.now_ms() + 2000)
+    assert tester.verdicts == swarm.state["verdicts"]  # le test suivant le sait aussi
 
 
 # --- les agents d'analyse --------------------------------------------------------------------------------------

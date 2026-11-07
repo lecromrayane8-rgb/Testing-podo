@@ -33,9 +33,13 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   puis les 5 dernières), `_on_candles` (même ordre que le backtest : `range_bar` sur les bougies manquées, `close_bar`,
   `open_bar` au prix du moment), stop et objectif au prix du moment, `_retire` (liquidé, moitié du capital, gardien
   après `ELIMINATE_AFTER` trades → arrêté et `banned` 24 h ; `sortie` → arrêté sans mise de côté), humeur (`mood` =
-  `fetch_mood`, une fois par heure). `retest_coin` : `LIBRARY` (39 techniques) × `SIDES` × `TARGETS` × `TIMEFRAMES`
-  (1m à 4h) = 780 combinaisons, `_eligible` (étude, validation et test final positifs si ≥ 5 trades, `MIN_TRADES`,
-  jamais liquidée), `_choose` (familles variées, 2 par unité au plus), `profile`. Agents : `features` (tendance MM200 et
+  `fetch_mood`, une fois par heure). `retest_coin` : `LIBRARY` (39 techniques) × `SIDES` × `fleet.EXITS` (règle, 2R,
+  stop suiveur, 2R + stop sécurisé) × `TIMEFRAMES` (1m à 4h) = 1560 combinaisons, `_eligible` (étude, validation et
+  test final positifs si ≥ 5 trades, `MIN_TRADES`, jamais liquidée), `_choose` (stratégies prouvées d'abord, recalées
+  jamais, familles variées, 2 par unité au plus), `profile`. Classement en direct : `_learn` (chaque trade fini, net
+  sans levier, par `strategie:` technique|unité, `technique:`, `sortie:`, `sens:`, `unite:`, jours gardés
+  `LIVE_DAYS`), `verdicts` (≥ `LIVE_MIN_TRADES` trades : `recalee` si borne haute à 95 % < 0, `prouvee` si borne basse
+  durcie par Bonferroni > 0), `_judge_strategies` (annonce, bots d'une recalée en `sortie`), `ranking` (site). Agents : `features` (tendance MM200 et
   pente, ATR %, RSI 14, volume, heure UTC), `buckets`, `profile`, `insights`, `probability` (tirée vers la moyenne,
   `SHRINK`), `trade_analysis` (après chaque trade). Fichiers : `essaim.json` (résumé du site, `summary`, `bot_brief`),
   `essaim-etat.json` (`STATE_FILE`, la mémoire, écrite si `state_dirty` ou toutes les 10 min ; un test perdu au
@@ -46,14 +50,18 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - `tradingbot/fleet.py` : le moteur commun au backtest et au direct. `technique` (`lab.ALL_VARIANTS` + `EXTRA` : EMA,
   VWAP, stochastique, Keltner, ADX, Parabolic SAR, Ichimoku, écart à la moyenne, Heikin-Ashi), `Spec` = crypto, unité,
   technique, sens (`long`, ou `short` = même règle sur le graphique retourné, `mirror`), objectif (`target_r` 0 ou 2R),
-  levier. `Book` (`open_bar`, `range_bar` stop d'abord puis objectif au prix limite, `close_bar`) ; tout le capital ×
+  levier, `stop_mode` (`fixe` ; `suiveur` : à la distance du départ du meilleur prix ; `securise` : au prix d'entrée
+  frais compris dès +1R ; décidé à la clôture dans `_move_stop`, compte dès la bougie suivante, ne recule jamais ; clé
+  du bot inchangée pour `fixe`). `Book` (`open_bar`, `range_bar` stop d'abord puis objectif au prix limite,
+  `close_bar`) ; tout le capital ×
   levier, levier réduit pour que le stop passe avant la liquidation (`LIQ_SAFETY`), frais `execution.FUTURES`,
   financement compté comme un coût dans les deux sens, liquidation = toute la mise ; `explain=True` : `diagnosis`.
   `simulate`, `judge` (étude/validation/test comme le labo, `score` = moyenne / dispersion sur étude + validation),
   `condition`/`entry_rule`/`exit_rule` (règles en mots, dans les deux sens), `overlays`, `chart_view` (lignes de la
   technique, vrais trades, trades de la règle sur les bougies affichées, position), `fleet_running` (`HEARTBEAT_S`).
 - `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
-  Refait le 06/11/2026 au soir autour de l'essaim : onglets Direct (`/api/bots` = `swarm_data` : `swarm_step`,
+  Refait le 06/11/2026 au soir autour de l'essaim (onglet Stratégies ajouté le 07/11 : `ranking`, tout le direct,
+  7 jours, aujourd'hui, verdicts) : onglets Direct (`/api/bots` = `swarm_data` : `swarm_step`,
   totaux, tous les bots avec filtres, tri et pages de 30, événements, bouton « Arrêter les bots »), Cryptos (liste ;
   `#crypto/SOL` = `/api/crypto` + `/api/crypto-graphique` : bots, graphique par unité, lecture, actualité, `best` du
   dernier test), page d'un bot (`#bot/<id>` = `/api/bot` + `/api/bot-graphique` : position au chiffre près, agents,
@@ -274,3 +282,10 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   lanceur 19 « Mes bots en direct ». Bug trouvé et corrigé avant l'envoi : l'essaim relisait son résumé au lieu de son
   état au redémarrage (`essaim-etat.json` à part). Démo avec une plateforme fictive : 12 cryptos testées en 17 s
   (780 combinaisons chacune), 96 bots. Aucun résultat réel encore : tout se fera à l'ouverture du site sur son PC.
+- 07/11/2026 : l'essaim tourne chez l'utilisateur, à peu près à l'équilibre (−0,2 % après quelques heures : normal,
+  les frais d'abord et beaucoup de hasard). Il demande de garder les stratégies qui marchent le mieux chaque jour et de
+  remonter le stop quand un trade gagne. Fait : stop suiveur et stop sécurisé (`stop_mode`, testés comme des façons de
+  sortir : 1560 combinaisons par crypto ; parité direct/backtest et rattrapage vérifiés), classement en direct par
+  stratégie (technique × unité, toutes cryptos) avec verdicts prouvée/recalée qui pilotent les re-tests, onglet
+  Stratégies, leçon « le stop suiveur ». Dit franchement : un classement sur 24 h est surtout du hasard ; on ne
+  « prouve » qu'avec 30 trades et un seuil durci.

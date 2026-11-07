@@ -49,6 +49,13 @@ LIQ_SAFETY = 0.9  # le stop reste à moins de 90 % de la distance de liquidation
 MIN_NOTIONAL = 10.0  # en dessous, plus de trade possible (une plateforme refuserait un si petit ordre)
 TARGET_R = 2.0  # l'objectif : 2 fois la distance du stop
 TARGETS = (0.0, TARGET_R)
+# La gestion du stop pendant le trade : fixe ; suiveur (il monte avec le meilleur prix atteint, à la distance du
+# départ) ; sécurisé (dès que le trade a gagné une fois sa distance de stop, le stop passe au prix d'entrée, frais
+# compris). Décidée à la clôture de chaque bougie, elle compte dès la suivante : identique en backtest et en direct.
+STOP_MODES = ("fixe", "suiveur", "securise")
+STOP_LABELS = {"fixe": "stop fixe", "suiveur": "stop suiveur", "securise": "stop sécurisé"}
+# Les façons de sortir testées pour chaque technique et chaque sens : (objectif, gestion du stop).
+EXITS = ((0.0, "fixe"), (TARGET_R, "fixe"), (0.0, "suiveur"), (TARGET_R, "securise"))
 MIN_BARS = 300  # bougies au-delà de la chauffe pour juger une combinaison
 MIN_PART_TRADES = 3  # trades minimum dans l'étude et dans la validation
 MIN_TEST_TRADES = 5
@@ -117,10 +124,13 @@ class Spec:
     side: str = "long"
     target_r: float = 0.0  # objectif à target_r fois la distance du stop ; 0 = sortie par la règle seulement
     leverage: float = 1.0  # levier maximum
+    stop_mode: str = "fixe"  # fixe, suiveur ou securise (STOP_MODES)
 
     def __post_init__(self):
         if self.side not in SIDES:
             raise ValueError(f"Sens inconnu : {self.side!r}")
+        if self.stop_mode not in STOP_MODES:
+            raise ValueError(f"Gestion du stop inconnue : {self.stop_mode!r}")
 
     @property
     def params(self) -> StrategyParams:
@@ -128,7 +138,8 @@ class Spec:
 
     @property
     def key(self) -> str:
-        return f"{self.symbol}|{self.timeframe}|{self.technique}|{self.side}|{self.target_r:g}"
+        base = f"{self.symbol}|{self.timeframe}|{self.technique}|{self.side}|{self.target_r:g}"
+        return base if self.stop_mode == "fixe" else f"{base}|{self.stop_mode}"  # les bots d'avant gardent leur nom
 
     @property
     def family(self) -> str:
@@ -140,7 +151,8 @@ class Spec:
 
 
 def spec_from(d: dict) -> Spec:
-    return Spec(**{k: d[k] for k in ("section", "symbol", "timeframe", "technique", "side", "target_r", "leverage")})
+    return Spec(**{k: d[k] for k in ("section", "symbol", "timeframe", "technique", "side", "target_r", "leverage")},
+                stop_mode=d.get("stop_mode") or "fixe")
 
 
 # --- Les règles en mots ----------------------------------------------------------------------------------------------
@@ -296,8 +308,15 @@ def exit_rule(spec: Spec) -> str:
     target = (f", à son objectif ({decimal(spec.target_r, 0)} fois la distance du stop, dans l'autre sens)"
               if spec.target_r else "")
     timer = f", et au plus tard après {p.max_bars_in_trade} bougies" if p.max_bars_in_trade else ""
+    up = spec.side == "long"
+    moves = {"fixe": "",
+             "suiveur": f" Son stop est suiveur : à chaque clôture, il {'monte' if up else 'descend'} pour rester à la "
+                        f"même distance du {'plus haut' if up else 'plus bas'} atteint depuis l'entrée (il ne recule "
+                        "jamais).",
+             "securise": " Son stop est sécurisé : dès que le trade a gagné une fois la distance de son stop, le stop "
+                         "passe au prix d'entrée, frais compris, et le trade ne peut presque plus perdre."}[spec.stop_mode]
     return (f"Il sort à son stop (à {decimal(p.stop_atr_mult)} fois la taille moyenne d'une bougie de son prix "
-            f"d'entrée){target}, ou quand {exit_condition(p, spec.side)}{timer}.")
+            f"d'entrée){target}, ou quand {exit_condition(p, spec.side)}{timer}.{moves}")
 
 
 def reason_label(reason: str, side: str) -> str:
@@ -411,9 +430,10 @@ class Book:
             target = price + self.spec.target_r * distance if long else price - self.spec.target_r * distance
             target = target if target > 0 else None
         liquidation = price * (1 - 1 / leverage + MAINTENANCE) if long else price * (1 + 1 / leverage - MAINTENANCE)
+        stop = price - distance if long else price + distance
         pos = {"side": self.spec.side, "entry_ts": int(ts), "entry_mark": mark, "price": price, "qty": notional / price,
-               "notional": notional, "margin": margin, "leverage": leverage, "fee": fee, "stop": price - distance
-               if long else price + distance, "target": target, "liquidation": liquidation, "risk": risk,
+               "notional": notional, "margin": margin, "leverage": leverage, "fee": fee, "stop": stop, "stop0": stop,
+               "distance": distance, "target": target, "liquidation": liquidation, "risk": risk,
                "high": mark, "low": mark, "bars": 0}
         if at:
             pos["entry_at"] = at
@@ -432,7 +452,9 @@ class Book:
             mark = stop if o is None else (min(o, stop) if long else max(o, stop))
             if (mark <= liq) if long else (mark >= liq):
                 return [self._liquidate(ts, at)]
-            return [self._close(ts, self._fill(mark, False), mark, "stop", self.ex.fee_rate, True, at)]
+            reason = "stop" if not pos.get("moved") else \
+                "stop suiveur" if self.spec.stop_mode == "suiveur" else "stop sécurisé"
+            return [self._close(ts, self._fill(mark, False), mark, reason, self.ex.fee_rate, True, at)]
         if (low <= liq) if long else (h >= liq):
             return [self._liquidate(ts, at)]
         if target is not None and ((h > target) if long else (low < target)):
@@ -446,12 +468,33 @@ class Book:
         s["last_ts"] = int(ts)
         if pos is not None:
             pos["bars"] = int((ts - pos["entry_ts"]) // self.tf_ms + 1)
+            self._move_stop(pos)
             self._mark(self.equity(close))
             reason = exit_reason(bool(exit_), pos["bars"], self.params)
             if reason:
                 s["pending"] = {"kind": "exit", "reason": reason_label(reason, self.spec.side)}
         elif not s["dead"] and entry and math.isfinite(atr_value) and atr_value > 0:
             s["pending"] = {"kind": "entry", "atr": float(atr_value), "signal_ts": int(ts)}
+
+    def _move_stop(self, pos: dict) -> None:
+        """Le stop suiveur ou sécurisé, décidé à la clôture avec le meilleur prix atteint (plus haut ou plus bas des
+        bougies terminées) : il compte dès la bougie suivante, et ne recule jamais."""
+        mode = self.spec.stop_mode
+        if mode == "fixe":
+            return
+        long = pos["side"] == "long"
+        distance = pos.get("distance") or abs(pos["price"] - pos.get("stop0", pos["stop"]))
+        best = pos["high"] if long else pos["low"]
+        if mode == "suiveur":
+            new = best - distance if long else best + distance
+        else:
+            if (best - pos["entry_mark"] if long else pos["entry_mark"] - best) < distance:
+                return
+            cost = 2 * self.ex.fee_rate + self.ex.slippage  # au prix d'entrée, frais d'un aller-retour compris
+            new = pos["price"] * (1 + cost) if long else pos["price"] * (1 - cost)
+        if (new > pos["stop"]) if long else (new < pos["stop"]):
+            pos["stop"] = new
+            pos["moved"] = int(pos.get("moved") or 0) + 1
 
     def _mark(self, equity: float) -> None:
         s = self.s
@@ -485,6 +528,7 @@ class Book:
         net = pnl / pos["notional"]
         trade = {k: pos[k] for k in ("side", "entry_ts", "entry_mark", "price", "qty", "notional", "margin", "leverage",
                                      "stop", "target", "liquidation", "risk")}
+        trade["stop0"] = pos.get("stop0", pos["stop"])  # le stop du départ (le stop suiveur ou sécurisé a pu bouger)
         trade.update(
             exit_ts=int(ts), exit_mark=mark, exit_price=fill, reason=reason, pnl=pnl, net=net, roi=pnl / pos["margin"],
             gross=(mark / pos["entry_mark"] - 1) * (1 if long else -1), fees=fees / pos["notional"], funding=funding,
@@ -625,6 +669,8 @@ def _position_view(book: Book, last: float | None) -> dict | None:
     equity = book.equity(mark)
     return {**{k: pos[k] for k in ("side", "entry_ts", "entry_mark", "price", "notional", "margin", "leverage", "stop",
                                     "target", "liquidation", "risk", "bars")},
+            "stop0": pos.get("stop0", pos["stop"]), "moved": int(pos.get("moved") or 0),
+            "stop_mode": book.spec.stop_mode,
             "entry_at": pos.get("entry_at") or _iso(pos["entry_ts"]), "last": mark,
             "pnl": equity - pos["margin"], "roi": equity / pos["margin"] - 1 if pos["margin"] else None,
             "move": (mark / pos["entry_mark"] - 1) * (1 if pos["side"] == "long" else -1)}

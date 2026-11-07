@@ -705,6 +705,7 @@ class Site:
         family = detail.get("family")
         card = next((e for e in KNOWLEDGE if e.get("family") == family), None)
         detail["technique_card"] = {k: card[k] for k in ("title", "measures", "reading", "research")} if card else None
+        detail["live"] = brief.get("live") if brief else None  # le verdict de sa stratégie en direct
         return detail
 
     def coin_chart(self, raw, timeframe: str) -> dict:

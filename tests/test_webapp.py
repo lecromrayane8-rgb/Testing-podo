@@ -235,6 +235,7 @@ def test_the_site_serves_its_page_and_only_obeys_its_own_page(server):
     s, base = server
     status, page, headers = request(base, "/")
     assert status == 200 and "Tous les bots" in page and "Les cryptos suivies" in page
+    assert "Les stratégies en direct" in page and 'href="#strategies"' in page
     for gone in ("Radar des mouvements", "Mes essais", "Labos", "Mon trader", "Tableau de bord"):
         assert gone not in page  # retirés du site
     assert "default-src 'self'" in headers["Content-Security-Policy"]
@@ -348,6 +349,8 @@ def test_the_bots_are_listed_by_coin_and_each_has_its_page_and_chart(server, ran
     swarm, (short, long_) = swarm_files(s.root, df)
     view = json.loads(request(base, "/api/bots")[1])
     assert view["ready"] and view["step"]["action"] == "flotte"  # à l'arrêt : le bouton les relance
+    assert set(view["ranking"]) >= {"strategie", "sortie", "sens", "unite", "min_trades"}  # l'onglet Stratégies
+    assert all(b["exit"] and b["stop_mode"] in ("fixe", "suiveur", "securise") for b in view["bots"])
     assert view["totals"]["bots"] == 2 and {b["id"] for b in view["bots"]} == {short["id"], long_["id"]}
     assert view["coins"][0]["coin"] == "X" and view["coins"][0]["bots"] == 2
     coin = json.loads(request(base, "/api/crypto?c=x")[1])
@@ -356,6 +359,7 @@ def test_the_bots_are_listed_by_coin_and_each_has_its_page_and_chart(server, ran
     assert request(base, "/api/crypto?c=../../.env")[0] == 400
     page = json.loads(request(base, f"/api/bot?id={short['id']}")[1])
     assert page["side"] == "short" and "vend à découvert" in page["rule"] and page["technique_card"]["title"]
+    assert "live" in page and page["exit"] == "objectif 2R"
     assert len(page["trades"]) == len(short["book"]["trades"]) and page["reading"]["sentences"]
     assert request(base, "/api/bot?id=0123456789")[0] == 400  # inconnu
     assert request(base, "/api/bot?id=../etat")[0] == 400

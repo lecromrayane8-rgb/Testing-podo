@@ -252,7 +252,7 @@ KINDS = {  # étiquette courte de chaque diagnostic
     "gagne": "Scénario réussi", "gain_partiel": "Gagné, une partie rendue", "frais": "Bon sens, mais trop petit",
     "faux_depart": "Faux départ", "gain_rendu": "Gagnant, puis retourné", "stop": "Stop touché",
     "temps": "Rien ne s'est passé", "sortie_regle": "La règle a coupé", "liquidation": "Liquidé par le levier",
-    "ouvert": "Encore ouvert",
+    "ouvert": "Encore ouvert", "securise": "Sécurisé à zéro",
 }
 
 
@@ -270,6 +270,12 @@ def diagnose(t: dict) -> dict:
         lesson = "Le levier grossit les pertes autant que les gains : un stop placé avant la liquidation l'évite."
     elif reason == "fin du test":
         kind, text, lesson = "ouvert", f"Le trade était encore ouvert à la fin de l'historique ({pct(net)}).", ""
+    elif reason == "stop sécurisé" and -0.002 <= net <= max(fees, 0.002):
+        kind = "securise"
+        text = (f"Le trade a gagné une fois sa distance de stop, alors le stop est monté au prix d'entrée ; le prix "
+                f"est ensuite revenu le toucher : {pct(net)} au lieu d'une perte.")
+        lesson = ("Sécuriser un trade gagnant évite de transformer un gain en perte ; en échange, il coupe parfois un "
+                  "trade qui serait reparti.")
     elif net > 0:
         if mfe is not None and mfe > 0 and net < 0.4 * mfe and mfe >= 2 * max(fees, 1e-9):
             kind = "gain_partiel"
@@ -285,7 +291,7 @@ def diagnose(t: dict) -> dict:
         text = f"Le prix est allé dans le bon sens ({pct(gross)}), mais les frais ({pct(fees, 2, False)}) ont tout mangé : " \
                f"{pct(net)} au final."
         lesson = "Les petits mouvements ne paient pas les frais : il faut viser plus loin, ou payer moins de frais."
-    elif reason == "stop":
+    elif reason.startswith("stop"):
         if mfe is not None and risk and mfe >= risk:
             kind = "gain_rendu"
             text = f"Le trade a été gagnant (jusqu'à {pct(mfe)}), puis le prix s'est retourné jusqu'au stop : {pct(net)}."

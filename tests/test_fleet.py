@@ -6,15 +6,16 @@ from tests.conftest import HOUR_MS, T0
 from tradingbot.execution import FUTURES
 from tradingbot.fleet import (
     CAPITAL, LIQ_SAFETY, MAINTENANCE, SIDES, Book, Spec, chart_view, condition, entry_rule, exit_rule, judge,
-    lookback_for, mirror, signals_for, simulate, technique,
+    lookback_for, mirror, signals_for, simulate, spec_from, technique,
 )
 from tradingbot.lab import ALL_VARIANTS
 from tradingbot.strategy import STRATEGY_TYPES
 from tradingbot.swarm import LIBRARY, new_bot
 
 
-def spec(name="Cassure 20/10", side="long", target=0.0, leverage=3.0, section="court", symbol="X/USDT", tf="1h"):
-    return Spec(section, symbol, tf, name, side, target, leverage)
+def spec(name="Cassure 20/10", side="long", target=0.0, leverage=3.0, section="court", symbol="X/USDT", tf="1h",
+         stop_mode="fixe"):
+    return Spec(section, symbol, tf, name, side, target, leverage, stop_mode)
 
 
 def test_a_long_stopped_out_loses_its_leverage_times_the_move_plus_fees():
@@ -56,6 +57,59 @@ def test_a_short_reaches_its_target_and_pays_maker_fees_and_funding():
     assert exit_["funding"] == pytest.approx(funding)
     assert exit_["pnl"] == pytest.approx(pnl) and exit_["pnl"] > 0
     assert exit_["gross"] == pytest.approx(1 - target / 100.0)
+
+
+def test_a_trailing_stop_follows_the_best_price_and_never_goes_back():
+    s = spec("Cassure 20/10", "long", 0.0, 1.0, stop_mode="suiveur")
+    book = Book(s, 1000.0, FUTURES, explain=True)
+    book.close_bar(T0, 100.0, True, False, 1.0)  # stop à 2 ATR = 2 $ sous l'achat
+    [entry] = book.open_bar(T0 + HOUR_MS, 100.0)
+    stops = [book.position["stop"]]
+    for k, (high, low, close) in enumerate([(103.0, 100.5, 102.5), (106.0, 103.0, 105.0), (105.5, 104.5, 105.0)], 1):
+        t = T0 + k * HOUR_MS
+        assert book.range_bar(t, close - 0.5, high, low) == []
+        book.close_bar(t, close, False, False, 1.0)
+        stops.append(book.position["stop"])
+    assert stops[1] == pytest.approx(103.0 - 2.0) and stops[2] == pytest.approx(106.0 - 2.0)
+    assert stops[3] == stops[2]  # le prix recule : le stop ne recule jamais
+    [exit_] = book.range_bar(T0 + 4 * HOUR_MS, 104.8, 105.0, 103.0)
+    assert exit_["reason"] == "stop suiveur" and exit_["exit_mark"] == pytest.approx(104.0) and exit_["pnl"] > 0
+    assert exit_["stop0"] == pytest.approx(entry["stop"]) and exit_["stop"] == pytest.approx(104.0)
+    assert exit_["diagnosis"]["kind"] in ("gagne", "gain_partiel")  # le stop remonté a gardé une partie du gain
+
+
+@pytest.mark.parametrize("side", SIDES)
+def test_a_secured_stop_goes_to_the_entry_price_once_the_trade_has_gained_its_risk(side):
+    s = spec("Cassure 20/10", side, 2.0, 3.0, stop_mode="securise")
+    book = Book(s, 1000.0, FUTURES, explain=True)
+    book.close_bar(T0, 100.0, True, False, 1.0)
+    [entry] = book.open_bar(T0 + HOUR_MS, 100.0)
+    up = side == "long"
+    sign = 1 if up else -1
+    first = book.position["stop"]
+    book.range_bar(T0 + HOUR_MS, 100.0, *sorted([100.0 + sign * 1.5, 100.0])[::-1])  # +0,75 R : rien ne bouge
+    book.close_bar(T0 + HOUR_MS, 100.0 + sign * 1.0, False, False, 1.0)
+    assert book.position["stop"] == first
+    book.range_bar(T0 + 2 * HOUR_MS, 101.0, *sorted([100.0 + sign * 2.5, 100.5 if up else 99.5])[::-1])  # +1,25 R
+    book.close_bar(T0 + 2 * HOUR_MS, 100.0 + sign * 2.0, False, False, 1.0)
+    cost = 2 * FUTURES.fee_rate + FUTURES.slippage
+    assert book.position["stop"] == pytest.approx(entry["price"] * (1 + sign * cost))
+    assert book.position["target"] == pytest.approx(entry["target"])  # l'objectif ne bouge pas
+    level = book.position["stop"]
+    [exit_] = book.range_bar(T0 + 3 * HOUR_MS, level + sign * 0.2, *sorted([level + sign * 0.3, level - sign * 0.5])[::-1])
+    assert exit_["reason"] == "stop sécurisé" and abs(exit_["net"]) < 0.002  # presque zéro au lieu d'une perte
+    assert exit_["diagnosis"]["kind"] == "securise"
+
+
+def test_the_stop_mode_is_part_of_the_bot_and_old_bots_keep_their_name():
+    fixed, trailing = spec("Cassure 20/10", "long", 2.0), spec("Cassure 20/10", "long", 0.0, stop_mode="suiveur")
+    assert fixed.key == "X/USDT|1h|Cassure 20/10|long|2" and trailing.key.endswith("|0|suiveur")
+    old = {"section": "court", "symbol": "X/USDT", "timeframe": "1h", "technique": "Cassure 20/10", "side": "long",
+           "target_r": 2.0, "leverage": 3.0}
+    assert spec_from(old).stop_mode == "fixe" and spec_from(old).key == fixed.key
+    assert "suiveur" in exit_rule(trailing) and "sécurisé" in exit_rule(spec(stop_mode="securise", target=2.0))
+    with pytest.raises(ValueError):
+        spec(stop_mode="magique")
 
 
 @pytest.mark.parametrize("side", SIDES)

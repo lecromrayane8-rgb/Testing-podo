@@ -146,7 +146,8 @@ Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au dir
    trade et gèrent ceux en cours.
 2. **Le labo en direct** : chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures, sur
    l'historique récent (2 jours en 1 min, 7 en 5 min, 20 en 15 min, 60 en 1 h, 240 en 4 h) : 39 techniques × 2 sens ×
-   avec ou sans objectif × 5 unités = 780 combinaisons, avec les frais des contrats à terme (0,05 % par ordre au marché,
+   4 façons de sortir (par la règle, objectif 2R, stop suiveur, objectif 2R + stop sécurisé) × 5 unités = 1560
+   combinaisons, avec les frais des contrats à terme (0,05 % par ordre au marché,
    0,02 % pour un objectif posé d'avance, glissement, financement toutes les 8 h compté comme un coût). L'historique est
    coupé comme au labo : étude, validation, période récente. Une combinaison ne devient un bot que si elle gagne sur
    les trois (frais compris), avec assez de trades et sans liquidation. Au plus `FLOTTE_BOTS_PAR_CRYPTO` bots par
@@ -165,6 +166,17 @@ Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au dir
    perd (tendance de fond, volatilité, RSI, volume, heure de la journée), sa probabilité de gain dans les conditions
    du moment (tirée vers sa moyenne quand les cas sont peu nombreux), et après chaque trade réel, pourquoi il a gagné
    ou perdu. Des mesures, jamais des ordres : un bot n'entre que sur le signal de sa règle.
+6. **Les stops qui bougent** : le stop suiveur monte (ou descend, à la vente) à chaque clôture pour rester à la
+   distance du départ du meilleur prix atteint ; le stop sécurisé passe au prix d'entrée, frais compris, dès que le
+   trade a gagné une fois sa distance de stop. Décidés à la clôture, ils comptent dès la bougie suivante, en backtest
+   comme en direct ; ils ne reculent jamais. Ce sont des façons de sortir testées comme les autres : une crypto ne les
+   garde que si elles y gagnent.
+7. **Le classement en direct** (onglet Stratégies) : chaque trade fini compte pour sa stratégie (une technique dans une
+   unité de temps, toutes cryptos réunies), sa façon de sortir, son sens et son unité, sur tout le direct, la journée
+   et les 7 derniers jours. Après 30 trades, une stratégie nettement gagnante (borne basse de sa fourchette positive,
+   seuil durci par le nombre de stratégies comparées) est « prouvée » et passe en priorité aux tests des cryptos ; une
+   stratégie nettement perdante (borne haute négative) est « recalée » : les tests ne la prennent plus et ses bots
+   s'arrêtent après leur trade. Le classement du jour est montré pour information : sur une journée, c'est du hasard.
 
 L'état est repris au redémarrage : `data/bots/essaim-etat.json` (cryptos, tests, combinaisons mises de côté),
 `data/bots/essaim/<id>.json` (le compte complet de chaque bot) ; `data/bots/essaim.json` est le résumé que lit le
@@ -177,12 +189,15 @@ chance : c'est le direct qui tranche. Le bot en argent réel, lui, reste au comp
 python main.py site          # ou « Ouvrir le bot.bat » ; sans argument, le programme Windows fait de même
 ```
 
-Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Quatre onglets, et « Plus » :
+Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Cinq onglets, et « Plus » :
 
 - **Direct** : où en sont les bots en une phrase (et le bouton utile : les lancer, ou les arrêter), la valeur de tous
   les bots, le résultat depuis le départ (bots arrêtés compris), le nombre de bots et de positions, les trades
   terminés et l'humeur du marché ; puis **la liste de tous les bots** (filtres par horizon et par état, tri par
   résultat, 30 par page) ; puis le fil de ce qui vient de se passer.
+- **Stratégies** : le classement en direct des stratégies (tout le direct, 7 jours ou aujourd'hui), avec leur
+  fourchette et leur verdict (prouvée, à confirmer, recalée), puis les résultats par façon de sortir, par sens et par
+  unité de temps.
 - **Cryptos** : les cryptos suivies, leur variation et leur amplitude sur 24 h, leur état (des bots tournent, test en
   cours, rien de gagnant, en veille) et le résultat de leurs bots. **La page d'une crypto** : ses bots, son graphique
   dans chaque unité de temps (bougies, volume, supports et résistances, l'entrée, le stop et l'objectif des positions

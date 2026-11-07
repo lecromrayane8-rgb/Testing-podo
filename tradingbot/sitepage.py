@@ -158,6 +158,8 @@ td.pair a:hover { text-decoration: underline; text-decoration-color: var(--accen
 td .sub { display: block; color: var(--text-secondary); font-size: 12px; font-weight: 400; white-space: nowrap; }
 td.wrap { white-space: normal; min-width: 120px; }
 .mob { display: none; }
+tr.strong-row td:first-child { box-shadow: inset 3px 0 0 var(--good); }
+td.focus { font-weight: 700; }
 @media (max-width: 600px) { .opt { display: none; } td.wrap { min-width: 0; } td .sub.mob { display: block; white-space: normal; } }
 .bot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 12px;
   margin-top: 10px; }
@@ -203,6 +205,7 @@ BODY = """
   <nav class="tabs" aria-label="Pages du site">
     <a href="#direct" data-view="direct">Direct</a>
     <a href="#cryptos" data-view="cryptos">Cryptos</a>
+    <a href="#strategies" data-view="strategies">Stratégies</a>
     <a href="#actualite" data-view="actualite">Actualité</a>
     <a href="#prix" data-view="prix">Prix</a>
     <button type="button" class="more" id="more-toggle" aria-expanded="false" aria-controls="more-tabs">Plus</button>
@@ -254,6 +257,25 @@ BODY = """
       <tbody id="coins-rows"></tbody></table></div>
     <p class="note">Amplitude : l'écart entre le plus haut et le plus bas des dernières 24 heures. Résultat : la somme des
       bots de la crypto, en USDT fictifs.</p>
+  </div>
+  <div id="view-strategies" class="view" hidden>
+    <h1>Les stratégies en direct</h1>
+    <p class="meta">Chaque trade fini de chaque bot compte pour sa stratégie : une technique dans une unité de temps,
+      toutes cryptos réunies. « Par trade » : le gain moyen d'un trade, frais compris, sans levier (pour comparer des
+      bots qui n'ont pas le même levier). Après 30 trades, une stratégie nettement gagnante est « prouvée » (seuil
+      durci : sur des dizaines de stratégies, la chance en ferait gagner) et passe en priorité aux tests des cryptos ;
+      une stratégie nettement perdante est « recalée » : les tests ne la prennent plus et ses bots s'arrêtent après
+      leur trade. Le classement du jour est là pour information : sur une journée, c'est surtout du hasard.</p>
+    <p class="status-line" id="rank-intro"></p>
+    <div class="controls"><div class="seg" role="group" aria-label="Classer par" id="rank-period"></div></div>
+    <div class="table-wrap"><table><thead><tr><th>Stratégie</th><th class="n">Trades</th><th class="n opt">Gagnants</th>
+      <th class="n">Par trade</th><th class="n opt">Fourchette à 95 %</th><th class="n">Aujourd'hui</th>
+      <th class="n opt">7 jours</th><th>Verdict</th></tr></thead><tbody id="rank-rows"></tbody></table></div>
+    <p class="note">Aujourd'hui et 7 jours : gain moyen par trade · nombre de trades (journée en temps universel, depuis
+      1 h du matin en France l'hiver). Fourchette : où se trouve probablement le vrai gain moyen ; tant qu'elle contient
+      zéro, rien n'est prouvé.</p>
+    <section id="rank-exits"></section>
+    <section><div class="compare" id="rank-more"></div></section>
   </div>
   <div id="view-crypto" class="view" hidden>
     <p class="crumb"><a class="link" href="#cryptos">← Toutes les cryptos</a></p>
@@ -626,6 +648,19 @@ JS = r"""
     if (b.status === 'sortie') return chip('warn', 'en sortie');
     return chip('idle', 'attend son signal');
   }
+  const SHORT_EXITS = {'sortie par la règle': '', 'objectif 2R': '2R', 'stop suiveur': 'stop suiveur',
+    'objectif 2R + stop sécurisé': '2R + sécurisé', 'stop sécurisé': 'stop sécurisé'};
+  function exitLabel(target, mode) {  // comme swarm.exit_label
+    if (mode === 'suiveur') return 'stop suiveur';
+    if (mode === 'securise') return target ? 'objectif 2R + stop sécurisé' : 'stop sécurisé';
+    return target ? 'objectif 2R' : 'sortie par la règle';
+  }
+  function exitShort(b) { const s = SHORT_EXITS[b.exit || exitLabel(b.target_r, b.stop_mode)]; return s ? ' · ' + s : ''; }
+  function liveChip(verdict) {
+    if (verdict === 'prouvee') return chip('ok', 'stratégie prouvée en direct');
+    if (verdict === 'recalee') return chip('bad', 'stratégie recalée en direct');
+    return null;
+  }
   function probaText(p) {
     if (!p) return 'Estimation disponible à la prochaine bougie.';
     return 'D\'après ' + p.trades + ' trades de son backtest, dans les conditions du moment (' + (p.conditions && p.conditions.length
@@ -634,7 +669,7 @@ JS = r"""
   }
 
   // --- navigation ---
-  const VIEWS = ['direct', 'cryptos', 'crypto', 'bot', 'actualite', 'prix', 'ecole', 'reglages', 'journal'];
+  const VIEWS = ['direct', 'cryptos', 'crypto', 'bot', 'strategies', 'actualite', 'prix', 'ecole', 'reglages', 'journal'];
   const MORE_VIEWS = ['ecole', 'reglages', 'journal'];
   const moreToggle = $('#more-toggle'), moreTabs = $('#more-tabs');
   function setMore(open) { moreTabs.hidden = !open; moreToggle.setAttribute('aria-expanded', String(open)); }
@@ -687,6 +722,7 @@ JS = r"""
   function render() {
     if (view === 'direct' && swarm) renderDirect();
     if (view === 'cryptos' && swarm) renderCoins();
+    if (view === 'strategies' && swarm) renderStrategies();
     if (view === 'crypto') renderCoin();
     if (view === 'bot') renderBot();
   }
@@ -720,7 +756,8 @@ JS = r"""
     const row = $('#swarm-actions'); row.replaceChildren();
     if (step.action) row.append(el('button', {class: 'btn btn-primary', type: 'button', disabled: !!d.action.blocked,
       title: d.action.blocked || null, text: 'Lancer les bots', onclick: () => launch('flotte')}));
-    if (d.ready) row.append(el('a', {class: 'btn', href: '#cryptos', text: 'Voir les cryptos'}));
+    if (d.ready) row.append(el('a', {class: 'btn', href: '#cryptos', text: 'Voir les cryptos'}),
+      el('a', {class: 'btn', href: '#strategies', text: 'Le classement des stratégies'}));
     const task = state && (state.tasks || []).find(x => x.action === 'flotte' && x.status === 'en cours');
     if (task) row.append(el('button', {class: 'btn', type: 'button', text: 'Arrêter les bots', onclick: () => stopBots(task)}));
     const t = d.totals || {};
@@ -750,8 +787,8 @@ JS = r"""
       body.append(el('tr', {class: 'clickable', onclick: e => { if (!e.target.closest('a')) location.hash = '#bot/' + b.id; }},
         el('td', {class: 'pair'}, el('a', {href: '#bot/' + b.id, text: b.coin}),
           el('span', {class: 'sub', text: b.tf_label + ' · ' + (b.side === 'long' ? '▲ achat' : '▼ vente')}),
-          el('span', {class: 'sub mob', text: b.technique + (b.target_r ? ' · 2R' : '')})),
-        el('td', {class: 'wrap opt', text: b.technique + (b.target_r ? ' · objectif 2R' : '')}),
+          el('span', {class: 'sub mob', text: b.technique + exitShort(b)})),
+        el('td', {class: 'wrap opt', text: b.technique + exitShort(b)}),
         el('td', {class: 'opt'}, statusChip(b)),
         el('td', {class: 'n ' + cls(b.pnl), text: pct(b.pnl_pct, 1)}),
         el('td', {class: 'n ' + (p ? cls(p.roi) : ''), text: p ? pct(p.roi, 1) : '—'}),
@@ -769,6 +806,50 @@ JS = r"""
     }
   }
   $('#bots-sort').addEventListener('change', e => { filter.sort = e.target.value; saveFilter(); renderDirect(); });
+
+  // --- le classement des stratégies en direct ---
+  let rankBy = 'all';
+  try { rankBy = localStorage.getItem('classement') || 'all'; } catch (e) {}
+  const SIDE_NAMES = {long: '▲ à l\'achat', short: '▼ à la vente à découvert'};
+  function verdictChip(r, min) {
+    if (r.verdict === 'prouvee') return chip('ok', 'prouvée');
+    if (r.verdict === 'recalee') return chip('bad', 'recalée');
+    return chip('idle', r.n < min ? r.n + ' / ' + min + ' trades' : 'à confirmer');
+  }
+  function periodText(n, mean) { return n ? pct(mean, 2) + ' · ' + n : '—'; }
+  function smallRanking(title, rows, name) {
+    return el('div', {}, el('h3', {class: 'group-title', text: title}), rows.length ? el('div', {class: 'table-wrap'}, el('table', {},
+      el('thead', {}, el('tr', {}, el('th', {text: ''}), el('th', {class: 'n', text: 'Trades'}), el('th', {class: 'n', text: 'Gagnants'}),
+        el('th', {class: 'n', text: 'Par trade'}), el('th', {class: 'n opt', text: 'Aujourd\'hui'}))),
+      el('tbody', {}, ...rows.map(r => el('tr', {}, el('td', {text: name(r.key)}), el('td', {class: 'n', text: String(r.n)}),
+        el('td', {class: 'n', text: Math.round(100 * r.win) + ' %'}), el('td', {class: 'n ' + cls(r.mean), text: pct(r.mean, 2)}),
+        el('td', {class: 'n opt ' + cls(r.today_mean), text: periodText(r.today_n, r.today_mean)})))))) :
+      el('p', {class: 'muted', text: 'Pas encore de trade terminé.'}));
+  }
+  function renderStrategies() {
+    const r = swarm.ranking || {strategie: [], sortie: [], sens: [], unite: [], min_trades: 30}, min = r.min_trades || 30;
+    seg('#rank-period', [['all', 'Tout le direct'], ['week', '7 jours'], ['today', 'Aujourd\'hui']], rankBy, k => {
+      rankBy = k; try { localStorage.setItem('classement', k); } catch (e) {} renderStrategies(); });
+    const value = x => rankBy === 'today' ? (x.today_n ? x.today_mean : null) : rankBy === 'week' ? (x.week_n ? x.week_mean : null) : x.mean;
+    const rows = r.strategie.slice().sort((a, b) => (value(b) === null ? -1e9 : value(b)) - (value(a) === null ? -1e9 : value(a)));
+    const proven = rows.filter(x => x.verdict === 'prouvee').length, failed = rows.filter(x => x.verdict === 'recalee').length;
+    $('#rank-intro').textContent = rows.length ? rows.length + ' stratégies ont déjà fini des trades en direct · ' + proven + ' prouvée'
+      + (proven > 1 ? 's' : '') + ' · ' + failed + ' recalée' + (failed > 1 ? 's' : '') + '.' : 'Le classement se remplit à chaque trade fini.';
+    const body = $('#rank-rows'); body.replaceChildren();
+    if (!rows.length) body.append(el('tr', {}, el('td', {colspan: '8', class: 'muted wrap', text: 'Aucun trade terminé pour l\'instant.'})));
+    for (const x of rows) body.append(el('tr', {class: x.verdict === 'prouvee' ? 'strong-row' : null},
+      el('td', {class: 'wrap'}, el('strong', {text: x.technique}), el('span', {class: 'sub', text: x.tf_label})),
+      el('td', {class: 'n', text: String(x.n)}),
+      el('td', {class: 'n opt', text: Math.round(100 * x.win) + ' %'}),
+      el('td', {class: 'n ' + cls(x.mean) + (rankBy === 'all' ? ' focus' : ''), text: pct(x.mean, 2)}),
+      el('td', {class: 'n opt', text: x.lo === null ? '—' : pct(x.lo, 2) + ' à ' + pct(x.hi, 2)}),
+      el('td', {class: 'n ' + cls(x.today_mean) + (rankBy === 'today' ? ' focus' : ''), text: periodText(x.today_n, x.today_mean)}),
+      el('td', {class: 'n opt ' + cls(x.week_mean) + (rankBy === 'week' ? ' focus' : ''), text: periodText(x.week_n, x.week_mean)}),
+      el('td', {}, verdictChip(x, min))));
+    $('#rank-exits').replaceChildren(smallRanking('Par façon de sortir', r.sortie, k => k.charAt(0).toUpperCase() + k.slice(1)));
+    $('#rank-more').replaceChildren(smallRanking('Par sens', r.sens, k => SIDE_NAMES[k] || k),
+      smallRanking('Par unité de temps', r.unite, k => TF_LABELS[k] || k));
+  }
 
   // --- les cryptos suivies ---
   function coinStatus(c) {
@@ -866,7 +947,8 @@ JS = r"""
     const p = b.position;
     return el('a', {class: 'card botcard', href: '#bot/' + b.id},
       el('div', {class: 'card-head'}, el('h3', {text: b.technique}), statusChip(b)),
-      el('p', {class: 'muted', text: b.tf_label + ' · ' + sideText(b.side) + ' · levier ×' + dec(b.leverage) + (b.target_r ? ' · objectif 2R' : '')}),
+      el('p', {class: 'muted', text: b.tf_label + ' · ' + sideText(b.side) + ' · levier ×' + dec(b.leverage) + exitShort(b)
+        + (b.live === 'prouvee' ? ' · stratégie prouvée' : '')}),
       el('p', {class: 'big'}, usdt(b.value), el('span', {class: 'delta ' + cls(b.pnl), text: pct(b.pnl_pct, 1)})),
       el('p', {class: 'muted', text: tradesText(b.count) + winText(b.win_rate) + (b.proba ? ' · chances estimées ' + Math.round(100 * b.proba.p) + ' %' : '')}),
       p ? el('p', {class: 'pos-line'}, (p.side === 'long' ? 'Acheté ' : 'Vendu ') + precise(p.price) + ' · stop ' + precise(p.stop)
@@ -874,7 +956,8 @@ JS = r"""
   }
   function bestTable(c) {
     const rows = (c.best || []).map(r => el('tr', {},
-      el('td', {class: 'wrap', text: r.technique + (r.target_r ? ' · objectif 2R' : '')}),
+      el('td', {class: 'wrap', text: r.technique + exitShort(r) + (r.live === 'prouvee' ? ' · prouvée en direct' : r.live === 'recalee'
+        ? ' · recalée en direct' : '')}),
       el('td', {text: TF_LABELS[r.timeframe] + ' · ' + (r.side === 'long' ? 'achat' : 'vente')}),
       el('td', {class: 'n', text: String(r.sv_n)}),
       el('td', {class: 'n ' + cls(r.sv_mean), text: pct(r.sv_mean, 2)}),
@@ -970,7 +1053,10 @@ JS = r"""
         ' · maintenant ' + precise(p.last)),
       el('div', {class: 'facts'},
         fact('Résultat latent', usdt(p.pnl, true) + ' (' + pct(p.roi, 1) + ' du capital)', cls(p.pnl)),
-        fact('Stop (SL)', precise(p.stop) + ' (' + pct(p.stop / p.price - 1, 2) + ')'),
+        fact('Stop (SL)', precise(p.stop) + ' (' + pct(p.stop / p.price - 1, 2) + ')' + (p.moved ? ' · ' + (long ? 'remonté' : 'descendu')
+          + ' ' + p.moved + ' fois, au départ ' + precise(p.stop0) : '')),
+        fact('Gestion du stop', {suiveur: 'suiveur : il suit le meilleur prix', securise: 'sécurisé : au prix d\'entrée dès +1R'}[p.stop_mode]
+          || 'fixe'),
         fact('Objectif (TP)', p.target ? precise(p.target) + ' (' + pct(p.target / p.price - 1, 2) + ')' : 'sortie par sa règle'),
         fact('Liquidation', p.leverage > 1 ? precise(p.liquidation) + ' (' + pct(p.liquidation / p.price - 1, 1) + ')' : 'aucune (sans levier)'),
         fact('Levier', '×' + dec(p.leverage) + ' · ' + usdt(p.notional) + ' en jeu'),
@@ -982,7 +1068,9 @@ JS = r"""
       el('div', {class: 'head'}, el('h3', {text: (long ? '▲ Achat ' : '▼ Vente à découvert ') + precise(t.price) + ' → ' + precise(t.exit_price)}),
         el('span', {class: 'result ' + cls(t.pnl), text: pct(t.roi, 1) + ' du capital · ' + (d.title || t.reason)})),
       el('p', {class: 'muted', text: when(t.entry_at || new Date(t.entry_ts).toISOString()) + ' → ' + when(t.exit_at || new Date(t.exit_ts).toISOString())
-        + ' · sortie : ' + t.reason + ' · levier ×' + dec(t.leverage) + ' · ' + pct(t.net, 2) + ' sur la position, frais compris'}),
+        + ' · sortie : ' + t.reason + ' · levier ×' + dec(t.leverage) + ' · ' + pct(t.net, 2) + ' sur la position, frais compris'
+        + (t.stop0 && Math.abs(t.stop0 - t.stop) > 1e-12 ? ' · stop ' + (long ? 'remonté' : 'descendu') + ' de ' + precise(t.stop0) + ' à '
+          + precise(t.stop) : '')}),
       d.text ? el('p', {text: d.text}) : null,
       ...(t.analysis || []).map(x => el('p', {class: 'muted', text: x})),
       d.lesson ? el('p', {class: 'muted'}, el('strong', {text: 'La leçon : '}), d.lesson) : null);
@@ -1004,7 +1092,7 @@ JS = r"""
       el('div', {}, el('p', {class: 'eyebrow', text: (TEAMS[b.team] || '') + ' · ' + b.tf_label + ' · argent fictif'}),
         el('h1', {text: b.coin + ' · ' + b.technique})),
       el('div', {class: 'chips'}, statusChip(b), pill(sideText(b.side)), pill('levier ×' + dec(b.leverage)),
-        b.target_r ? pill('objectif 2R') : null, chip(label[0], label[1])));
+        pill(b.exit || exitLabel(b.target_r, b.stop_mode)), chip(label[0], label[1]), liveChip(b.live)));
     $('#bot-rule').textContent = typo(b.rule + ' ' + b.side_hint.charAt(0).toUpperCase() + b.side_hint.slice(1) + '.');
     $('#bot-exit').textContent = typo(b.exit_rule);
     $('#bot-position').replaceChildren(positionBox(b));
@@ -1069,6 +1157,7 @@ JS = r"""
       marks.push({price: pos.stop, color: 'var(--critical)', label: 'Stop ' + precise(pos.stop)});
       if (pos.target) marks.push({price: pos.target, color: 'var(--good)', label: 'Objectif ' + precise(pos.target)});
       if (pos.leverage > 1) marks.push({price: pos.liquidation, color: 'var(--critical)', label: 'Liquidation ' + precise(pos.liquidation), dash: '5 4', optional: true});
+      if (pos.moved) marks.push({price: pos.stop0, color: 'var(--text-secondary)', label: 'Stop de départ ' + precise(pos.stop0), dash: '2 4', optional: true});
       markers.push({ts: pos.entry_ts, up: pos.side === 'long', fill: 'var(--text-primary)', stroke: 'var(--surface-1)'});
     }
     for (const t of d.rule_trades) {
@@ -1475,6 +1564,7 @@ JS = r"""
     temps: 'Le mouvement attendu n\'est pas venu à temps : le bot a coupé.',
     sortie_regle: 'La règle de sortie a coupé avant que le trade ne devienne gagnant.',
     liquidation: 'Avec le levier, la perte a atteint la marge : position fermée d\'office.',
+    securise: 'Le stop avait été remonté au prix d\'entrée : le trade sort presque à zéro au lieu de perdre.',
   };
   function diagnosesBox() {
     const box = el('div', {class: 'sim'});
@@ -1561,7 +1651,7 @@ JS = r"""
     if (view === 'journal') every('journal', 1500, refreshJournal);
     if (view === 'prix') every('prices', pricesReady ? 10000 : 2000, refreshPrices);
     if (view === 'actualite') every('news', newsReady ? 60000 : 2000, refreshNews);
-    if (view === 'direct' || view === 'cryptos') every('swarm', 5000, refreshSwarm);
+    if (view === 'direct' || view === 'cryptos' || view === 'strategies') every('swarm', 5000, refreshSwarm);
     if (view === 'crypto') {
       every('coin', 5000, refreshCoin);
       if (coinTf) every('coinChart', chartEvery(coinTf), refreshCoinChart);
