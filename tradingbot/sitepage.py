@@ -26,7 +26,8 @@ SITE_CSS = """
 .tabs-more { margin-top: 0; padding-bottom: 2px; flex-wrap: wrap; }
 .tabs[hidden] { display: none; }
 .tabs-more a { font-size: 13px; }
-@media (max-width: 600px) { .tabs a, .tabs .more { padding: 8px 9px; } }
+.tabs .short { display: none; }
+@media (max-width: 600px) { .tabs a, .tabs .more { padding: 8px 8px; } .tabs .long { display: none; } .tabs .short { display: inline; } }
 main.site { padding-top: 20px; }
 .view > section:first-child, .view > .hero:first-child { margin-top: 0; }
 .hero { background: var(--surface-1); border: 1px solid var(--border); border-left: 4px solid var(--accent);
@@ -205,8 +206,8 @@ BODY = """
   <nav class="tabs" aria-label="Pages du site">
     <a href="#direct" data-view="direct">Direct</a>
     <a href="#cryptos" data-view="cryptos">Cryptos</a>
-    <a href="#strategies" data-view="strategies">Stratégies</a>
-    <a href="#actualite" data-view="actualite">Actualité</a>
+    <a href="#strategies" data-view="strategies"><span class="long">Stratégies</span><span class="short">Strat.</span></a>
+    <a href="#actualite" data-view="actualite"><span class="long">Actualité</span><span class="short">Infos</span></a>
     <a href="#prix" data-view="prix">Prix</a>
     <button type="button" class="more" id="more-toggle" aria-expanded="false" aria-controls="more-tabs">Plus</button>
   </nav>
@@ -268,12 +269,13 @@ BODY = """
       leur trade. Le classement du jour est là pour information : sur une journée, c'est surtout du hasard.</p>
     <p class="status-line" id="rank-intro"></p>
     <div class="controls"><div class="seg" role="group" aria-label="Classer par" id="rank-period"></div></div>
-    <div class="table-wrap"><table><thead><tr><th>Stratégie</th><th class="n">Trades</th><th class="n opt">Gagnants</th>
-      <th class="n">Par trade</th><th class="n opt">Fourchette à 95 %</th><th class="n">Aujourd'hui</th>
+    <div class="table-wrap"><table><thead><tr><th>Stratégie</th><th class="n opt">Trades</th><th class="n opt">Gagnants</th>
+      <th class="n" id="rank-head">Par trade</th><th class="n opt">Fourchette à 95 %</th><th class="n opt">Aujourd'hui</th>
       <th class="n opt">7 jours</th><th>Verdict</th></tr></thead><tbody id="rank-rows"></tbody></table></div>
-    <p class="note">Aujourd'hui et 7 jours : gain moyen par trade · nombre de trades (journée en temps universel, depuis
-      1 h du matin en France l'hiver). Fourchette : où se trouve probablement le vrai gain moyen ; tant qu'elle contient
-      zéro, rien n'est prouvé.</p>
+    <p class="note">Classement prudent : une stratégie qui a peu de trades est tirée vers zéro (comme si elle avait 10
+      trades nuls de plus), pour qu'un seul coup de chance ne la mette pas en tête. Aujourd'hui et 7 jours : gain moyen
+      par trade · nombre de trades (la journée commence à minuit en temps universel, 1 h du matin en France l'hiver).
+      Fourchette : où se trouve probablement le vrai gain moyen ; tant qu'elle contient zéro, rien n'est prouvé.</p>
     <section id="rank-exits"></section>
     <section><div class="compare" id="rank-more"></div></section>
   </div>
@@ -809,6 +811,7 @@ JS = r"""
 
   // --- le classement des stratégies en direct ---
   let rankBy = 'all';
+  const PRUDENCE = 10;  // le classement fait comme si chaque stratégie avait 10 trades nuls de plus
   try { rankBy = localStorage.getItem('classement') || 'all'; } catch (e) {}
   const SIDE_NAMES = {long: '▲ à l\'achat', short: '▼ à la vente à découvert'};
   function verdictChip(r, min) {
@@ -830,22 +833,28 @@ JS = r"""
     const r = swarm.ranking || {strategie: [], sortie: [], sens: [], unite: [], min_trades: 30}, min = r.min_trades || 30;
     seg('#rank-period', [['all', 'Tout le direct'], ['week', '7 jours'], ['today', 'Aujourd\'hui']], rankBy, k => {
       rankBy = k; try { localStorage.setItem('classement', k); } catch (e) {} renderStrategies(); });
-    const value = x => rankBy === 'today' ? (x.today_n ? x.today_mean : null) : rankBy === 'week' ? (x.week_n ? x.week_mean : null) : x.mean;
-    const rows = r.strategie.slice().sort((a, b) => (value(b) === null ? -1e9 : value(b)) - (value(a) === null ? -1e9 : value(a)));
+    // la période choisie : nombre de trades et gain moyen ; le classement est prudent (peu de trades = tiré vers zéro)
+    const period = x => rankBy === 'today' ? [x.today_n, x.today_mean] : rankBy === 'week' ? [x.week_n, x.week_mean] : [x.n, x.mean];
+    const prudent = x => { const [n, m] = period(x); return n ? m * n / (n + PRUDENCE) : -1e9; };
+    const rows = r.strategie.slice().sort((a, b) => prudent(b) - prudent(a));
+    $('#rank-head').textContent = {all: 'Par trade', week: 'Par trade, 7 jours', today: 'Par trade, aujourd\'hui'}[rankBy];
     const proven = rows.filter(x => x.verdict === 'prouvee').length, failed = rows.filter(x => x.verdict === 'recalee').length;
     $('#rank-intro').textContent = rows.length ? rows.length + ' stratégies ont déjà fini des trades en direct · ' + proven + ' prouvée'
       + (proven > 1 ? 's' : '') + ' · ' + failed + ' recalée' + (failed > 1 ? 's' : '') + '.' : 'Le classement se remplit à chaque trade fini.';
     const body = $('#rank-rows'); body.replaceChildren();
     if (!rows.length) body.append(el('tr', {}, el('td', {colspan: '8', class: 'muted wrap', text: 'Aucun trade terminé pour l\'instant.'})));
-    for (const x of rows) body.append(el('tr', {class: x.verdict === 'prouvee' ? 'strong-row' : null},
-      el('td', {class: 'wrap'}, el('strong', {text: x.technique}), el('span', {class: 'sub', text: x.tf_label})),
-      el('td', {class: 'n', text: String(x.n)}),
+    for (const x of rows) {
+      const [n, m] = period(x);
+      body.append(el('tr', {class: x.verdict === 'prouvee' ? 'strong-row' : null},
+      el('td', {class: 'wrap'}, el('strong', {text: x.technique}), el('span', {class: 'sub', text: x.tf_label + ' · ' + tradesText(n)})),
+      el('td', {class: 'n opt', text: String(x.n)}),
       el('td', {class: 'n opt', text: Math.round(100 * x.win) + ' %'}),
-      el('td', {class: 'n ' + cls(x.mean) + (rankBy === 'all' ? ' focus' : ''), text: pct(x.mean, 2)}),
+      el('td', {class: 'n focus ' + cls(m), text: n ? pct(m, 2) : '—'}),
       el('td', {class: 'n opt', text: x.lo === null ? '—' : pct(x.lo, 2) + ' à ' + pct(x.hi, 2)}),
-      el('td', {class: 'n ' + cls(x.today_mean) + (rankBy === 'today' ? ' focus' : ''), text: periodText(x.today_n, x.today_mean)}),
-      el('td', {class: 'n opt ' + cls(x.week_mean) + (rankBy === 'week' ? ' focus' : ''), text: periodText(x.week_n, x.week_mean)}),
+      el('td', {class: 'n opt ' + cls(x.today_mean), text: periodText(x.today_n, x.today_mean)}),
+      el('td', {class: 'n opt ' + cls(x.week_mean), text: periodText(x.week_n, x.week_mean)}),
       el('td', {}, verdictChip(x, min))));
+    }
     $('#rank-exits').replaceChildren(smallRanking('Par façon de sortir', r.sortie, k => k.charAt(0).toUpperCase() + k.slice(1)));
     $('#rank-more').replaceChildren(smallRanking('Par sens', r.sens, k => SIDE_NAMES[k] || k),
       smallRanking('Par unité de temps', r.unite, k => TF_LABELS[k] || k));
@@ -1054,7 +1063,8 @@ JS = r"""
       el('div', {class: 'facts'},
         fact('Résultat latent', usdt(p.pnl, true) + ' (' + pct(p.roi, 1) + ' du capital)', cls(p.pnl)),
         fact('Stop (SL)', precise(p.stop) + ' (' + pct(p.stop / p.price - 1, 2) + ')' + (p.moved ? ' · ' + (long ? 'remonté' : 'descendu')
-          + ' ' + p.moved + ' fois, au départ ' + precise(p.stop0) : '')),
+          + ' ' + p.moved + ' fois, au départ ' + precise(p.stop0) : '') + ((long ? p.stop > p.price : p.stop < p.price)
+          ? ' · gain protégé (sauf saut de prix)' : '')),
         fact('Gestion du stop', {suiveur: 'suiveur : il suit le meilleur prix', securise: 'sécurisé : au prix d\'entrée dès +1R'}[p.stop_mode]
           || 'fixe'),
         fact('Objectif (TP)', p.target ? precise(p.target) + ' (' + pct(p.target / p.price - 1, 2) + ')' : 'sortie par sa règle'),
