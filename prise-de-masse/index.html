@@ -293,10 +293,10 @@ const R = {
     ingr:["Pâte express : 200 g de farine + 150 g de fromage blanc + 1 sachet de levure chimique + 1 pincée de sel + 1 c. à soupe d'huile","1/2 boîte de tomates concassées + 1 pincée de sel et d'ail","1 boule de mozzarella sans lactose (125 g)","65 g de poulet (le reste du sachet) en petits dés, saisi 3 min au paprika","100 g de poêlée de légumes surgelée","1 œuf (à casser au centre à mi-cuisson)"],
     steps:["Four à 230 °C (le plus chaud possible).","Mélange farine, levure, sel, huile et fromage blanc à la main jusqu'à une boule souple. Étale finement sur du papier cuisson (farine sur les mains si ça colle).","Étale la tomate, puis le poulet, la poêlée égouttée et la mozzarella en morceaux.","12 min au four, casse l'œuf au centre, puis 5-6 min de plus jusqu'à ce que le bord soit doré."],
     tip:"Pas de levure de boulanger, pas de pousse : la pâte au fromage blanc est prête en 5 min et reste moelleuse. C'est ton cheat meal du samedi soir, déjà compté dans le budget. Profite, et le lendemain tu reprends le plan normalement."},
-  oats:{name:"Gâteau de semoule banane-cacahuète", cat:"petitdej", mode:"tup", yield:"1 bocal", time:"8 min (à l'avance)", k:600,p:25,g:87,l:17, keep:"3 jours au frigo",
-    ingr:["80 g de semoule de blé fine","300 ml de boisson soja nature","1/2 banane écrasée","20 g de beurre de cacahuète","1 c. à café de miel, 1 pincée de sel","Au batch, pour 3 bocaux : 240 g de semoule + 900 ml de boisson soja"],
-    steps:["Fais chauffer la boisson soja avec le miel et le sel jusqu'au frémissement.","Verse la semoule en pluie et remue 3-4 min à feu doux : ça épaissit vite.","Hors du feu, ajoute le beurre de cacahuète et la banane écrasée.","Verse dans les bocaux, laisse tiédir, puis au frigo. Ça se tient comme un gâteau."],
-    tip:"Se mange froid à la cuillère ou 1 min au micro-ondes avec un trait de boisson soja. La semoule cuite est bien plus douce pour l'estomac que l'avoine crue. Si le blé te gêne aussi, fais la même chose avec 80 g de riz (riz au lait de soja, 30 min de cuisson)."},
+  oats:{name:"Crème de riz banane-cacahuète", cat:"petitdej", mode:"tup", yield:"1 bol ou 1 bocal", time:"4 min (ou à l'avance)", k:600,p:21,g:93,l:16, keep:"3 jours au frigo en bocal",
+    ingr:["80 g de crème de riz","300 ml de boisson soja nature","1/2 banane écrasée","20 g de beurre de cacahuète","1 c. à café de miel, 1 pincée de sel","Au batch, pour 3 bocaux : 240 g de crème de riz + 900 ml de boisson soja"],
+    steps:["Dans une casserole FROIDE, fouette la crème de riz avec la boisson soja, le miel et le sel (à froid, il n'y a pas de grumeaux).","Mets sur feu moyen et remue sans arrêt 2-3 min : ça épaissit d'un coup en crème.","Hors du feu, ajoute le beurre de cacahuète et la banane écrasée.","Mange chaud tout de suite, ou verse en bocaux pour les jours suivants : ça se tient comme un flan."],
+    tip:"Au micro-ondes ça marche aussi : bol, 1 min, on remue, 1 min, on remue. C'est la céréale la plus digeste qui existe : sans gluten, sans fibres qui fermentent. Le bocal de la veille se mange froid ou 1 min au micro-ondes avec un trait de boisson soja."},
   pancakes:{name:"Pancakes moelleux à la banane", cat:"petitdej", mode:"frais", yield:"4-5 pancakes", time:"15 min", k:635,p:27,g:100,l:14, keep:"À manger chaud",
     ingr:["90 g de farine","1/2 sachet de levure chimique","1 banane bien mûre écrasée","2 œufs","150 ml de boisson soja","1 c. à soupe de miel pour servir"],
     steps:["Écrase la banane, ajoute les œufs et la boisson soja, puis la farine et la levure. Fouette jusqu'à ce qu'il n'y ait plus de grumeaux.","Laisse reposer 5 min.","Poêle légèrement huilée, feu moyen : une louche par pancake, 2 min par face (retourne quand des bulles apparaissent).","Empile, arrose de miel."],
@@ -364,11 +364,11 @@ const SHOP = [
     ["oeufs","Œufs","plateau de 30",7.20,"Muffins, pancakes, dahl, wraps, pizzas"],
     ["fb","Fromage blanc 0 %","3 × 1 kg",6.00,"Bowl de 10 h ×12, sauces, pâte à pizza"],
     ["mozza","Mozzarella sans lactose","2 × 125 g",2.40,"Pizzas du cheat meal"],
-    ["soja","Boisson soja nature (enrichie en calcium)","5 × 1 L",6.50,"Gâteau de semoule, bols croustillants, pancakes"]]],
+    ["soja","Boisson soja nature (enrichie en calcium)","5 × 1 L",6.50,"Crème de riz, bols croustillants, pancakes"]]],
   ["Féculents", [
     ["riz","Riz long","2 kg",3.00,"150 g cru par plat"],
     ["pates","Pâtes complètes","1 kg",1.50,"Bolognaise, salades"],
-    ["semoule","Semoule de blé fine","1 kg",1.30,"Gâteau de semoule ×10"],
+    ["cremeriz","Crème de riz","2 × 500 g",5.00,"Petit-déj de la semaine ×10"],
     ["mais","Pétales de maïs nature (sans sucre ajouté)","2 × 500 g",2.60,"Bowls, bols croustillants, bouchées, panures"],
     ["farine","Farine de blé","1 kg",0.80,"Pancakes, pâte à pizza"],
     ["pdt","Pommes de terre","2 kg",2.00,"Potatoes rôties ×4"],
@@ -384,12 +384,12 @@ const SHOP = [
     ["poelee","Poêlée de légumes","1 kg",2.00,"Avec le colin"],
     ["epinards","Épinards hachés","1 kg",1.90,"Curry, dahl, muffins"]]],
   ["Fruits & légumes", [
-    ["bananes","Bananes (moitié vertes)","2 kg",3.60,"Semoule, pancakes, bols croustillants"],
+    ["bananes","Bananes (moitié vertes)","2 kg",3.60,"Crème de riz, pancakes, bols croustillants"],
     ["carottes","Carottes","1 kg",1.20,"Chili, bolo, wraps, salades"],
     ["oignons","Oignons","1 kg",1.40,"Tous les plats"],
     ["ail","Ail","1 filet",0.80,"Tous les plats"]]],
   ["Épicerie", [
-    ["pb","Beurre de cacahuète","350 g",2.50,"Semoule, bols croustillants, bouchées"],
+    ["pb","Beurre de cacahuète","350 g",2.50,"Crème de riz, bols croustillants, bouchées"],
     ["cacahuetes","Cacahuètes non salées","500 g",2.00,"Cacahuètes caramélisées, bouchées, collation muffins"],
     ["miel","Miel","500 g",2.50,"Teriyaki, cacahuètes caramélisées, pancakes"],
     ["huile","Huile de colza","1 L",2.50,"Cuisson"],
@@ -404,17 +404,17 @@ const eur = n => n.toFixed(2).replace(".",",")+" €";
 /* ============ BATCH ============ */
 const BATCH = [
   {id:"s1d", when:"Semaine 1 · dimanche (veille du J1)", title:"S1 · Dimanche", dur:"≈ 1h45", covers:"Lundi → mercredi",
-   makes:["Lun midi · Teriyaki","Mar midi · Teriyaki","Mer midi · Teriyaki","Lun soir · Chili","Mar soir · Chili","Mer soir · Chili","3 bocaux gâteau de semoule","6 bouchées croustillantes","Cacahuètes caramélisées ×6"],
-   steps:[["0:00","Sors le poulet (510 g) et le bœuf (500 g) du congélateur la veille au soir. Sors 3 boîtes, 3 bocaux."],["0:05","Chili : oignon + carottes dans une cocotte, puis le bœuf. Lance le mijotage 25 min."],["0:15","Riz : 900 g cru pour 6 portions (2 casseroles)."],["0:20","Poulet teriyaki à la poêle + sauce laquée."],["0:35","Brocolis à l'eau bouillante, 8 min."],["0:45","Cacahuètes caramélisées au miel à la poêle. Laisse durcir à plat."],["0:55","Bouchées croustillantes : mélange, forme 6 tas, au frigo."],["1:05","Gâteau de semoule : 240 g de semoule dans 900 ml de boisson soja, puis 3 bocaux."],["1:15","Laisse tiédir 20 min max, puis répartis dans les 6 boîtes. Note le jour sur chaque couvercle (scotch + feutre)."],["1:40","Tout au frigo. Vaisselle. C'est fini."]]},
+   makes:["Lun midi · Teriyaki","Mar midi · Teriyaki","Mer midi · Teriyaki","Lun soir · Chili","Mar soir · Chili","Mer soir · Chili","3 bocaux de crème de riz","6 bouchées croustillantes","Cacahuètes caramélisées ×6"],
+   steps:[["0:00","Sors le poulet (510 g) et le bœuf (500 g) du congélateur la veille au soir. Sors 3 boîtes, 3 bocaux."],["0:05","Chili : oignon + carottes dans une cocotte, puis le bœuf. Lance le mijotage 25 min."],["0:15","Riz : 900 g cru pour 6 portions (2 casseroles)."],["0:20","Poulet teriyaki à la poêle + sauce laquée."],["0:35","Brocolis à l'eau bouillante, 8 min."],["0:45","Cacahuètes caramélisées au miel à la poêle. Laisse durcir à plat."],["0:55","Bouchées croustillantes : mélange, forme 6 tas, au frigo."],["1:05","Crème de riz : 240 g dans 900 ml de boisson soja, 3 min en remuant, puis 3 bocaux."],["1:15","Laisse tiédir 20 min max, puis répartis dans les 6 boîtes. Note le jour sur chaque couvercle (scotch + feutre)."],["1:40","Tout au frigo. Vaisselle. C'est fini."]]},
   {id:"s1m", when:"Semaine 1 · mercredi soir", title:"S1 · Mercredi", dur:"≈ 1h15", covers:"Jeudi → samedi (samedi soir : cheat meal)",
-   makes:["Jeu midi · Curry","Ven midi · Curry","Sam midi · Curry","2 boîtes de potatoes","4 muffins","2 bocaux gâteau de semoule"],
-   steps:[["0:00","Four à 200 °C. Pommes de terre en cubes (800 g), huile, paprika, sel : au four 30-35 min."],["0:05","Riz : 450 g cru."],["0:10","Curry poulet coco-épinards (510 g de poulet sortis le matin)."],["0:30","Congèle le reste de lait de coco en bac à glaçons."],["0:35","Muffins œufs-épinards dans le four (baisse à 180 °C quand les potatoes sortent)."],["0:55","Gâteau de semoule : 160 g de semoule dans 600 ml de boisson soja, 2 bocaux pour jeudi et vendredi."],["1:00","Répartis curry, riz, potatoes. Étiquettes. Frigo."],["1:10","Sors 1 filet de colin du congélateur pour demain soir."]]},
+   makes:["Jeu midi · Curry","Ven midi · Curry","Sam midi · Curry","2 boîtes de potatoes","4 muffins","2 bocaux de crème de riz"],
+   steps:[["0:00","Four à 200 °C. Pommes de terre en cubes (800 g), huile, paprika, sel : au four 30-35 min."],["0:05","Riz : 450 g cru."],["0:10","Curry poulet coco-épinards (510 g de poulet sortis le matin)."],["0:30","Congèle le reste de lait de coco en bac à glaçons."],["0:35","Muffins œufs-épinards dans le four (baisse à 180 °C quand les potatoes sortent)."],["0:55","Crème de riz : 160 g dans 600 ml de boisson soja, 2 bocaux pour jeudi et vendredi."],["1:00","Répartis curry, riz, potatoes. Étiquettes. Frigo."],["1:10","Sors 1 filet de colin du congélateur pour demain soir."]]},
   {id:"s2d", when:"Semaine 2 · dimanche (J7)", title:"S2 · Dimanche", dur:"≈ 1h45", covers:"Lundi → mercredi",
-   makes:["Lun midi · Bolognaise","Mar midi · Bolognaise","Mer midi · Bolognaise","Lun soir · Dahl","Mar soir · Dahl","Mer soir · Dahl","6 œufs mollets","3 bocaux gâteau de semoule","6 bouchées croustillantes","Cacahuètes caramélisées ×6"],
-   steps:[["0:00","Sors le bœuf (500 g) la veille. Sors les glaçons de lait de coco."],["0:05","Four 200 °C : pois chiches grillés pour ton goûter du jour."],["0:10","Bolognaise : oignon, carottes râpées, bœuf, tomates. Mijote 20 min."],["0:15","Dahl : oignon, curry, lentilles, tomates, eau. 15-18 min."],["0:25","Casserole d'eau : 6 œufs (6 min 30), puis eau froide. Dans la même eau, les pâtes (390 g), 1 min de moins que le paquet."],["0:40","Riz pour le dahl (180 g). Ajoute épinards + coco au dahl."],["0:50","Cacahuètes caramélisées + bouchées croustillantes + 3 bocaux de gâteau de semoule."],["1:15","Répartis les 6 boîtes. Œufs écalés dans une boîte à part."],["1:40","Frigo, étiquettes, vaisselle."]]},
+   makes:["Lun midi · Bolognaise","Mar midi · Bolognaise","Mer midi · Bolognaise","Lun soir · Dahl","Mar soir · Dahl","Mer soir · Dahl","6 œufs mollets","3 bocaux de crème de riz","6 bouchées croustillantes","Cacahuètes caramélisées ×6"],
+   steps:[["0:00","Sors le bœuf (500 g) la veille. Sors les glaçons de lait de coco."],["0:05","Four 200 °C : pois chiches grillés pour ton goûter du jour."],["0:10","Bolognaise : oignon, carottes râpées, bœuf, tomates. Mijote 20 min."],["0:15","Dahl : oignon, curry, lentilles, tomates, eau. 15-18 min."],["0:25","Casserole d'eau : 6 œufs (6 min 30), puis eau froide. Dans la même eau, les pâtes (390 g), 1 min de moins que le paquet."],["0:40","Riz pour le dahl (180 g). Ajoute épinards + coco au dahl."],["0:50","Cacahuètes caramélisées + bouchées croustillantes + 3 bocaux de crème de riz."],["1:15","Répartis les 6 boîtes. Œufs écalés dans une boîte à part."],["1:40","Frigo, étiquettes, vaisselle."]]},
   {id:"s2m", when:"Semaine 2 · mercredi soir", title:"S2 · Mercredi", dur:"≈ 1h15", covers:"Jeudi → samedi (samedi soir : cheat meal)",
-   makes:["Jeu midi · Teriyaki","Ven midi · Teriyaki","Sam midi · Teriyaki","2 boîtes de potatoes","4 muffins","2 bocaux gâteau de semoule"],
-   steps:[["0:00","Four à 200 °C. Potatoes (800 g) au four 30-35 min."],["0:05","Riz : 450 g cru."],["0:10","Poulet teriyaki (510 g sortis le matin) + brocolis."],["0:35","Muffins œufs-épinards au four à 180 °C."],["0:55","Gâteau de semoule : 2 bocaux (160 g de semoule, 600 ml de boisson soja)."],["1:00","Répartis, étiquette, frigo."],["1:10","Sors 1 filet de colin pour demain soir."]]}
+   makes:["Jeu midi · Teriyaki","Ven midi · Teriyaki","Sam midi · Teriyaki","2 boîtes de potatoes","4 muffins","2 bocaux de crème de riz"],
+   steps:[["0:00","Four à 200 °C. Potatoes (800 g) au four 30-35 min."],["0:05","Riz : 450 g cru."],["0:10","Poulet teriyaki (510 g sortis le matin) + brocolis."],["0:35","Muffins œufs-épinards au four à 180 °C."],["0:55","Crème de riz : 2 bocaux (160 g, 600 ml de boisson soja)."],["1:00","Répartis, étiquette, frigo."],["1:10","Sors 1 filet de colin pour demain soir."]]}
 ];
 
 /* ============ ÉTAT & DATES ============ */
