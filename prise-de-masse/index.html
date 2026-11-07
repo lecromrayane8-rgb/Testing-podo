@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15211B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Plan Masse">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>:root{padding-top:env(safe-area-inset-top,0px)}[hidden]{display:none!important}img{max-width:100%}</style>
+<title>Plan Masse 14 jours</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;800&family=Figtree:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout : une colonne mobile, barre d'onglets fixée en bas, cartes « Tupperware » étiquetées au ruban adhésif */
+:root{
+  --bg:#EDF1EE; --surface:#FFFFFF; --surface-2:#F5F8F6; --ink:#15211B; --muted:#5B6B63; --line:#D3DCD6;
+  --accent:#2347C5; --accent-ink:#FFFFFF; --accent-soft:#E2E8FA;
+  --tape:#F2C230; --tape-ink:#2A2208;
+  --good:#1F8A55; --good-soft:#DDF1E6;
+  --c-p:#2347C5; --c-g:#D59A12; --c-l:#1F8A55;
+  --f-display:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;
+  --f-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:14px; --nav-h:64px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1412; --surface:#161E1B; --surface-2:#1B2421; --ink:#E6EDE9; --muted:#93A29A; --line:#28342F;
+  --accent:#8EA6FF; --accent-ink:#0E1412; --accent-soft:#1E2742;
+  --tape:#E0B32A; --tape-ink:#1E1806; --good:#4CC38A; --good-soft:#173326;
+  --c-p:#8EA6FF; --c-g:#E0B32A; --c-l:#4CC38A; color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+  --bg:#0E1412; --surface:#161E1B; --surface-2:#1B2421; --ink:#E6EDE9; --muted:#93A29A; --line:#28342F;
+  --accent:#8EA6FF; --accent-ink:#0E1412; --accent-soft:#1E2742;
+  --tape:#E0B32A; --tape-ink:#1E1806; --good:#4CC38A; --good-soft:#173326;
+  --c-p:#8EA6FF; --c-g:#E0B32A; --c-l:#4CC38A; color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5;margin:0;
+  padding-bottom:calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 24px)}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bg)}
+.wrap{max-width:640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--f-display);font-weight:800;letter-spacing:.01em;line-height:1.05;margin:0;text-wrap:balance;text-transform:uppercase}
+h2{font-size:30px}
+h3{font-size:21px}
+p{margin:0}
+button{font:inherit;color:inherit}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:6px}
+.mono{font-family:var(--f-mono)}
+.num{font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.label{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+
+/* Header */
+.top{padding-block:18px 8px}
+.brand{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.brand-name{font-family:var(--f-display);font-weight:800;font-size:18px;letter-spacing:.06em;text-transform:uppercase}
+.brand-name b{background:var(--tape);color:var(--tape-ink);padding:1px 7px;margin-left:4px;transform:rotate(-2deg);display:inline-block}
+.budget-pill{font-family:var(--f-mono);font-size:12px;border:1.5px solid var(--ink);border-radius:999px;padding:3px 10px;white-space:nowrap}
+
+/* Views */
+.view{display:flex;flex-direction:column;gap:18px;padding-block:8px}
+.hero-day{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.hero-day .big{font-family:var(--f-display);font-weight:800;font-size:64px;line-height:.85}
+.hero-day .big small{font-size:28px;color:var(--muted)}
+.hero-day .date{font-weight:600;text-transform:capitalize}
+
+/* Day chips */
+.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;min-width:46px;border:1.5px solid var(--line);background:var(--surface);border-radius:12px;padding:6px 4px;text-align:center;cursor:pointer}
+.chip .d{font-family:var(--f-mono);font-size:10px;text-transform:uppercase;color:var(--muted);display:block}
+.chip .n{font-family:var(--f-display);font-weight:800;font-size:20px;display:block;line-height:1.1}
+.chip.today{border-color:var(--ink)}
+.chip.sel{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.chip.sel .d{color:var(--bg);opacity:.75}
+.chip.batch::after{content:"";display:block;width:6px;height:6px;border-radius:50%;background:var(--tape);margin:2px auto 0}
+
+/* Macros */
+.macros{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.macro .v{font-family:var(--f-display);font-weight:800;font-size:24px;line-height:1}
+.macro .v small{font-family:var(--f-body);font-size:12px;font-weight:600;color:var(--muted)}
+.bar{height:6px;border-radius:6px;background:var(--surface-2);overflow:hidden;margin-top:6px;border:1px solid var(--line)}
+.bar i{display:block;height:100%;background:var(--ink)}
+.macro.p .bar i{background:var(--c-p)} .macro.g .bar i{background:var(--c-g)} .macro.l .bar i{background:var(--c-l)}
+@media (max-width:380px){.macros{grid-template-columns:repeat(2,1fr)}}
+
+/* Notice band */
+.notice{display:flex;gap:10px;align-items:flex-start;background:var(--tape);color:var(--tape-ink);border-radius:var(--r);padding:12px 14px;font-weight:500}
+.notice strong{font-weight:700}
+.notice .ico{white-space:nowrap;font-family:var(--f-display);font-weight:800;font-size:22px;line-height:1}
+.notice.soft{background:var(--accent-soft);color:var(--ink)}
+
+/* Timeline meals */
+.timeline{display:flex;flex-direction:column;gap:10px}
+.meal{display:grid;grid-template-columns:54px 1fr;gap:10px;align-items:stretch}
+.meal .time{font-family:var(--f-mono);font-weight:600;font-size:13px;padding-top:14px;text-align:right}
+.box{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 14px 12px;display:flex;gap:12px;align-items:flex-start;min-width:0}
+.box.done{opacity:.55}
+.box.done .rname{text-decoration:line-through}
+.box .body{flex:1;min-width:0;cursor:pointer;display:flex;flex-direction:column;gap:4px;background:none;border:0;padding:0;text-align:left}
+.rname{font-weight:700;font-size:16px;line-height:1.25}
+.meta{display:flex;flex-wrap:wrap;gap:6px 10px;font-size:12px;color:var(--muted);align-items:center}
+.tag{font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:4px;white-space:nowrap}
+.tag.tup{background:var(--tape);color:var(--tape-ink)}
+.tag.frais{background:var(--good-soft);color:var(--good)}
+.check{flex:0 0 auto;width:30px;height:30px;border-radius:50%;border:2px solid var(--line);background:var(--surface);cursor:pointer;display:grid;place-items:center;padding:0}
+.check svg{width:16px;height:16px;opacity:0}
+.check[aria-pressed="true"]{background:var(--good);border-color:var(--good)}
+.check[aria-pressed="true"] svg{opacity:1}
+.check svg path{stroke:var(--surface)}
+
+/* Generic cards & lists */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.btn{border:1.5px solid var(--ink);background:var(--surface);border-radius:10px;padding:8px 14px;font-weight:600;cursor:pointer;font-size:14px}
+.btn.primary{background:var(--ink);color:var(--bg)}
+.btn.small{padding:5px 10px;font-size:13px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{border:1.5px solid var(--line);background:var(--surface);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+
+/* Courses */
+.budget{background:var(--ink);color:var(--bg);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:10px}
+.budget .total{font-family:var(--f-display);font-weight:800;font-size:56px;line-height:.9}
+.budget .total small{font-size:22px;opacity:.7}
+.budget .gauge{height:10px;border-radius:10px;background:color-mix(in srgb,var(--bg) 25%,transparent);overflow:hidden}
+.budget .gauge i{display:block;height:100%;background:var(--tape)}
+.budget .sub{display:flex;justify-content:space-between;gap:10px;font-family:var(--f-mono);font-size:12px;flex-wrap:wrap}
+.rayon h3{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.rayon h3 span{font-family:var(--f-mono);font-size:12px;font-weight:600;color:var(--muted);text-transform:none;letter-spacing:0}
+.items{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.item{display:grid;grid-template-columns:28px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-top:1px dashed var(--line);cursor:pointer}
+.item:first-child{border-top:0}
+.item input{width:22px;height:22px;accent-color:var(--good);margin:0;cursor:pointer}
+.item .nm{font-weight:600;line-height:1.25}
+.item .us{font-size:12px;color:var(--muted);line-height:1.35}
+.item .pr{font-family:var(--f-mono);font-weight:600;font-size:14px;text-align:right;white-space:nowrap}
+.item.got .nm{text-decoration:line-through;color:var(--muted)}
+
+/* Week grid */
+.wtable{width:100%;border-collapse:collapse;font-size:13px}
+.wtable th{font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);text-align:left;padding:6px 6px;font-weight:600}
+.wtable td{padding:9px 6px;border-top:1px solid var(--line);vertical-align:top;line-height:1.3}
+.wtable tr.click{cursor:pointer}
+.wtable tr.click:hover td{background:var(--surface-2)}
+.wtable .dn{font-family:var(--f-display);font-weight:800;font-size:18px;white-space:nowrap}
+.scroll-x{overflow-x:auto}
+
+/* Batch */
+.labels{display:flex;flex-wrap:wrap;gap:8px}
+.lbl{background:var(--tape);color:var(--tape-ink);font-family:var(--f-mono);font-size:11.5px;font-weight:600;padding:5px 9px;text-transform:uppercase;letter-spacing:.04em;box-shadow:0 1px 0 rgba(0,0,0,.08)}
+.lbl:nth-child(3n+1){transform:rotate(-1.5deg)} .lbl:nth-child(3n+2){transform:rotate(1deg)}
+.steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.step{display:grid;grid-template-columns:52px 1fr 28px;gap:10px;align-items:start;padding:10px 0;border-top:1px dashed var(--line)}
+.step:first-child{border-top:0}
+.step .t{font-family:var(--f-mono);font-weight:600;font-size:13px;padding-top:1px}
+.step input{width:22px;height:22px;accent-color:var(--good);margin:0}
+.step.ok .tx{color:var(--muted);text-decoration:line-through}
+details.card summary{cursor:pointer;list-style:none;display:flex;justify-content:space-between;align-items:center;gap:10px}
+details.card summary::-webkit-details-marker{display:none}
+details.card summary .plus{font-family:var(--f-display);font-size:26px;font-weight:800;transition:transform .2s}
+details[open].card summary .plus{transform:rotate(45deg)}
+.prog{font-family:var(--f-mono);font-size:12px;color:var(--muted)}
+
+/* Recipes */
+.rgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.rcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:8px;min-width:0}
+.rcard .rname{font-size:17px}
+.kpis{display:flex;gap:12px;font-family:var(--f-mono);font-size:12px;flex-wrap:wrap}
+.kpis b{font-weight:600}
+.kpis .p{color:var(--c-p)} .kpis .g{color:var(--c-g)} .kpis .l{color:var(--c-l)}
+
+/* Sheet */
+.sheet{position:fixed;inset:0;z-index:50;background:color-mix(in srgb,var(--ink) 45%,transparent);display:flex;align-items:flex-end;justify-content:center}
+.sheet-in{background:var(--bg);width:100%;max-width:640px;max-height:92vh;overflow-y:auto;border-radius:20px 20px 0 0;
+  padding-block:18px calc(24px + env(safe-area-inset-bottom,0px));padding-left:max(18px,env(safe-area-inset-left,0px));padding-right:max(18px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:16px;animation:up .22s ease-out}
+@keyframes up{from{transform:translateY(30px);opacity:.6}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.sheet-in{animation:none}}
+.sheet-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.sheet-head h2{font-size:32px}
+.close{flex:0 0 auto;width:38px;height:38px;border-radius:50%;border:1.5px solid var(--ink);background:var(--surface);cursor:pointer;font-size:20px;line-height:1}
+.ingr{list-style:none;margin:0;padding:0}
+.ingr li{padding:7px 0;border-top:1px dashed var(--line);display:flex;gap:10px}
+.ingr li:first-child{border-top:0}
+.ingr li::before{content:"";flex:0 0 7px;height:7px;margin-top:8px;background:var(--tape);border-radius:1px}
+ol.how{margin:0;padding-left:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:10px}
+ol.how li{counter-increment:s;display:grid;grid-template-columns:30px 1fr;gap:8px}
+ol.how li::before{content:counter(s);font-family:var(--f-display);font-weight:800;font-size:22px;line-height:1.1;color:var(--accent)}
+.tip{background:var(--accent-soft);border-radius:12px;padding:12px 14px}
+.tip b{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:2px}
+
+/* Bottom nav */
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom,0px);padding-left:env(safe-area-inset-left,0px);padding-right:env(safe-area-inset-right,0px)}
+nav.tabs .in{max-width:640px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);height:var(--nav-h)}
+nav.tabs a{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;text-decoration:none;color:var(--muted);font-size:11px;font-weight:600}
+nav.tabs a svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav.tabs a[aria-current="page"]{color:var(--ink)}
+nav.tabs a[aria-current="page"] svg{stroke:var(--accent)}
+
+input[type=date],input[type=number]{font:inherit;padding:8px 10px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
+.field{display:flex;flex-direction:column;gap:4px}
+.wlog{display:flex;flex-direction:column;gap:6px;font-family:var(--f-mono);font-size:13px}
+.wlog div{display:flex;justify-content:space-between;border-top:1px dashed var(--line);padding-top:6px}
+.toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 14px);transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-weight:600;font-size:14px;z-index:60}
+textarea.copy{width:100%;min-height:160px;font-family:var(--f-mono);font-size:12px;background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px}
+</style>
+</head>
+<body>
+
+
+<header class="wrap top">
+  <div class="brand">
+    <div class="brand-name">Plan Masse<b>14J</b></div>
+    <div class="budget-pill num" id="pill">96,55 € / 100 €</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="view" id="v-jour"></section>
+  <section class="view" id="v-semaine" hidden></section>
+  <section class="view" id="v-courses" hidden></section>
+  <section class="view" id="v-batch" hidden></section>
+  <section class="view" id="v-recettes" hidden></section>
+</main>
+
+<nav class="tabs" aria-label="Sections">
+  <div class="in">
+    <a href="#jour" data-v="jour"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>Jour</a>
+    <a href="#semaine" data-v="semaine"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Planning</a>
+    <a href="#courses" data-v="courses"><svg viewBox="0 0 24 24"><path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/><circle cx="10" cy="20" r="1.3"/><circle cx="17" cy="20" r="1.3"/></svg>Courses</a>
+    <a href="#batch" data-v="batch"><svg viewBox="0 0 24 24"><rect x="3" y="9" width="18" height="11" rx="2"/><path d="M2 9h20M7 9V6h10v3"/></svg>Batch</a>
+    <a href="#recettes" data-v="recettes"><svg viewBox="0 0 24 24"><path d="M5 3v8a3 3 0 0 0 6 0V3M8 3v18M17 3c-2 2-2 6 0 8v10"/></svg>Recettes</a>
+  </div>
+</nav>
+
+<div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-title"><div class="sheet-in" id="sheet-in"></div></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* ============ STOCKAGE (protégé) ============ */
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem('pm_'+k); return v===null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem('pm_'+k, JSON.stringify(v)); }catch(e){} }
+};
+
+/* ============ RECETTES ============ */
+// k = kcal, p = protéines, g = glucides, l = lipides (par portion, estimations)
+const R = {
+  teriyaki:{name:"Poulet teriyaki laqué, riz & brocolis", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"35 min", k:735,p:47,g:107,l:13, keep:"3 jours au frigo",
+    ingr:["450 g de filets de poulet (décongelés la veille au frigo)","360 g de riz cru","450 g de brocolis surgelés","Sauce : 4 c. à soupe de sauce soja, 3 c. à soupe de miel, 2 gousses d'ail râpées, 3 c. à soupe d'eau","1 c. à soupe d'huile de colza"],
+    steps:["Rince le riz, puis cuis-le avec 1,5 fois son volume d'eau, couvert, 12 min à feu doux. Laisse reposer 10 min hors du feu.","Coupe le poulet en dés et saisis-le 6 à 7 min à feu vif dans l'huile, sans trop remuer pour qu'il dore.","Mélange soja, miel, ail et eau. Verse sur le poulet et laisse réduire 3 min : la sauce doit devenir sirupeuse et laquer la viande.","Cuis les brocolis 8 min dans l'eau bouillante salée (ou 6 min au micro-ondes, couverts, avec un fond d'eau).","Répartis dans 3 boîtes : riz, brocolis, poulet laqué, et le reste de sauce par-dessus."],
+    tip:"Une pincée de piment ou de gingembre dans la sauce si tu en as au placard. Au réchauffage : 2 min au micro-ondes avec 1 c. à soupe d'eau sur le riz."},
+  chili:{name:"Chili con carne fumé", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"45 min (dont 30 de mijotage)", k:790,p:46,g:120,l:14, keep:"4 jours au frigo (encore meilleur le lendemain)",
+    ingr:["450 g de bœuf haché 5 % surgelé","1 boîte de haricots rouges égouttés","1 boîte de tomates concassées","1 oignon + 2 carottes en petits dés","2 gousses d'ail","2 c. à café de paprika (+ cumin si tu en as)","1 c. à café de miel","360 g de riz cru","1 c. à soupe d'huile"],
+    steps:["Fais revenir oignon et carottes 5 min dans l'huile.","Ajoute le bœuf, émiette-le et laisse dorer 5 min.","Ajoute ail et paprika, remue 1 min pour torréfier les épices.","Verse tomates, haricots, miel et 10 cl d'eau. Couvre et laisse mijoter 25 min, puis 5 min sans couvercle pour épaissir. Sale, poivre.","Pendant ce temps, cuis le riz (même méthode que le teriyaki) et répartis."],
+    tip:"Le miel casse l'acidité de la tomate : c'est lui qui donne le côté « fumé-sucré ». Garde riz et chili côte à côte dans la boîte, pas mélangés."},
+  curry:{name:"Curry de poulet coco-épinards", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"30 min", k:820,p:46,g:98,l:23, keep:"3 jours au frigo",
+    ingr:["450 g de filets de poulet","240 ml de lait de coco (≈ 2/3 de la boîte)","300 g d'épinards hachés surgelés","1 oignon, 2 gousses d'ail","1,5 c. à soupe de curry en poudre","360 g de riz cru","1 c. à soupe d'huile"],
+    steps:["Lance le riz.","Fais revenir l'oignon émincé 4 min, ajoute ail et curry 1 min.","Ajoute le poulet en dés, fais-le colorer 5 min.","Verse le lait de coco et les épinards encore surgelés. Laisse mijoter 10 min à feu moyen jusqu'à une sauce crémeuse. Sale.","Répartis riz + curry dans 3 boîtes."],
+    tip:"Il reste ≈ 150 ml de lait de coco : verse-le dans un bac à glaçons et congèle-le. Il servira pour le dahl de la semaine 2."},
+  colin:{name:"Colin en croûte d'avoine-paprika, potatoes rôties", cat:"plat", mode:"frais", yield:"1 assiette (×3 dans la semaine)", time:"15 min le soir", k:615,p:39,g:78,l:14, keep:"Potatoes : 4 jours au frigo. Le poisson se cuit minute.",
+    ingr:["150 g de filet de colin surgelé (sorti la veille au frigo)","15 g de flocons d'avoine écrasés + 1/2 c. à café de paprika + sel","1 c. à soupe de fromage blanc (pour faire coller la croûte)","350 g de pommes de terre rôties (préparées au batch)","150 g de poêlée de légumes surgelée","1 c. à soupe d'huile"],
+    steps:["AU BATCH : coupe les pommes de terre en cubes avec la peau, 1 c. à soupe d'huile, paprika, sel. Four 200 °C, 30-35 min. Répartis en 3 boîtes.","LE SOIR : sèche bien le poisson avec du papier absorbant, tartine-le de fromage blanc et presse le mélange avoine-paprika dessus.","Four 200 °C, 12-14 min, avec la boîte de potatoes à côté pour les réchauffer et les recroustiller.","Pendant ce temps, poêlée de légumes 8 min à la poêle avec un filet d'huile."],
+    tip:"Pas de four le soir ? Poêle chaude, 3 min par face côté croûte en premier. Les potatoes se réchauffent alors à la poêle."},
+  bolo:{name:"Bolognaise express aux carottes", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"30 min", k:715,p:48,g:88,l:16, keep:"4 jours au frigo",
+    ingr:["450 g de bœuf haché 5 %","1 boîte de tomates concassées","1 oignon + 2 carottes râpées","2 gousses d'ail","360 g de pâtes complètes","1 c. à soupe d'huile, herbes de Provence si tu en as"],
+    steps:["Fais fondre oignon et carottes râpées 5 min dans l'huile.","Ajoute le bœuf, émiette, laisse dorer 5 min, puis l'ail.","Verse les tomates + 5 cl d'eau, laisse mijoter 15-20 min. Sale, poivre.","Cuis les pâtes 1 min de moins que le temps indiqué (elles finiront de cuire au réchauffage).","Répartis pâtes + sauce dans 3 boîtes."],
+    tip:"Les carottes râpées « disparaissent » dans la sauce : plus de volume, plus de légumes, même goût."},
+  dahl:{name:"Dahl de lentilles corail coco & œufs mollets", cat:"plat", mode:"tup", yield:"3 Tupperware", time:"30 min", k:880,p:42,g:105,l:27, keep:"4 jours au frigo (œufs à part, écalés)",
+    ingr:["300 g de lentilles corail","150 ml de lait de coco (celui congelé en semaine 1)","1 boîte de tomates concassées","1 oignon, 2 gousses d'ail, 1 c. à soupe de curry","240 g d'épinards surgelés","6 œufs","180 g de riz cru","1 c. à soupe d'huile"],
+    steps:["Fais revenir l'oignon 4 min, ajoute ail et curry 1 min.","Ajoute les lentilles rincées, les tomates et 60 cl d'eau. Cuis 15-18 min en remuant de temps en temps.","Ajoute épinards et lait de coco, 5 min de plus. Sale bien.","Œufs : 6 min 30 dans l'eau bouillante pour des mollets (9 min pour des durs), puis eau froide et écale.","Cuis le riz. Dans chaque boîte : riz, dahl, et 2 œufs dans un petit sachet ou une boîte à part."],
+    tip:"Le dahl épaissit au frigo : ajoute 2 c. à soupe d'eau avant de réchauffer. C'est le plat le plus calorique du plan."},
+  wraps:{name:"Wraps de poulet croustillant, sauce blanche à l'ail", cat:"plat", mode:"frais", yield:"2 wraps (déjeuner du dimanche)", time:"20 min", k:835,p:59,g:81,l:28, keep:"À manger tout de suite",
+    ingr:["150 g de poulet en lanières","1 œuf battu","25 g d'avoine mixée ou écrasée + 1 c. à café de paprika + sel","2 tortillas","Sauce : 60 g de fromage blanc + 1/2 gousse d'ail râpée + sel, poivre","1 carotte râpée","1 c. à soupe d'huile"],
+    steps:["Passe les lanières de poulet dans l'œuf, puis dans l'avoine au paprika.","Poêle chaude avec l'huile : 3 min par face, jusqu'à ce que ce soit doré.","Mélange la sauce. Chauffe les tortillas 20 s à la poêle sèche.","Garnis : sauce, carotte râpée, poulet croustillant. Roule serré."],
+    tip:"C'est ton « repas plaisir » de la semaine, version maison. Ajoute du piment dans la sauce si tu aimes."},
+  salade:{name:"Salade de pâtes au thon, sauce moutarde", cat:"plat", mode:"frais", yield:"1 assiette (dîner du dimanche)", time:"15 min", k:750,p:52,g:84,l:19, keep:"2 jours au frigo",
+    ingr:["120 g de pâtes complètes","1 boîte de thon au naturel","1 œuf dur","1 carotte râpée, 1/4 d'oignon finement ciselé","Sauce : 40 g de fromage blanc + 1 c. à café de moutarde + 1 c. à soupe d'huile + sel, poivre"],
+    steps:["Cuis les pâtes et l'œuf (9 min) en même temps dans la même casserole.","Rince les pâtes à l'eau froide.","Mélange la sauce, puis tout le reste."],
+    tip:"Un dîner du dimanche sans cuisson longue, pendant que le batch tourne au four."},
+  oats:{name:"Overnight oats banane-cacahuète", cat:"petitdej", mode:"tup", yield:"1 bocal", time:"3 min la veille", k:600,p:24,g:80,l:20, keep:"3 jours au frigo",
+    ingr:["80 g de flocons d'avoine","250 ml de lait demi-écrémé","1/2 banane écrasée","20 g de beurre de cacahuète","1 c. à café de miel, 1 pincée de sel"],
+    steps:["Mélange tout dans un bocal ou une boîte.","Ferme et laisse au frigo toute la nuit.","Le matin : nature et froid, ou 1 min 30 au micro-ondes."],
+    tip:"Les flocons gonflent et deviennent crémeux : c'est un gâteau de riz version avoine. Prépare-les au batch pour 3 jours."},
+  pancakes:{name:"Pancakes avoine-banane", cat:"petitdej", mode:"frais", yield:"4-5 pancakes", time:"15 min", k:600,p:27,g:79,l:17, keep:"À manger chaud",
+    ingr:["70 g de flocons d'avoine","1 banane bien mûre","2 œufs","150 ml de lait","1 c. à soupe de miel pour servir"],
+    steps:["Mixe avoine, banane, œufs et lait (ou écrase la banane à la fourchette et mélange bien).","Laisse reposer 5 min, la pâte épaissit.","Poêle légèrement huilée, feu moyen : une louche par pancake, 2 min par face.","Empile, arrose de miel."],
+    tip:"Le petit-déj du week-end. Sans mixeur, ça marche aussi : la texture est juste plus rustique."},
+  bowl:{name:"Bowl fromage blanc & granola minute", cat:"collation", mode:"tup", yield:"1 bol", time:"1 min", k:330,p:25,g:30,l:12, keep:"Granola : 2 semaines en bocal fermé",
+    ingr:["220 g de fromage blanc 0 %","40 g de granola minute (voir ci-dessous)","1 c. à café de miel","GRANOLA (6 portions, au batch) : 120 g d'avoine + 120 g de cacahuètes concassées + 2 c. à soupe de miel"],
+    steps:["AU BATCH : dans une poêle sèche, fais dorer avoine et cacahuètes 5 min en remuant. Ajoute le miel, remue encore 2 min jusqu'à ce que ça accroche. Étale sur une assiette, laisse refroidir, mets en bocal.","À 10 h : fromage blanc dans une boîte, granola par-dessus au dernier moment pour qu'il reste croquant."],
+    tip:"Transporte le granola dans un petit sachet à part si tu manges au travail ou à l'école."},
+  smoothie:{name:"Smoothie prise de masse", cat:"collation", mode:"frais", yield:"1 grand verre (450 ml)", time:"3 min", k:490,p:20,g:66,l:15, keep:"À boire tout de suite",
+    ingr:["300 ml de lait","1 banane (congelée, c'est encore meilleur)","40 g de flocons d'avoine","15 g de beurre de cacahuète"],
+    steps:["Tout dans le blender, 40 secondes.","Sans blender : écrase très bien la banane, mélange avec les flocons et le beurre de cacahuète, puis secoue avec le lait dans un shaker ou un bocal."],
+    tip:"Une banane qui noircit ? Épluche-la, coupe-la en rondelles et congèle-la : texture milkshake garantie."},
+  muffins:{name:"Muffins œufs-épinards + 1 pomme", cat:"collation", mode:"tup", yield:"4 muffins (2 collations)", time:"25 min", k:240,p:14,g:23,l:10, keep:"4 jours au frigo",
+    ingr:["4 œufs","100 g d'épinards surgelés, décongelés et bien pressés","1/4 d'oignon finement haché","2 c. à soupe de fromage blanc","Paprika, sel, poivre","1 pomme par collation"],
+    steps:["Bats les œufs avec le fromage blanc, le sel, le poivre et le paprika.","Ajoute épinards et oignon.","Verse dans 4 moules à muffins huilés (ou ramequins, ou mugs).","Four 180 °C, 18-20 min : ils doivent être gonflés et pris au centre."],
+    tip:"Se mangent froids ou 30 s au micro-ondes. Une collation salée et protéinée pour changer du sucré."},
+  balls:{name:"Energy balls cacahuète-miel", cat:"collation", mode:"tup", yield:"6 boules (2 collations)", time:"10 min, sans cuisson", k:390,p:14,g:44,l:18, keep:"7 jours au frigo",
+    ingr:["90 g de flocons d'avoine","40 g de beurre de cacahuète","30 g de miel","20 g de cacahuètes concassées","1 pincée de sel, 1-2 c. à soupe de lait si c'est trop sec"],
+    steps:["Mélange tout dans un bol, à la main ou à la fourchette.","Forme 6 boules bien serrées avec les mains humides.","30 min au frigo pour qu'elles se tiennent. 3 boules par collation."],
+    tip:"Facile à emporter dans la poche ou le sac de sport, et il n'y a rien à réchauffer."},
+  poischiches:{name:"Pois chiches grillés au paprika", cat:"collation", mode:"frais", yield:"1 bol croustillant", time:"30 min au four", k:375,p:18,g:40,l:11, keep:"Meilleurs tièdes, 1 jour en bocal",
+    ingr:["1 boîte de pois chiches","1 c. à café d'huile","1 c. à café de paprika, sel"],
+    steps:["Égoutte, rince et SÈCHE bien les pois chiches dans un torchon (c'est le secret du croustillant).","Huile, paprika, sel.","Four 200 °C, 25-30 min, en secouant la plaque à mi-cuisson."],
+    tip:"Comme le four tourne déjà le dimanche pour le batch, mets-les en même temps."},
+  wrapthon:{name:"Wrap thon express", cat:"collation", mode:"frais", yield:"1 wrap", time:"3 min", k:270,p:21,g:34,l:5, keep:"À manger dans la journée",
+    ingr:["1 tortilla","1/2 boîte de thon au naturel","30 g de fromage blanc + paprika","1/2 carotte râpée"],
+    steps:["Écrase le thon avec le fromage blanc et le paprika.","Étale sur la tortilla, ajoute la carotte, roule."],
+    tip:"L'autre moitié de la boîte se garde 2 jours au frigo dans une boîte fermée."}
+};
+const CATS = {plat:"Plats", petitdej:"Petits-déjeuners", collation:"Collations"};
+
+/* ============ PLANNING ============ */
+const DOW = ["Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"];
+const SNACK16 = ["balls","smoothie","balls","muffins","wrapthon","muffins","poischiches"];
+const TIMES = [["7h30","Petit-déj"],["10h","Collation"],["12h30","Déjeuner"],["16h","Collation"],["20h","Dîner"]];
+const TARGET = {k:2800,p:150,g:350,l:80};
+
+function plan(d){ // d = 1..14
+  const w = d<=7 ? 1 : 2, dow = (d-1)%7;
+  const lunch  = dow<=2 ? (w===1?"teriyaki":"bolo") : dow<=5 ? (w===1?"curry":"teriyaki") : "wraps";
+  const dinner = dow<=2 ? (w===1?"chili":"dahl")   : dow<=5 ? "colin" : "salade";
+  const ids = [dow<5?"oats":"pancakes", dow===6?"smoothie":"bowl", lunch, SNACK16[dow], dinner];
+  return ids.map((r,i)=>({time:TIMES[i][0], kind:TIMES[i][1], r}));
+}
+function notes(d){
+  const dow=(d-1)%7, w=d<=7?1:2, n=[];
+  if(dow===2) n.push(["Batch ce soir", `Session ${w===1?"S1 · mercredi":"S2 · mercredi"} : ≈ 1h15 pour jeudi → samedi. Ouvre l'onglet Batch.`]);
+  if(dow>=2 && dow<=4) n.push(["Avant de dormir", "Sors 1 filet de colin du congélateur et mets-le au frigo pour le dîner de demain."]);
+  if(dow===6 && w===1) n.push(["Batch aujourd'hui", "Session S2 · dimanche : ≈ 1h45 pour lundi → mercredi de la semaine 2."]);
+  if(dow===6 && w===2) n.push(["Fin du cycle", "Dernier jour. Refais tes courses avec l'onglet Courses (tout décocher) et repars sur 14 jours."]);
+  if(d===1) n.push(["Jour 1", "Tes boîtes du dimanche sont prêtes : teriyaki pour midi, chili pour ce soir."]);
+  return n;
+}
+function totals(d){ return plan(d).reduce((a,m)=>{const r=R[m.r]; a.k+=r.k;a.p+=r.p;a.g+=r.g;a.l+=r.l; return a;},{k:0,p:0,g:0,l:0}); }
+
+/* ============ COURSES ============ */
+const SHOP = [
+  ["Viandes & poissons (surgelés)", [
+    ["poulet","Filets de poulet surgelés","2 kg",13.00,"Teriyaki ×6, curry ×3, wraps ×2"],
+    ["boeuf","Bœuf haché 5 % surgelé","1 kg",8.50,"Chili ×3, bolognaise ×3"],
+    ["colin","Filets de colin d'Alaska surgelés","1 kg",7.00,"Colin en croûte ×6"],
+    ["thon","Thon au naturel","4 boîtes",4.40,"Salades ×2, wraps thon ×2"]]],
+  ["Frais & crèmerie", [
+    ["oeufs","Œufs","plateau de 30",7.20,"Muffins, pancakes, dahl, wraps"],
+    ["fb","Fromage blanc 0 %","3 × 1 kg",6.00,"Bowl de 10 h ×12, sauces"],
+    ["lait","Lait demi-écrémé","6 L",5.40,"Overnight oats, smoothies, pancakes"]]],
+  ["Féculents", [
+    ["riz","Riz long","2 kg",3.00,"Accompagnement de 5 plats"],
+    ["pates","Pâtes complètes","1 kg",1.50,"Bolognaise, salades"],
+    ["avoine","Flocons d'avoine","2 kg",2.80,"Petit-déj, granola, energy balls, croûte"],
+    ["pdt","Pommes de terre","2,5 kg",2.50,"Potatoes rôties ×6"],
+    ["tortillas","Tortillas de blé","paquet de 8",1.50,"Wraps poulet, wraps thon"],
+    ["lentilles","Lentilles corail","500 g",1.40,"Dahl ×3"]]],
+  ["Conserves", [
+    ["poischiches","Pois chiches","2 boîtes",1.60,"Snack croustillant des dimanches"],
+    ["haricots","Haricots rouges","1 boîte",0.70,"Chili"],
+    ["tomates","Tomates concassées","3 boîtes",2.25,"Chili, bolognaise, dahl"],
+    ["coco","Lait de coco","1 boîte 400 ml",1.20,"Curry + dahl"]]],
+  ["Légumes surgelés", [
+    ["brocolis","Brocolis","1 kg",2.00,"Teriyaki"],
+    ["poelee","Poêlée de légumes","1 kg",2.00,"Avec le colin"],
+    ["epinards","Épinards hachés","1 kg",1.90,"Curry, dahl, muffins"]]],
+  ["Fruits & légumes", [
+    ["bananes","Bananes (moitié vertes)","2 kg",3.60,"Oats, pancakes, smoothies"],
+    ["pommes","Pommes","1 kg",2.00,"Avec les muffins"],
+    ["carottes","Carottes","1 kg",1.20,"Chili, bolo, wraps, salades"],
+    ["oignons","Oignons","1 kg",1.40,"Tous les plats"],
+    ["ail","Ail","1 filet",0.80,"Tous les plats"]]],
+  ["Épicerie", [
+    ["pb","Beurre de cacahuète","350 g",2.50,"Oats, smoothies, energy balls"],
+    ["cacahuetes","Cacahuètes non salées","500 g",2.00,"Granola, energy balls"],
+    ["miel","Miel","500 g",2.50,"Teriyaki, granola, pancakes"],
+    ["huile","Huile de colza","1 L",2.50,"Cuisson"],
+    ["soja","Sauce soja","250 ml",1.00,"Teriyaki"],
+    ["epices","Paprika + curry en poudre","2 pots",2.00,"Chili, curry, croûtes, pois chiches"]]]
+];
+const ALL_ITEMS = SHOP.flatMap(([,it])=>it);
+const TOTAL = ALL_ITEMS.reduce((s,i)=>s+i[3],0);
+const eur = n => n.toFixed(2).replace(".",",")+" €";
+
+/* ============ BATCH ============ */
+const BATCH = [
+  {id:"s1d", when:"Semaine 1 · dimanche (veille du J1)", title:"S1 · Dimanche", dur:"≈ 1h45", covers:"Lundi → mercredi",
+   makes:["Lun midi · Teriyaki","Mar midi · Teriyaki","Mer midi · Teriyaki","Lun soir · Chili","Mar soir · Chili","Mer soir · Chili","3 bocaux overnight oats","6 energy balls","Granola ×6"],
+   steps:[["0:00","Sors le poulet (450 g) et le bœuf (450 g) du congélateur la veille au soir. Sors 3 boîtes, 3 bocaux."],["0:05","Chili : oignon + carottes dans une cocotte, puis le bœuf. Lance le mijotage 25 min."],["0:15","Grande casserole de riz : 720 g de riz cru pour 6 portions."],["0:20","Poulet teriyaki à la poêle + sauce laquée."],["0:35","Brocolis à l'eau bouillante, 8 min."],["0:45","Granola minute à la poêle (avoine, cacahuètes, miel). Laisse refroidir à plat."],["0:55","Energy balls : mélange, roule 6 boules, au frigo."],["1:05","3 bocaux d'overnight oats."],["1:15","Laisse tiédir 20 min max, puis répartis dans les 6 boîtes. Note le jour sur chaque couvercle (scotch + feutre)."],["1:40","Tout au frigo. Vaisselle. C'est fini."]]},
+  {id:"s1m", when:"Semaine 1 · mercredi soir", title:"S1 · Mercredi", dur:"≈ 1h15", covers:"Jeudi → samedi",
+   makes:["Jeu midi · Curry","Ven midi · Curry","Sam midi · Curry","3 boîtes de potatoes","4 muffins","2 bocaux overnight oats"],
+   steps:[["0:00","Four à 200 °C. Pommes de terre en cubes (1 kg), huile, paprika, sel : au four 30-35 min."],["0:05","Riz : 360 g cru."],["0:10","Curry poulet coco-épinards (450 g de poulet sortis le matin)."],["0:30","Congèle le reste de lait de coco en bac à glaçons."],["0:35","Muffins œufs-épinards dans le four (baisse à 180 °C quand les potatoes sortent)."],["0:55","2 bocaux d'overnight oats pour jeudi et vendredi."],["1:00","Répartis curry, riz, potatoes. Étiquettes. Frigo."],["1:10","Sors 1 filet de colin du congélateur pour demain soir."]]},
+  {id:"s2d", when:"Semaine 2 · dimanche (J7)", title:"S2 · Dimanche", dur:"≈ 1h45", covers:"Lundi → mercredi",
+   makes:["Lun midi · Bolognaise","Mar midi · Bolognaise","Mer midi · Bolognaise","Lun soir · Dahl","Mar soir · Dahl","Mer soir · Dahl","6 œufs mollets","3 bocaux overnight oats","6 energy balls","Granola ×6"],
+   steps:[["0:00","Sors le bœuf (450 g) la veille. Sors les glaçons de lait de coco."],["0:05","Four 200 °C : pois chiches grillés pour ton goûter du jour."],["0:10","Bolognaise : oignon, carottes râpées, bœuf, tomates. Mijote 20 min."],["0:15","Dahl : oignon, curry, lentilles, tomates, eau. 15-18 min."],["0:25","Casserole d'eau : 6 œufs (6 min 30), puis eau froide. Dans la même eau, les pâtes (360 g), 1 min de moins que le paquet."],["0:40","Riz pour le dahl (180 g). Ajoute épinards + coco au dahl."],["0:50","Granola minute + energy balls + 3 bocaux d'oats."],["1:15","Répartis les 6 boîtes. Œufs écalés dans une boîte à part."],["1:40","Frigo, étiquettes, vaisselle."]]},
+  {id:"s2m", when:"Semaine 2 · mercredi soir", title:"S2 · Mercredi", dur:"≈ 1h15", covers:"Jeudi → samedi",
+   makes:["Jeu midi · Teriyaki","Ven midi · Teriyaki","Sam midi · Teriyaki","3 boîtes de potatoes","4 muffins","2 bocaux overnight oats"],
+   steps:[["0:00","Four à 200 °C. Potatoes (1 kg) au four 30-35 min."],["0:05","Riz : 360 g cru."],["0:10","Poulet teriyaki (450 g sortis le matin) + brocolis."],["0:35","Muffins œufs-épinards au four à 180 °C."],["0:55","2 bocaux d'overnight oats."],["1:00","Répartis, étiquette, frigo."],["1:10","Sors 1 filet de colin pour demain soir."]]}
+];
+
+/* ============ ÉTAT & DATES ============ */
+function nextMonday(){ const t=new Date(); t.setHours(0,0,0,0); const dow=(t.getDay()+6)%7; if(dow!==0) t.setDate(t.getDate()+(7-dow)); return t; }
+function toISO(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function fromISO(s){ const [y,m,d]=s.split("-").map(Number); return new Date(y,m-1,d); }
+let start = store.get("start", toISO(nextMonday()));
+function dateOf(d){ const x=fromISO(start); x.setDate(x.getDate()+d-1); return x; }
+function todayIndex(){ const t=new Date(); t.setHours(0,0,0,0); return Math.round((t-fromISO(start))/864e5)+1; }
+let selDay = Math.min(14, Math.max(1, todayIndex()));
+const eaten = store.get("eaten", {});
+const got = store.get("got", {});
+const stepsDone = store.get("steps", {});
+let recFilter = "all";
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmtDate = (d,o) => d.toLocaleDateString("fr-FR", o||{weekday:"long",day:"numeric",month:"long"});
+const CHECK_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+function toast(msg){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true,1800); }
+
+/* ============ VUE JOUR ============ */
+function renderJour(){
+  const ti = todayIndex(), d = selDay, tot = totals(d);
+  const chips = Array.from({length:14},(_,i)=>{
+    const n=i+1, dt=dateOf(n), dow=(n-1)%7;
+    const cls = ["chip", n===d?"sel":"", n===ti?"today":"", (dow===2||dow===6)?"batch":""].join(" ");
+    return `<button class="${cls}" data-day="${n}" aria-label="Jour ${n}, ${fmtDate(dt)}"><span class="d">${DOW[dow].slice(0,3)} ${dt.getDate()}</span><span class="n">J${n}</span></button>`;
+  }).join("");
+  let pre = "";
+  if(ti<1) pre = `<div class="notice soft"><span class="ico">J${ti}</span><div><strong>Le plan démarre le ${fmtDate(fromISO(start))}.</strong> Fais les courses, puis la session de batch S1 · Dimanche la veille. Tu peux déjà parcourir les jours.</div></div>`;
+  if(ti>14) pre = `<div class="notice soft"><span class="ico">✓</span><div><strong>Cycle de 14 jours terminé.</strong> Change la date de départ dans Planning pour en relancer un.</div></div>`;
+  const nts = notes(d).map(([t,x])=>`<div class="notice"><span class="ico">!</span><div><strong>${esc(t)}.</strong> ${esc(x)}</div></div>`).join("");
+  const meals = plan(d).map((m,i)=>{
+    const r=R[m.r], key=d+"-"+i, done=!!eaten[key];
+    return `<div class="meal"><div class="time">${m.time}</div>
+      <div class="box ${done?"done":""}">
+        <button class="body" data-rec="${m.r}"><span class="label">${m.kind}</span><span class="rname">${esc(r.name)}</span>
+        <span class="meta"><span class="tag ${r.mode}">${r.mode==="tup"?"Tupperware":"Frais · "+esc(r.time)}</span><span class="num">${r.k} kcal · ${r.p} g prot.</span></span></button>
+        <button class="check" data-eat="${key}" aria-pressed="${done}" aria-label="Marquer comme mangé">${CHECK_SVG}</button>
+      </div></div>`;
+  }).join("");
+  const mac = (c,lbl,v,t,u)=>`<div class="macro ${c}"><div class="label">${lbl}</div><div class="v num">${v}<small> ${u}</small></div><div class="bar"><i style="width:${Math.min(100,Math.round(v/t*100))}%"></i></div></div>`;
+  const doneCount = plan(d).filter((_,i)=>eaten[d+"-"+i]).length;
+  $("v-jour").innerHTML = `
+    <div class="hero-day"><div class="big">J${d}<small>/14</small></div>
+      <div style="text-align:right"><div class="date">${fmtDate(dateOf(d))}</div><div class="label">Semaine ${d<=7?1:2} · ${doneCount}/5 repas</div></div></div>
+    <div class="chips" id="chips">${chips}</div>
+    ${pre}
+    <div class="macros">${mac("k","Énergie",tot.k,TARGET.k,"kcal")}${mac("p","Protéines",tot.p,TARGET.p,"g")}${mac("g","Glucides",tot.g,TARGET.g,"g")}${mac("l","Lipides",tot.l,TARGET.l,"g")}</div>
+    ${nts}
+    <div class="timeline">${meals}</div>
+    <p class="muted" style="font-size:13px">Valeurs estimées. Objectif : ≈ ${TARGET.k} kcal et ${TARGET.p} g de protéines par jour. Si ton poids ne bouge pas après 10 jours, ajoute 1 verre de lait (250 ml) et 30 g de riz cru au déjeuner.</p>`;
+  const sel = $("chips").querySelector(".sel"); if(sel) sel.scrollIntoView({inline:"center",block:"nearest"});
+}
+
+/* ============ VUE PLANNING ============ */
+function renderSemaine(){
+  const ti=todayIndex();
+  const week = w => {
+    const rows = Array.from({length:7},(_,i)=>{
+      const d=(w-1)*7+i+1, p=plan(d), dt=dateOf(d);
+      return `<tr class="click" data-goto="${d}"><td><div class="dn">J${d}${d===ti?" ●":""}</div><div class="muted" style="font-size:11px">${DOW[i].slice(0,3)} ${dt.getDate()}/${dt.getMonth()+1}</div></td>
+        <td>${esc(R[p[2].r].name)}</td><td>${esc(R[p[4].r].name)}</td><td class="muted">${esc(R[p[1].r].name.split(" ")[0])} · ${esc(R[p[3].r].name.split(" ").slice(0,2).join(" "))}</td></tr>`;
+    }).join("");
+    return `<div class="card"><h3>Semaine ${w}</h3><div class="scroll-x"><table class="wtable"><thead><tr><th>Jour</th><th>Midi</th><th>Soir</th><th>Collations</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+  };
+  const wl = store.get("weights", []);
+  const first = wl.length?wl[0].kg:null;
+  const wlHtml = wl.length ? wl.slice().reverse().map(x=>`<div><span>${fmtDate(fromISO(x.date),{day:"numeric",month:"short"})}</span><span>${x.kg.toFixed(1).replace(".",",")} kg${first!==null&&x!==wl[0]?` <span class="muted">(${x.kg-first>=0?"+":""}${(x.kg-first).toFixed(1).replace(".",",")})</span>`:""}</span></div>`).join("") : `<p class="muted">Pèse-toi à jeun le matin du J1, du J7 et du J14. Vise +0,25 à +0,5 kg par semaine.</p>`;
+  $("v-semaine").innerHTML = `
+    <h2>Planning 14 jours</h2>
+    <div class="card"><div class="row"><div class="field"><label class="label" for="startDate">Jour 1 (un lundi de préférence)</label><input type="date" id="startDate" value="${start}"></div>
+      <p class="muted" style="font-size:13px;flex:1;min-width:180px">Batch le dimanche et le mercredi soir. Touche un jour pour voir le détail.</p></div></div>
+    ${week(1)}${week(2)}
+    <div class="card"><h3>Suivi du poids</h3>
+      <div class="row"><input type="number" id="kg" step="0.1" min="30" max="200" placeholder="ex. 68,4" inputmode="decimal" aria-label="Poids en kg" style="flex:1;min-width:120px">
+      <button class="btn primary" id="addKg">Ajouter</button></div>
+      <div class="wlog">${wlHtml}</div>
+      ${wl.length?`<button class="btn small" id="clearKg" style="align-self:flex-start">Effacer le suivi</button>`:""}</div>`;
+}
+
+/* ============ VUE COURSES ============ */
+function renderCourses(){
+  const gotSum = ALL_ITEMS.filter(i=>got[i[0]]).reduce((s,i)=>s+i[3],0);
+  const nGot = ALL_ITEMS.filter(i=>got[i[0]]).length;
+  const rayons = SHOP.map(([ray,items])=>{
+    const sub = items.reduce((s,i)=>s+i[3],0);
+    return `<div class="card rayon"><h3>${esc(ray)}<span class="num">${eur(sub)}</span></h3><ul class="items">${items.map(([id,nm,q,pr,us])=>
+      `<li class="item ${got[id]?"got":""}"><input type="checkbox" id="it-${id}" data-got="${id}" ${got[id]?"checked":""}><label for="it-${id}" style="cursor:pointer;min-width:0"><div class="nm">${esc(nm)} · ${esc(q)}</div><div class="us">${esc(us)}</div></label><div class="pr num">${eur(pr)}</div></li>`).join("")}</ul></div>`;
+  }).join("");
+  $("v-courses").innerHTML = `
+    <div class="budget"><div class="label" style="color:inherit;opacity:.75">Total estimé · 14 jours · 70 repas</div>
+      <div class="total num">${eur(TOTAL).replace(" €","")}<small> €</small></div>
+      <div class="gauge"><i style="width:${(TOTAL/100*100).toFixed(1)}%"></i></div>
+      <div class="sub num"><span>≈ ${eur(TOTAL/14)} / jour</span><span>Marge : ${eur(100-TOTAL)}</span></div>
+      <div class="sub num"><span>Dans le caddie : ${nGot}/${ALL_ITEMS.length}</span><span>${eur(gotSum)}</span></div></div>
+    <div class="row"><button class="btn small" id="copyList">Copier la liste</button><button class="btn small" id="resetList">Tout décocher</button></div>
+    <p class="muted" style="font-size:13px">Prix estimés en hard-discount (Lidl, Aldi, Leclerc marque repère). Prends les marques distributeur et les grands formats. Au placard (non compté) : sel, poivre, moutarde.</p>
+    ${rayons}
+    <div class="card"><h3>Matériel conseillé</h3><p>10 boîtes Tupperware (idéalement en verre, ça va au micro-ondes), 5 bocaux, un rouleau de scotch de masquage + un feutre pour dater, un moule à muffins (ou des ramequins), une grande casserole et une cocotte.</p></div>`;
+}
+
+/* ============ VUE BATCH ============ */
+function renderBatch(){
+  const ti=todayIndex();
+  const openId = ti<=3 ? "s1d" : ti<=6 ? "s1m" : ti<=10 ? "s2d" : "s2m";
+  $("v-batch").innerHTML = `<h2>Batch cooking</h2>
+    <p class="muted">2 sessions par semaine. Pourquoi pas une seule ? Les plats cuisinés se gardent 3-4 jours au frigo : au-delà, on congèle ou on risque l'intoxication. Avec dimanche + mercredi, tout reste frais.</p>
+    ${BATCH.map(b=>{
+      const done=b.steps.filter((_,i)=>stepsDone[b.id+i]).length;
+      return `<details class="card" ${b.id===openId?"open":""}><summary><div><div class="label">${esc(b.when)}</div><h3>${esc(b.title)} <span class="muted" style="font-size:16px">${esc(b.dur)}</span></h3><div class="prog">Couvre ${esc(b.covers)} · ${done}/${b.steps.length} étapes</div></div><span class="plus" aria-hidden="true">+</span></summary>
+        <div class="labels">${b.makes.map(m=>`<span class="lbl">${esc(m)}</span>`).join("")}</div>
+        <ol class="steps">${b.steps.map(([t,x],i)=>`<li class="step ${stepsDone[b.id+i]?"ok":""}"><span class="t">${t}</span><label class="tx" for="st-${b.id}${i}">${esc(x)}</label><input type="checkbox" id="st-${b.id}${i}" data-step="${b.id+i}" ${stepsDone[b.id+i]?"checked":""}></li>`).join("")}</ol>
+      </details>`;}).join("")}
+    <div class="card"><h3>Les 6 règles du frigo</h3>
+      <ol class="how">
+        <li><span>Laisse tiédir les plats 20 min maximum avant de fermer les boîtes, puis direct au frigo.</span></li>
+        <li><span>Le riz cuit se refroidit vite et se mange sous 3 jours.</span></li>
+        <li><span>Décongèle viande et poisson au frigo, jamais à température ambiante.</span></li>
+        <li><span>Réchauffe jusqu'à ce que ce soit bien chaud au centre, une seule fois.</span></li>
+        <li><span>Étiquette chaque couvercle avec le jour (« MAR SOIR »).</span></li>
+        <li><span>Une boîte pas mangée à J+4 ? Elle va au congélateur le soir même.</span></li>
+      </ol></div>`;
+}
+
+/* ============ VUE RECETTES ============ */
+function renderRecettes(){
+  const ids = Object.keys(R).filter(id=>recFilter==="all"||R[id].cat===recFilter);
+  $("v-recettes").innerHTML = `<h2>${ids.length} recettes</h2>
+    <div class="seg" role="group" aria-label="Filtrer">${[["all","Toutes"],["plat","Plats"],["petitdej","Petits-déj"],["collation","Collations"]].map(([v,l])=>`<button data-filter="${v}" aria-pressed="${recFilter===v}">${l}</button>`).join("")}</div>
+    <div class="rgrid">${ids.map(id=>{const r=R[id];return `<button class="rcard" data-rec="${id}"><span class="label">${CATS[r.cat]} · ${esc(r.time)}</span><span class="rname">${esc(r.name)}</span>
+      <span class="kpis num"><b>${r.k} kcal</b><span class="p">P ${r.p}</span><span class="g">G ${r.g}</span><span class="l">L ${r.l}</span></span>
+      <span class="meta"><span class="tag ${r.mode}">${r.mode==="tup"?"Tupperware":"Frais"}</span><span>${esc(r.yield)}</span></span></button>`;}).join("")}</div>`;
+}
+
+/* ============ FICHE RECETTE ============ */
+function openRec(id){
+  const r=R[id]; if(!r) return;
+  const used = []; for(let d=1; d<=14; d++) plan(d).forEach(m=>{ if(m.r===id) used.push(d); });
+  $("sheet-in").innerHTML = `
+    <div class="sheet-head"><div><div class="label">${CATS[r.cat]} · ${esc(r.yield)}</div><h2 id="sheet-title">${esc(r.name)}</h2></div><button class="close" id="closeSheet" aria-label="Fermer">×</button></div>
+    <div class="macros">${[["k","Énergie",r.k,"kcal"],["p","Protéines",r.p,"g"],["g","Glucides",r.g,"g"],["l","Lipides",r.l,"g"]].map(([c,l,v,u])=>`<div class="macro ${c}"><div class="label">${l}</div><div class="v num">${v}<small> ${u}</small></div></div>`).join("")}</div>
+    <div class="meta"><span class="tag ${r.mode}">${r.mode==="tup"?"Tupperware":"Frais"}</span><span>⏱ ${esc(r.time)}</span><span>Conservation : ${esc(r.keep)}</span></div>
+    <div class="card"><h3>Ingrédients</h3><ul class="ingr">${r.ingr.map(i=>`<li>${esc(i)}</li>`).join("")}</ul></div>
+    <div class="card"><h3>Préparation</h3><ol class="how">${r.steps.map(s=>`<li><span>${esc(s)}</span></li>`).join("")}</ol></div>
+    <div class="tip"><b>Astuce</b>${esc(r.tip)}</div>
+    <p class="muted" style="font-size:13px">Au menu ${used.length} fois : ${used.map(d=>"J"+d).filter((v,i,a)=>a.indexOf(v)===i).join(", ")}. Macros par portion, estimées.</p>`;
+  $("sheet").hidden=false; document.body.style.overflow="hidden"; $("closeSheet").focus();
+}
+function closeSheet(){ $("sheet").hidden=true; document.body.style.overflow=""; }
+
+/* ============ ROUTAGE ============ */
+const VIEWS = {jour:renderJour, semaine:renderSemaine, courses:renderCourses, batch:renderBatch, recettes:renderRecettes};
+function route(){
+  const v = (location.hash||"#jour").slice(1); const name = VIEWS[v] ? v : "jour";
+  Object.keys(VIEWS).forEach(k=>{ $("v-"+k).hidden = k!==name; });
+  document.querySelectorAll("nav.tabs a").forEach(a=>a.setAttribute("aria-current", a.dataset.v===name?"page":"false"));
+  VIEWS[name](); window.scrollTo(0,0);
+}
+window.addEventListener("hashchange", route);
+
+/* ============ ÉVÉNEMENTS ============ */
+document.addEventListener("click", e=>{
+  const t = e.target.closest("[data-day],[data-eat],[data-rec],[data-goto],[data-filter],#addKg,#clearKg,#copyList,#resetList,#closeSheet");
+  if(e.target===$("sheet")) return closeSheet();
+  if(!t) return;
+  if(t.dataset.day){ selDay=+t.dataset.day; renderJour(); }
+  else if(t.dataset.eat){ const k=t.dataset.eat; eaten[k]=!eaten[k]; if(!eaten[k]) delete eaten[k]; store.set("eaten",eaten); renderJour(); }
+  else if(t.dataset.rec){ openRec(t.dataset.rec); }
+  else if(t.dataset.goto){ selDay=+t.dataset.goto; location.hash="#jour"; if(location.hash==="#jour") renderJour(); }
+  else if(t.dataset.filter){ recFilter=t.dataset.filter; renderRecettes(); }
+  else if(t.id==="closeSheet"){ closeSheet(); }
+  else if(t.id==="addKg"){ const v=parseFloat(String($("kg").value).replace(",",".")); if(!(v>30&&v<200)){ toast("Entre un poids entre 30 et 200 kg"); return; }
+    const wl=store.get("weights",[]); wl.push({date:toISO(new Date()),kg:v}); store.set("weights",wl); renderSemaine(); toast("Poids enregistré"); }
+  else if(t.id==="clearKg"){ store.set("weights",[]); renderSemaine(); toast("Suivi effacé"); }
+  else if(t.id==="resetList"){ Object.keys(got).forEach(k=>delete got[k]); store.set("got",got); renderCourses(); toast("Liste remise à zéro"); }
+  else if(t.id==="copyList"){
+    const txt = "COURSES PRISE DE MASSE · 14 JOURS · "+eur(TOTAL)+"\n\n"+SHOP.map(([r,it])=>r.toUpperCase()+"\n"+it.map(i=>"- "+i[1]+" ("+i[2]+") · "+eur(i[3])).join("\n")).join("\n\n");
+    const fallback=()=>{ const ta=document.createElement("textarea"); ta.className="copy"; ta.value=txt; ta.readOnly=true; t.closest(".row").after(ta); ta.focus(); ta.select(); toast("Sélectionne et copie le texte"); };
+    try{ navigator.clipboard.writeText(txt).then(()=>toast("Liste copiée"), fallback); }catch(err){ fallback(); }
+  }
+});
+document.addEventListener("change", e=>{
+  const t=e.target;
+  if(t.dataset.got){ const id=t.dataset.got; if(t.checked) got[id]=true; else delete got[id]; store.set("got",got); renderCourses(); }
+  else if(t.dataset.step){ const id=t.dataset.step; if(t.checked) stepsDone[id]=true; else delete stepsDone[id]; store.set("steps",stepsDone);
+    t.closest(".step").classList.toggle("ok",t.checked); const det=t.closest("details"); const tot=det.querySelectorAll("[data-step]").length, ok=det.querySelectorAll("[data-step]:checked").length; det.querySelector(".prog").textContent=det.querySelector(".prog").textContent.replace(/\d+\/\d+ étapes/, ok+"/"+tot+" étapes"); }
+  else if(t.id==="startDate" && t.value){ start=t.value; store.set("start",start); selDay=Math.min(14,Math.max(1,todayIndex())); renderSemaine(); toast("Date de départ mise à jour"); }
+});
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && !$("sheet").hidden) closeSheet(); });
+
+$("pill").textContent = eur(TOTAL)+" / 100 €";
+route();
+</script>
+
+<script>
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  navigator.serviceWorker.register("sw.js").catch(function(){});
+}
+</script>
+</body>
+</html>
