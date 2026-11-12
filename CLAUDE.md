@@ -17,6 +17,37 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - Les décisions de trading restent des règles testées. Pas d'IA qui change les réglages ou trade à l'instinct.
 - Le mode live exige `CONFIRM_LIVE_TRADING=OUI` et `MAX_CAPITAL > 0` : n'affaiblis jamais ces garde-fous.
 
+## Le plan en cours : `PLAN-BOTS.md`
+
+Depuis le 11/11/2026, le travail suit le plan de l'utilisateur, enregistré dans `PLAN-BOTS.md` (étapes 0 à 8, audit du
+12/11, point de référence, journal des étapes). Relis-le au début de chaque session et tiens son journal à jour. Ses
+règles permanentes s'ajoutent aux principes ci-dessus :
+
+1. Argent fictif uniquement : jamais le mode réel, jamais les clés du fichier `.env`, aucun secret affiché.
+2. Une étape à la fois : plan court, l'utilisateur approuve, puis code sans redemander à chaque fichier, tests, compte
+   rendu. Ne commence jamais l'étape suivante sans son accord.
+3. Un commit git avant chaque étape (point de retour).
+4. Une seule logique de gestion des trades, partagée par le direct et le backtest (`fleet.Book`) : jamais deux versions.
+5. Backtest réaliste : signaux sur des bougies clôturées, exécution au prix suivant, frais maker et taker, glissement,
+   financement des positions à levier.
+6. Tout ce qui touche à l'argent (stop, objectif, taille de position, frais, liquidation) a des tests automatiques,
+   lancés avant de dire qu'une étape est finie.
+7. Interface : le style actuel, en français, une phrase d'explication sous chaque nouveau réglage.
+8. Consigne ambiguë ou bug trouvé dans l'existant : le dire avant de continuer.
+
+L'utilisateur est podologue et apprend : explique le pourquoi de chaque choix en français simple, en 5 lignes au plus.
+Compte rendu de fin d'étape : ce qui a changé, comment le vérifier sur le site, ce qu'il faut surveiller, l'étape
+suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir les chiffres.
+
+## Lancer
+
+- Le site, qui lance tout seul les bots en argent fictif : `python main.py site`, puis http://127.0.0.1:8765
+  (`site --ipad` l'ouvre au Wi-Fi avec un code). Sous Windows, sans Python : « Ouvrir le bot.bat » du ZIP `windows-dev`.
+- Les bots seuls, dans la console : `python main.py flotte` (`--une-fois` : un seul tour).
+- Installation : `pip install -r requirements.txt` (ccxt, numpy, pandas, pytest).
+- Ce que les bots écrivent : `data/bots/` (`essaim.json` le résumé du site, `essaim-etat.json` la mémoire,
+  `essaim/<id>.json` un compte par bot) ; journal `data/bot.log` ; réglages dans `.env` (copie de `.env.example`).
+
 ## Architecture
 
 - `main.py` : ligne de commande (`site`, `flotte`, `trader`, `backtest`, `robustesse`, `labo`, `labo-portefeuille`,
@@ -187,12 +218,27 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
 - Le guide du trading pour l'utilisateur est un document Claude Docs : https://claude.ai/artifact/3CF8W3xks9c3oxa3mNqbA5
 - `packaging/` et `.github/workflows/windows-package.yml` : version Windows sans Python, publiée en pré-version
   `windows-dev` (https://github.com/lecromrayane8-rgb/Testing-podo/releases/tag/windows-dev).
+- `audit/` : les mesures de l'audit du 12/11/2026, hors du bot (rien n'est lu sur une plateforme, rien n'est écrit dans
+  `data/`). `hasard.py` : des cryptos en marche au hasard, le vrai `retest_coin` choisit ses bots, puis on les fait
+  tourner sur la suite (`python audit/hasard.py 80 12 hasard.json`). `rotation.py` : le test refait toutes les 3 h
+  pendant 48 h, pour compter les bots remplacés et leur durée de vie.
 
-## Vérifications
+## Vérifications et conventions
 
 - Tests : `python -m pytest -q`. Les tests de parité live/backtest doivent rester verts.
 - Lint : `python -m pyflakes main.py tradingbot tests packaging`.
 - Lis et écris les fichiers en UTF-8 explicite : les tests tournent aussi sur Windows (workflow).
+- Code, commentaires, textes du site et messages en français ; noms de tests en anglais, qui disent le comportement
+  (`test_a_trailing_stop_follows_the_best_price_and_never_goes_back`). Les tests de l'argent sont dans
+  `tests/test_fleet.py` (moteur : stop, objectif, levier, frais, financement, liquidation) et `tests/test_swarm.py`
+  (parité direct/backtest, reprise, re-tests, classement).
+- Les réglages d'une technique sont fixés d'avance, jamais ajustés sur les données. Les frais et le glissement des bots
+  sont dans `execution.FUTURES`, comptés dans `fleet.Book` (`_open`, `_fill`, `_close`) et nulle part ailleurs.
+- Un réglage du site passe par `webapp.FIELDS` (liste blanche, phrase d'aide `help`, bornes) et `swarm.SwarmSettings`.
+  La page est dans `tradingbot/sitepage.py` (CSS et JS dans des chaînes Python) : un texte venu des données s'insère
+  avec `textContent` ; après une modification, `node --check` sur le JS et vérification à 1280, 820 et 390 px.
+- Pas de nouvelle dépendance sans nécessité : le site et les bots n'utilisent que la bibliothèque standard, ccxt,
+  numpy et pandas (l'exécutable Windows est construit avec PyInstaller).
 
 ## Environnement
 
@@ -289,3 +335,16 @@ L'utilisateur veut déléguer au maximum et seulement vérifier : fais le travai
   stratégie (technique × unité, toutes cryptos) avec verdicts prouvée/recalée qui pilotent les re-tests, onglet
   Stratégies, leçon « le stop suiveur ». Dit franchement : un classement sur 24 h est surtout du hasard ; on ne
   « prouve » qu'avec 30 trades et un seuil durci.
+- 11 et 12/11/2026 : l'utilisateur envoie un plan en 8 étapes (`PLAN-BOTS.md`) et ses règles permanentes, et demande en
+  plus le maximum de bots, les derniers indicateurs et tous les horizons jusqu'à la seconde. Chiffres réels rapportés :
+  environ 217 trades, 36 % de gagnants, −0,3 % au total, une soixantaine de bots sur 35 cryptos. Étape 0 (audit) faite
+  sans toucher au code. Mesuré avec le vrai code sur des marchés tirés au hasard : le labo y déclare 3,6 % de
+  combinaisons « gagnantes sur 3 périodes » (56 par crypto), crée 6,5 bots par crypto au backtest de +0,96 % par trade,
+  qui font ensuite −0,20 % par trade avec 35 % de gagnants ; d'un test au suivant 1 bot sur 5 est remplacé, un bot vit
+  6 h et 7 sur 10 s'arrêtent sans un trade. Donc un bot du labo, ou un bot en gain, ne prouve rien pour l'instant.
+  Aussi : le test final sert à choisir (`swarm._eligible`, contrairement à ce que dit `fleet.judge`), les bots à terme
+  tournent sur les prix du comptant, « bougie finie » dépend de l'horloge du PC. Proposée et en attente d'accord :
+  l'étape 0 bis (test final mis de côté, trades de toutes les combinaisons gardés comme « bots à l'essai », bots plus
+  arrêtés pour un changement de classement, bougie finie d'après la plateforme, point de référence enregistré au
+  lancement). Ne rien coder avant son accord. Les deux mesures se refont avec `audit/hasard.py` et
+  `audit/rotation.py` (à relancer après chaque changement du labo : c'est le repère « aucun avantage »).
