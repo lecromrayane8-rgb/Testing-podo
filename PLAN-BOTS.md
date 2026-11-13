@@ -651,6 +651,15 @@ Terminé quand : 24 h de données sont enregistrées sans coupure.
 À prévoir d'après l'audit (G5) : c'est le moment de passer aux vrais contrats à terme (liste des cryptos, prix,
 financement réel) au lieu du comptant.
 
+À savoir (vérifié le 13/11/2026) : une grande partie de ces données existe déjà, gratuitement et avec des mois
+d'historique, dans les archives publiques de Binance (`data.binance.vision`, lisibles depuis le cloud), pour les
+contrats à terme : le carnet d'ordres résumé toutes les 30 secondes (`bookDepth` : ce qui attend à ±0,2 %, 1 %, 2 %,
+3 %, 4 % et 5 % du prix, 2 880 photos par jour, au moins depuis mai 2026) et chaque transaction avec son côté
+(`aggTrades`, `trades` ; aussi pour le comptant). Absents des archives : les liquidations et le carnet fin (meilleur
+prix à chaque instant, 20 niveaux par seconde), qui ne s'obtiennent qu'en enregistrant en direct ou chez un vendeur de
+données payant. On peut donc mesurer « le carnet penche-t-il du bon côté ? » sur l'historique, avec la méthode de
+l'étape 1 ter, AVANT de construire l'enregistreur : proposé, en attente d'accord.
+
 ## Étape 5 — Signaux de flux d'ordres
 
 - Delta cumulé, déséquilibre du carnet, murs d'ordres, pics de liquidations, financement extrême, ajoutés comme

@@ -506,3 +506,12 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   mesuré : carnet d'ordres (étape 4, à enregistrer sur le PC), entrées par ordre limite (frais plus bas), horizons
   de plusieurs jours. Leçon de méthode : une piste « significative » sur une période se revérifie toujours sur une
   autre avant d'y croire. À faire approuver : la suite (étape 4 d'abord, pour lancer l'enregistrement, ou étape 2).
+- 13/11/2026 (fin) : l'utilisateur demande s'il existe un moyen d'éviter les semaines d'enregistrement de l'étape 4.
+  Vérifié : oui en grande partie. Les archives de Binance (`data.binance.vision/data/futures/um/daily/`) ont
+  `bookDepth` (carnet résumé toutes les 30 s par bandes de ±0,2 à ±5 %, depuis mai 2026 au moins ; `1000PEPEUSDT`
+  pour les petits prix) et `aggTrades`/`trades` (chaque transaction avec `is_buyer_maker`) ; pas de `bookTicker` ni
+  de `liquidationSnapshot` (404). Les trades à l'essai des trois périodes sont déjà notés dans le cache
+  (`contexte*/rows-*.npz`) : il suffit d'ajouter des conditions à `audit/contexte.py`. Aucun connecteur Claude ne
+  donne cet historique en gros (et des données qui passent par la conversation coûtent des tokens, pas celles que la
+  machine télécharge). Proposé, EN ATTENTE D'ACCORD : mesurer le carnet d'ordres sur l'historique avant de
+  construire l'enregistreur.
