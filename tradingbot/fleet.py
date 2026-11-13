@@ -40,7 +40,7 @@ from .explain import decimal, diagnose, pct, read_chart
 from .indicators import atr, bollinger, ema, ichimoku, parabolic_sar, rolling_vwap, sma, supertrend_line
 from .lab import ALL_VARIANTS, JUMP, STUDY_SHARE, TEST_SHARE
 from .risk import TradeStats
-from .strategy import StrategyParams, compute_signals, exit_reason
+from .strategy import PATTERN_FAMILIES, StrategyParams, compute_signals, exit_reason, pattern_marks
 
 log = logging.getLogger(__name__)
 
@@ -96,6 +96,7 @@ def finite(value) -> float | None:
 # fixé d'avance, pas ajusté sur les données.
 _TREND = {"stop_atr_mult": 3.0, "max_bars_in_trade": 0}  # suivre une tendance : stop large, pas de stop temporel
 _SWING = {"stop_atr_mult": 2.5, "max_bars_in_trade": 24}  # acheter un repli : stop plus serré, 24 bougies au plus
+_ZONE = {"stop_atr_mult": 2.0, "max_bars_in_trade": 48}  # lecture du graphique : stop à 2 bougies moyennes, 48 bougies
 EXTRA: dict[str, StrategyParams] = {
     "Impulsion +8 % en 6 bougies + volume x2": StrategyParams(impulse_bars=6, impulse_pct=0.08, volume_mult=2.0,
                                                               **JUMP),
@@ -115,6 +116,20 @@ EXTRA: dict[str, StrategyParams] = {
     "Écart à la moyenne 20/2 + MM200": StrategyParams(strategy_type="zscore", **_SWING),
     "Heikin-Ashi 2 bougies": StrategyParams(strategy_type="heikin", trend_period=0, **_TREND),
     "Heikin-Ashi 3 bougies + MM200": StrategyParams(strategy_type="heikin", heikin_bars=3, **_TREND),
+    # La lecture du graphique (tradingbot/patterns.py) : zones, structure, bougies de retournement, figures. Une
+    # définition de manuel par technique, fixée d'avance ; c'est la mesure à l'essai qui dit ce qu'elles valent.
+    "Zone à combler (FVG)": StrategyParams(strategy_type="fvg", trend_period=0, **_ZONE),
+    "Zone à combler (FVG) + MM200": StrategyParams(strategy_type="fvg", **_ZONE),
+    "Order block": StrategyParams(strategy_type="order_block", trend_period=0, **_ZONE),
+    "Order block + MM200": StrategyParams(strategy_type="order_block", **_ZONE),
+    "Prise de liquidité": StrategyParams(strategy_type="balayage", trend_period=0, **_ZONE),
+    "Cassure de structure": StrategyParams(strategy_type="structure", trend_period=0, **_TREND),
+    "Avalement": StrategyParams(strategy_type="avalement", trend_period=0, **_ZONE),
+    "Marteau": StrategyParams(strategy_type="marteau", trend_period=0, **_ZONE),
+    "Bougie intérieure": StrategyParams(strategy_type="interieure", trend_period=0, **_ZONE),
+    "Divergence RSI": StrategyParams(strategy_type="divergence", trend_period=0, **_ZONE),
+    "Retracement de Fibonacci": StrategyParams(strategy_type="fibonacci", trend_period=0, **_ZONE),
+    "Double creux": StrategyParams(strategy_type="double_creux", trend_period=0, **_ZONE),
 }
 
 
@@ -183,7 +198,8 @@ def with_security(spec: Spec, secure_r: float, secure_part: float) -> Spec:
 SIDE_LABELS = {"long": "acheteur", "short": "vendeur à découvert"}
 SIDE_HINTS = {"long": "il gagne si le prix monte", "short": "il gagne si le prix baisse"}
 SHORT_REASONS = {"rebond": "rechute", "résistance ou support cassé": "support ou résistance cassée",
-                 "retour sous le niveau": "retour au-dessus du niveau", "suracheté": "survendu"}
+                 "retour sous le niveau": "retour au-dessus du niveau", "suracheté": "survendu",
+                 "retour sous le dernier creux": "retour au-dessus du dernier sommet"}
 
 
 def condition(p: StrategyParams, side: str) -> str:
@@ -252,6 +268,48 @@ def condition(p: StrategyParams, side: str) -> str:
     elif t == "heikin":
         text = (f"les bougies Heikin-Ashi (lissées) deviennent {'vertes' if up else 'rouges'} {p.heikin_bars} fois de "
                 "suite")
+    elif t == "fvg":
+        text = ("le prix redescend dans une zone à combler (un trou laissé par trois bougies en forte hausse) puis "
+                "clôture au-dessus" if up else "le prix remonte dans une zone à combler (un trou laissé par trois "
+                "bougies en forte baisse) puis clôture en dessous")
+    elif t == "order_block":
+        text = (f"le prix revient sur la dernière bougie baissière d'avant une envolée (au moins {decimal(p.surge_atr, 0)} "
+                f"fois la taille moyenne d'une bougie en {p.surge_bars} bougies) puis clôture au-dessus" if up else
+                f"le prix revient sur la dernière bougie haussière d'avant une chute (au moins {decimal(p.surge_atr, 0)} "
+                f"fois la taille moyenne d'une bougie en {p.surge_bars} bougies) puis clôture en dessous")
+    elif t == "balayage":
+        text = ("la mèche d'une bougie passe sous le dernier creux marquant (là où dorment les stops) puis la bougie "
+                "clôture au-dessus, en hausse" if up else "la mèche d'une bougie passe au-dessus du dernier sommet "
+                "marquant (là où dorment les stops) puis la bougie clôture en dessous, en baisse")
+    elif t == "structure":
+        text = ("le prix clôture au-dessus du dernier sommet marquant (une cassure de structure)" if up else
+                "le prix clôture sous le dernier creux marquant (une cassure de structure)")
+    elif t == "avalement":
+        text = (f"une bougie verte recouvre le corps de la bougie rouge d'avant, au plus bas des {p.pattern_span} "
+                "dernières bougies (un avalement haussier)" if up else
+                f"une bougie rouge recouvre le corps de la bougie verte d'avant, au plus haut des {p.pattern_span} "
+                "dernières bougies (un avalement baissier)")
+    elif t == "marteau":
+        text = (f"une bougie laisse une longue mèche basse (au moins {decimal(p.wick_ratio, 0)} fois son corps) au plus "
+                f"bas des {p.pattern_span} dernières bougies (un marteau)" if up else
+                f"une bougie laisse une longue mèche haute (au moins {decimal(p.wick_ratio, 0)} fois son corps) au plus "
+                f"haut des {p.pattern_span} dernières bougies (une étoile filante)")
+    elif t == "interieure":
+        text = ("après une bougie contenue dans la précédente (une pause), le prix clôture "
+                f"{'au-dessus du plus haut' if up else 'sous le plus bas'} de cette bougie mère")
+    elif t == "divergence":
+        text = ("le prix fait un creux plus bas que le précédent alors que le RSI, lui, remonte (une divergence : la "
+                "baisse s'essouffle)" if up else "le prix fait un sommet plus haut que le précédent alors que le RSI, "
+                "lui, redescend (une divergence : la hausse s'essouffle)")
+    elif t == "fibonacci":
+        text = (f"après une jambe de hausse, le prix en reperd entre {pct(p.fib_low, 0, False)} et "
+                f"{pct(p.fib_high, 1, False)} puis clôture en hausse (un retracement de Fibonacci)" if up else
+                f"après une jambe de baisse, le prix en reprend entre {pct(p.fib_low, 0, False)} et "
+                f"{pct(p.fib_high, 1, False)} puis clôture en baisse (un retracement de Fibonacci)")
+    elif t == "double_creux":
+        text = ("après deux creux au même prix, le prix clôture au-dessus du sommet qui les sépare (un double creux)"
+                if up else "après deux sommets au même prix, le prix clôture sous le creux qui les sépare (un double "
+                "sommet)")
     else:
         text = ("le prix clôture nettement au-dessus d'une résistance solide (une cassure)" if up else
                 "le prix clôture nettement sous un support solide (une cassure vers le bas)")
@@ -319,6 +377,13 @@ def exit_condition(p: StrategyParams, side: str) -> str:
         return "le prix revient sur sa moyenne"
     if t == "heikin":
         return f"une bougie Heikin-Ashi {'rouge' if up else 'verte'} apparaît"
+    if t == "structure":
+        return ("le prix clôture sous le dernier creux marquant" if up else
+                "le prix clôture au-dessus du dernier sommet marquant")
+    if t in PATTERN_FAMILIES:
+        word = f"sous le plus bas des {p.breakout_exit_period}" if up else \
+            f"au-dessus du plus haut des {p.breakout_exit_period}"
+        return f"le prix clôture {word} bougies précédentes (le mouvement s'essouffle)"
     return ("le prix retombe sous l'ancienne résistance" if up else "le prix remonte au-dessus de l'ancien support")
 
 
@@ -832,7 +897,22 @@ def overlays(df: pd.DataFrame, p: StrategyParams, side: str) -> list[dict]:
         else:
             add("in", f"plus bas des {p.breakout_period} bougies (entrée)", lo_n, "var(--series-1)")
             add("out", f"plus haut des {p.breakout_exit_period} bougies (sortie)", hi_m, "var(--series-4)", True)
-    if t == "impulsion":
+    if t in PATTERN_FAMILIES:  # ce que la technique a vu : sur le graphique retourné pour un vendeur (1 / prix)
+        marks = pattern_marks(df if up else mirror(df), p)
+        real = {k: pd.Series(v if up else 1 / v, index=df.index) for k, v in marks.items()}
+        zone = {"fvg": "zone à combler", "order_block": "order block", "fibonacci": "zone du retracement"}.get(t)
+        if zone:
+            add("zone-up", f"{zone} (bord haut)", np.maximum(real["zone_top"], real["zone_bottom"]), "var(--series-1)")
+            add("zone-low", f"{zone} (bord bas)", np.minimum(real["zone_top"], real["zone_bottom"]), "var(--series-1)",
+                True)
+        if t == "structure":
+            add("in", f"dernier {'sommet' if up else 'creux'} marquant (entrée)", real["top"], "var(--series-1)")
+            add("out", f"dernier {'creux' if up else 'sommet'} marquant (sortie)", real["bottom"], "var(--series-4)",
+                True)
+        if t == "balayage":
+            add("in", f"dernier {'creux' if up else 'sommet'} marquant (les stops sont juste derrière)", real["bottom"],
+                "var(--series-1)")
+    if t == "impulsion" or (t in PATTERN_FAMILIES and t != "structure"):
         exit_line = (low.rolling(p.breakout_exit_period).min().shift(1) if up else
                      high.rolling(p.breakout_exit_period).max().shift(1))
         add("out", f"{'plus bas' if up else 'plus haut'} des {p.breakout_exit_period} bougies (sortie)", exit_line,

@@ -168,6 +168,46 @@ LESSONS = (
           "why": "Objectif 56 − 51 = 5 ; risque 51 − 49 = 2 ; 5 ÷ 2 = 2,5."},
      ],
      "sources": ["osler_2000", "osler_2003", "kavajecz"]},
+    {"id": "lecture", "title": "Lire le graphique comme un trader : structure, zones, pièges", "minutes": 5,
+     "blocks": [
+         {"text": "Au-delà des indicateurs, beaucoup de traders lisent le graphique « à nu » : ils y cherchent les "
+                  "endroits où le prix a des chances de réagir. Tes bots lisent ces repères aussi, chacun écrit comme "
+                  "une règle précise, pour pouvoir le tester."},
+         {"text": "La structure. Une hausse est une suite de sommets et de creux de plus en plus hauts. Quand le prix "
+                  "clôture au-dessus du dernier sommet marquant, la structure est cassée par le haut : c'est un signal "
+                  "d'achat. Sous le dernier creux marquant, c'est l'inverse."},
+         {"text": "Les zones. Quand le prix part très vite, il laisse un trou derrière lui : une zone à combler (en "
+                  "anglais, fair value gap). La dernière bougie avant l'envolée s'appelle un order block. L'idée : le "
+                  "prix revient souvent sur ces zones avant de repartir. Le retracement de Fibonacci dit la même chose "
+                  "autrement : après une jambe de hausse, le prix en reperd souvent la moitié."},
+         {"example": "Le SOL monte de 140 à 152 en trois bougies et laisse un trou entre 143 et 146. Deux heures plus "
+                     "tard il redescend à 145, dans le trou, puis clôture à 147, au-dessus : le bot « Zone à combler » "
+                     "achète, avec son stop en dessous."},
+         {"text": "Les pièges. Juste sous un creux marquant dorment les ordres stop des acheteurs. Une mèche passe "
+                  "dessous, les déclenche, puis le prix remonte : c'est une prise de liquidité. Les bougies de "
+                  "retournement (le marteau et sa longue mèche, l'avalement) racontent la même histoire en une ou deux "
+                  "bougies ; le double creux, en deux tentatives."},
+         {"text": "Ce qu'il faut savoir : ces lectures viennent des traders, pas de la recherche. Presque aucune n'a "
+                  "été testée sérieusement, et on les voit beaucoup mieux après coup. C'est pour ça que tes bots les "
+                  "écrivent comme des règles fixes et les mesurent à l'essai, sur des milliers de trades : la mesure "
+                  "dira lesquelles valent quelque chose, s'il y en a."},
+     ],
+     "remember": ["Structure : casser le dernier sommet ou le dernier creux marquant est un signal.",
+                  "Zones (zone à combler, order block, retracement) : des endroits où le prix revient souvent.",
+                  "Aucune de ces lectures n'est prouvée : seule la mesure à l'essai les départage."],
+     "quiz": [
+         {"q": "Une mèche passe sous le dernier creux marquant, puis la bougie clôture au-dessus. C'est…",
+          "choices": ["Une prise de liquidité : les stops ont sauté, puis le prix est remonté",
+                      "Une cassure de structure", "Une zone à combler"], "answer": 0,
+          "why": "La clôture est revenue au-dessus du creux : la cassure était un piège. Avec une clôture en dessous, "
+                 "ce serait une vraie cassure."},
+         {"q": "Sur les réseaux, tu vois trois exemples où un order block a parfaitement marché. Tu en conclus…",
+          "choices": ["Rien encore : on ne montre que les exemples réussis, il faut la mesure sur tous les cas",
+                      "Que la technique est sûre", "Qu'il faut augmenter le levier"], "answer": 0,
+          "why": "Trois exemples choisis après coup ne prouvent rien. La mesure à l'essai compte tous les cas, les "
+                 "ratés compris."},
+     ],
+     "sources": ["osler_2003", "kavajecz", "lo"]},
     {"id": "risque", "title": "Le stop, le stop suiveur et la taille de position", "minutes": 5,
      "blocks": [
          {"text": "Le stop-loss est un prix de sortie fixé à l'avance : si le prix y descend, tu vends. La perte est "

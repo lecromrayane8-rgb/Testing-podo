@@ -345,6 +345,20 @@ Terminé quand : le labo compare avec et sans sécurisation sur le test final, e
    un rond à chaque sécurisation, et la ligne « Sécurisation des gains » de la position ; écran Direct : une ligne par
    sécurisation dans « Ce qui vient de se passer » (et dans le journal `data\bot.log`).
 
+### Relecture indépendante de l'étape 1 (13/11/2026) : deux défauts trouvés et corrigés
+
+Un relecteur indépendant a relu l'essaim et le site (celui du moteur n'a pas pu tourner : limite d'utilisation
+atteinte). Deux défauts réels, chacun reproduit puis corrigé avec son test :
+
+- **Le tableau « avec ou sans » pouvait comparer des journées différentes.** Quand on change le seuil ou la part (ou au
+  premier lancement de cette version sur un dossier d'avant), la mesure « avec » repart de zéro mais « sans » garde ses
+  30 jours : l'écart affiché comparait alors deux périodes, donc deux marchés (exemple reproduit : « +1,2 %, mieux
+  avec » affiché pour un écart vrai de +0,01 %). Corrigé : la comparaison repart du lendemain du changement, sur des
+  journées mesurées en entier par les deux, et le site dit depuis quand il compare.
+- **Une case « oui / non » écrite à la main dans `.env` avec `0`, `false` ou `off`** était lue « non » par les bots
+  mais affichée « oui » par la page Réglages, et le premier enregistrement réactivait la sécurisation sans le dire.
+  Corrigé : la page montre ce que les bots appliquent, et n'écrit rien si rien ne change.
+
 ### Ce qu'il faut savoir avant de lire les chiffres
 
 - **Sécuriser ne crée pas d'avantage.** Sur un marché fabriqué où il n'y a rien à gagner, le moteur rend toujours

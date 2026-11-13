@@ -94,6 +94,10 @@ LIBRARY = (
     "EMA 9/21", "EMA 9/21 + MM200", "EMA 20/50", "VWAP + EMA 9/21", "Stochastique 14/3", "Stochastique 14/3 + MM200",
     "Keltner 20/2", "ADX 14 > 25", "Parabolic SAR", "Ichimoku 9/26/52", "Écart à la moyenne 20/2",
     "Écart à la moyenne 20/2 + MM200", "Heikin-Ashi 2 bougies", "Heikin-Ashi 3 bougies + MM200",
+    # la lecture du graphique (tradingbot/patterns.py), ajoutée le 13/11/2026 à la demande de l'utilisateur
+    "Zone à combler (FVG)", "Zone à combler (FVG) + MM200", "Order block", "Order block + MM200", "Prise de liquidité",
+    "Cassure de structure", "Avalement", "Marteau", "Bougie intérieure", "Divergence RSI", "Retracement de Fibonacci",
+    "Double creux",
 )
 UNIVERSE_EVERY_S = 600
 RETEST_S = 3 * 3600
@@ -922,7 +926,9 @@ class Swarm:
     def _apply_security(self) -> None:
         """Au démarrage : la sécurisation des gains est un réglage commun. La fiche de chaque bot reçoit le seuil et
         la part du moment (une position déjà ouverte garde ceux de son ouverture, écrits dans la position). Et si le
-        seuil ou la part ont changé, la mesure à l'essai « avec » repart de zéro : on ne mélange pas deux réglages."""
+        seuil ou la part ont changé, la mesure à l'essai « avec » repart de zéro : on ne mélange pas deux réglages.
+        La comparaison avec/sans repart alors du lendemain (`secure_since`) : « sans » garde ses 30 jours, et comparer
+        ses anciennes journées aux nouvelles de « avec » comparerait deux marchés différents."""
         r, part = self.settings.security()
         for bot in self.bots.values():
             spec = bot["spec"]
@@ -939,6 +945,8 @@ class Swarm:
             if stale:
                 self.event("reglage", "Les réglages de la sécurisation des gains ont changé : sa mesure à l'essai "
                            "repart de zéro (on ne mélange pas deux réglages).")
+            if any(v.get("n") for v in self.trial["stats"].values()):  # « sans » a déjà des journées, pas « avec »
+                self.trial["secure_since"] = _iso(self.time.now_ms())[:10]
             self.trial["secure"] = measured
             self.trial_dirty = True
 
@@ -1687,14 +1695,16 @@ class Swarm:
         day0 = datetime.fromisoformat(_iso(self.time.now_ms())[:10]).date()
         month = {(day0 - timedelta(days=k)).isoformat() for k in range(TRIAL_DAYS)}
         stats = self.trial["stats"]
+        since = str(self.trial.get("secure_since") or "")  # le jour où « avec » est reparti de zéro : pas comparable
 
         def daily(keys) -> list[list]:
-            """Par jour : trades, somme et gagnants sans, puis avec."""
+            """Par jour : trades, somme et gagnants sans, puis avec. Seulement les journées mesurées en entier par
+            les deux : celles d'après le dernier redémarrage de la mesure « avec »."""
             days: dict[str, list] = {}
             for key in keys:
                 for at, prefix in ((0, ""), (3, SAFE)):
                     for day, v in ((stats.get(prefix + key) or {}).get("days") or {}).items():
-                        if day in month:
+                        if day in month and day > since:
                             row = days.setdefault(day, [0, 0.0, 0, 0, 0.0, 0])
                             row[at], row[at + 1], row[at + 2] = row[at] + v[0], row[at + 1] + v[1], row[at + 2] + v[2]
             return list(days.values())
@@ -1727,7 +1737,7 @@ class Swarm:
                              c[scope]["avec"]["n"], c[scope]["avec"]["total"], c[scope]["avec"]["wins"]] for c in held])
 
         return {"on": settings.secure, "r": settings.secure_r, "part": settings.secure_part,
-                "trial": {"total": compare(daily(units)),
+                "trial": {"since": since or None, "total": compare(daily(units)),
                           "units": [{"key": tf, "label": tf_label(tf), **compare(daily([f"unite:{tf}"]))}
                                     for tf in TIMEFRAMES],
                           "exits": [{"key": k.partition(":")[2], **compare(daily([k]))} for k in exits]},

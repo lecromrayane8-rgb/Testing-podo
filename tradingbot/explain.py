@@ -220,6 +220,25 @@ def rule_sentence(p: StrategyParams) -> str:
                   f"{p.zscore_period} bougies : un retour vers la moyenne est attendu{trend}.",
         "heikin": f"Les bougies Heikin-Ashi (lissées) sont vertes {p.heikin_bars} fois de suite après une rouge : la "
                   f"hausse s'installe{trend}.",
+        "fvg": "Le prix est revenu dans une zone à combler (un trou laissé par trois bougies en forte hausse) puis a "
+               f"clôturé au-dessus : les acheteurs ont défendu la zone{trend}.",
+        "order_block": "Le prix est revenu sur la dernière bougie baissière d'avant une envolée (un order block) puis a "
+                       f"clôturé au-dessus{trend}.",
+        "balayage": "La mèche est passée sous le dernier creux marquant, là où dorment les ordres stop, puis la bougie a "
+                    f"clôturé au-dessus : une prise de liquidité{trend}.",
+        "structure": f"Le prix a clôturé au-dessus du dernier sommet marquant : une cassure de structure{trend}.",
+        "avalement": f"Une bougie verte a recouvert la bougie rouge d'avant, au plus bas des {p.pattern_span} dernières "
+                     f"bougies : un avalement haussier{trend}.",
+        "marteau": f"Une bougie a laissé une longue mèche basse au plus bas des {p.pattern_span} dernières bougies : un "
+                   f"marteau, les acheteurs ont repoussé la baisse{trend}.",
+        "interieure": "Après une bougie de pause, contenue dans la précédente, le prix a clôturé au-dessus : la pause se "
+                      f"termine par le haut{trend}.",
+        "divergence": "Le prix a fait un creux plus bas que le précédent, mais pas le RSI : la baisse s'essouffle (une "
+                      f"divergence){trend}.",
+        "fibonacci": f"Après une jambe de hausse, le prix en a reperdu entre {pct(p.fib_low, 0, False)} et "
+                     f"{pct(p.fib_high, 1, False)} puis est reparti : un retracement de Fibonacci{trend}.",
+        "double_creux": "Deux creux au même prix, puis une clôture au-dessus du sommet qui les sépare : un double "
+                        f"creux{trend}.",
     }
     filters = []
     if p.volume_mult:
@@ -240,6 +259,17 @@ FAILURES = {
     "impulsion": "Le mouvement s'est retourné aussitôt.",
     "retour_moyenne": "Le rebond attendu n'est pas venu : la chute a continué.",
     "bollinger": "Le rebond attendu n'est pas venu : la chute a continué.",
+    # la lecture du graphique : des phrases qui valent pour un achat comme pour une vente à découvert
+    "fvg": "La zone à combler n'a pas tenu : le prix l'a traversée.",
+    "order_block": "L'order block n'a pas tenu : le prix l'a traversé.",
+    "balayage": "Ce n'était pas un piège : le prix a continué au-delà du niveau balayé.",
+    "structure": "La cassure de structure était fausse : le prix est revenu en arrière.",
+    "avalement": "La bougie de retournement n'a pas été suivie.",
+    "marteau": "La bougie de retournement n'a pas été suivie.",
+    "interieure": "La sortie de la pause était fausse : le prix est revenu en arrière.",
+    "divergence": "La divergence n'a pas suffi : le mouvement a continué.",
+    "fibonacci": "Le retracement n'était pas une pause : le mouvement s'est retourné.",
+    "double_creux": "La figure a cédé : le prix est reparti dans l'autre sens.",
 }
 SUCCESSES = {
     "support": "Le support a tenu et le prix est remonté vers la résistance.",
@@ -247,6 +277,16 @@ SUCCESSES = {
     "impulsion": "Le mouvement a continué après l'achat.",
     "retour_moyenne": "Le rebond attendu est venu.",
     "bollinger": "Le prix est revenu vers sa moyenne, comme prévu.",
+    "fvg": "La zone à combler a tenu et le prix est reparti.",
+    "order_block": "L'order block a tenu et le prix est reparti.",
+    "balayage": "C'était bien un piège : le prix est reparti dans l'autre sens.",
+    "structure": "La cassure de structure était la bonne : le mouvement a continué.",
+    "avalement": "La bougie de retournement a été suivie.",
+    "marteau": "La bougie de retournement a été suivie.",
+    "interieure": "La sortie de la pause était la bonne.",
+    "divergence": "La divergence annonçait bien un retournement.",
+    "fibonacci": "Le retracement n'était qu'une pause : le mouvement a repris.",
+    "double_creux": "La figure a joué : le prix a continué au-delà de sa ligne de cou.",
 }
 KINDS = {  # étiquette courte de chaque diagnostic
     "gagne": "Scénario réussi", "gain_partiel": "Gagné, une partie rendue", "frais": "Bon sens, mais trop petit",

@@ -12,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from tradingbot import webapp
+from tradingbot.config import parse_dotenv
 from tradingbot.fleet import LOCK_FILE
 from tradingbot.swarm import DETAIL_DIR, settings_from_env
 from tradingbot.webapp import (
@@ -186,6 +187,29 @@ def test_the_securing_switch_is_saved_only_when_it_changes(tmp_path, fake_bot):
     assert "FLOTTE_SECURISATION=non" in (tmp_path / ".env").read_text(encoding="utf-8")
 
 
+@pytest.mark.parametrize("written, choice", [("0", "non"), ("false", "non"), ("OFF", "non"), ("no", "non"),
+                                             ("1", "oui"), ("True", "oui"), ("", "oui"), ("peut-être", "oui")])
+def test_a_switch_written_by_hand_shows_what_the_bots_apply_and_is_not_rewritten(tmp_path, fake_bot, written, choice):
+    """Un fichier .env écrit à la main avec « 0 » ou « false » : les bots lisent « non ». La page doit montrer « non »,
+    et enregistrer le formulaire tel qu'il est affiché ne doit rien changer (défaut trouvé à la relecture de
+    l'étape 1 : la page affichait « oui » et réactivait la sécurisation sans le dire)."""
+    line = f"FLOTTE_SECURISATION={written}\n"
+    s = site(tmp_path, fake_bot, "MODE=paper\n" + line)
+    form = {f["key"]: f for f in s.settings_form(local=True)["fields"]}
+    assert form["FLOTTE_SECURISATION"]["value"] == choice
+    unreadable = written == "peut-être"  # les bots refusent cette ligne : la page propose la valeur par défaut
+    if unreadable:
+        with pytest.raises(ValueError):
+            settings_from_env(parse_dotenv(tmp_path / ".env"))
+    else:
+        assert settings_from_env(parse_dotenv(tmp_path / ".env")).secure == (choice == "oui")
+    saved = s.save_settings({key: f.get("value", "") for key, f in form.items()})
+    assert ("FLOTTE_SECURISATION" in saved["saved"]) == unreadable  # seule une ligne illisible est réécrite : réparée
+    text = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert ("FLOTTE_SECURISATION=oui\n" if unreadable else line) in text  # sinon la ligne écrite à la main n'a pas bougé
+    assert settings_from_env(parse_dotenv(tmp_path / ".env")).secure == (choice == "oui")
+
+
 def test_changing_the_bots_settings_restarts_them(tmp_path, fake_bot):
     s = site(tmp_path, fake_bot)
     s.tasks.env["FAKE_SLEEP"] = "60"
@@ -274,6 +298,8 @@ def test_the_site_serves_its_page_and_only_obeys_its_own_page(server):
     # étape 1 : la sécurisation des gains comparée avec et sans, les bots endormis, les zones du graphique
     assert "Sécurisation des gains : avec ou sans ?" in page and 'id="secure-rows"' in page
     assert "'Endormis'" in page and "seuil de sécurisation" in page and "zone du risque" in page
+    assert "zone-up" in page and "rectangle : " in page  # la zone qu'une lecture du graphique attend, en rectangle
+    assert "la mesure « avec » est repartie de zéro" in page  # la comparaison dit depuis quand elle compare
     assert "gagnant sur 3 périodes" not in page and "trois périodes" not in page  # le test final ne choisit plus
     for gone in ("Radar des mouvements", "Mes essais", "Labos", "Mon trader", "Tableau de bord"):
         assert gone not in page  # retirés du site

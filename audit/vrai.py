@@ -41,9 +41,10 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tradingbot.data import fetch_history, make_exchange, timeframe_to_ms  # noqa: E402
-from tradingbot.fleet import tf_label  # noqa: E402
+from tradingbot.fleet import technique, tf_label  # noqa: E402
 from tradingbot.risk import clustered_bounds, paired_bounds  # noqa: E402
 from tradingbot.scanner import liquid_markets, tradable  # noqa: E402
+from tradingbot.strategy import PATTERN_FAMILIES  # noqa: E402
 from tradingbot.swarm import (  # noqa: E402
     MIN_VOLUME, SAFE, TEST_DAYS, TIMEFRAMES, SwarmSettings, merge_record, new_record, retest_coin,
 )
@@ -229,6 +230,15 @@ def trial_report(stats: dict, live: str) -> dict:
         r["proven"] = bool(r["days"] >= 7 and r["n"] >= 30 and math.isfinite(hard) and hard > 0)
         r["failed"] = bool(r["days"] >= 7 and r["n"] >= 30 and r["hi"] is not None and r["hi"] < 0)
     report["strategies"] = sorted(rows, key=lambda r: -r["mean"])
+    names = []  # chaque technique, toutes unités réunies : ce qui ressort, et ce que valent les lectures du graphique
+    for key in family("technique:"):
+        m = measure(stats.get(prefix + key))
+        if m["n"]:
+            name = key.partition(":")[2]
+            names.append({"key": name, "reading": technique(name).strategy_type in PATTERN_FAMILIES, **m})
+    report["techniques"] = sorted(names, key=lambda r: -r["mean"])
+    report["readings"] = gap(stats, [f"technique:{r['key']}" for r in names if r["reading"]])
+    report["others"] = gap(stats, [f"technique:{r['key']}" for r in names if not r["reading"]])
     return report
 
 
@@ -263,6 +273,14 @@ def print_trial(report: dict) -> None:
         print(title + " :")
         for r in part:
             print(show(r["key"].replace("|", " · "), r))
+    if report.get("techniques"):
+        print(f"\nPAR TECHNIQUE, toutes unités réunies ({len(report['techniques'])}, de la meilleure à la pire ; "
+              "* = lecture du graphique)")
+        for r in report["techniques"]:
+            print(show(("* " if r["reading"] else "  ") + r["key"], r))
+        if report["readings"][live]["n"]:
+            print(show("Les lectures du graphique réunies", report["readings"][live]))
+            print(show("Les autres techniques réunies", report["others"][live]))
 
 
 def final_report(results: list[dict]) -> dict:
@@ -310,7 +328,7 @@ def essai(args) -> None:
     cache = Path(args.cache)
     ex = exchange()
     ex.load_markets()
-    end = ex.fetch_time() // HOUR * HOUR
+    end = (args.fin or ex.fetch_time()) // HOUR * HOUR  # --fin : rejouer exactement une période déjà mesurée
     start = end - args.jours * DAY
     settings = SwarmSettings(coins=args.cryptos)
     print(f"Univers reconstitué du {pd.to_datetime(start, unit='ms')} au {pd.to_datetime(end, unit='ms')} (UTC)", flush=True)
@@ -387,6 +405,7 @@ def main() -> None:
         p.add_argument("--telecharger", action="store_true", help="remplir le cache sans lancer le calcul")
         if name == "essai":
             p.add_argument("--jours", type=int, default=14, help="jours rejoués")
+            p.add_argument("--fin", type=int, default=0, help="fin de la période, en millisecondes (défaut : maintenant)")
     args = parser.parse_args()
     (essai if args.mesure == "essai" else aujourdhui)(args)
 

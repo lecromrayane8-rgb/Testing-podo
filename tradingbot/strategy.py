@@ -1,4 +1,4 @@
-"""Stratégies : onze familles de règles, avec les mêmes signaux en backtest et en direct.
+"""Stratégies : trente familles de règles, avec les mêmes signaux en backtest et en direct.
 
 Acheter un repli (retour à la moyenne) :
 - retour_moyenne : RSI court survendu dans une tendance haussière ; revend au rebond
@@ -37,6 +37,19 @@ D'autres outils de traders (ajoutés pour l'essaim de bots, réglages classiques
 - zscore : la clôture tombe à plus de k écarts-types sous sa moyenne ; revend au retour sur la moyenne ;
 - heikin : les bougies Heikin-Ashi (lissées) deviennent vertes N fois de suite ; revend à la première rouge.
 
+La lecture du graphique (tradingbot/patterns.py : ce que les traders tracent à la main, défini une fois pour toutes) :
+- fvg : le prix revient dans une zone à combler (un trou laissé par trois bougies) puis clôture au-dessus ;
+- order_block : le prix revient sur la dernière bougie baissière d'avant une envolée, puis clôture au-dessus ;
+- balayage : la mèche passe sous le dernier creux marquant (prise de liquidité), puis la bougie clôture au-dessus ;
+- structure : la clôture dépasse le dernier sommet marquant (cassure de structure) ; revend sous le dernier creux ;
+- avalement, marteau : la bougie de retournement, au plus bas des dernières bougies ;
+- interieure : une bougie contenue dans la précédente, puis une clôture au-dessus de celle-ci ;
+- divergence : le prix fait un creux plus bas, pas le RSI ;
+- fibonacci : après une jambe de hausse, le prix en reperd entre 50 % et 61,8 % et repart ;
+- double_creux : deux creux au même prix, puis une clôture au-dessus du sommet qui les sépare.
+Sauf la cassure de structure, elles revendent quand le rebond s'essouffle (clôture sous le plus bas des M bougies
+précédentes).
+
 Pour toutes : stop-loss à k × ATR sous le prix d'achat, stop temporel optionnel (0 = aucun),
 filtre de tendance optionnel (clôture au-dessus de la moyenne longue, 0 = aucun filtre).
 Filtres optionnels d'achat, surtout utiles en très court terme où les frais pèsent lourd :
@@ -55,20 +68,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 from .indicators import (
     adx, atr, bollinger, ema, heikin_ashi, ichimoku, macd, parabolic_sar, rolling_vwap, rsi, sma, stochastic, supertrend,
 )
+from . import patterns
 from .levels import level_series
 
 STRATEGY_TYPES = (
     "retour_moyenne", "bollinger", "cassure", "bollinger_cassure", "croisement", "macd", "momentum", "supertrend",
     "impulsion", "support", "resistance",
     "ema_croisement", "vwap", "stochastique", "keltner", "adx", "psar", "ichimoku", "zscore", "heikin",
+    "fvg", "order_block", "balayage", "structure", "avalement", "marteau", "interieure", "divergence", "fibonacci",
+    "double_creux",
 )
 MEAN_REVERSION = ("retour_moyenne", "bollinger", "stochastique", "zscore")
 LEVEL_FAMILIES = ("support", "resistance")
+# La lecture du graphique (tradingbot/patterns.py) : zones, structure, bougies de retournement, figures.
+PATTERN_FAMILIES = ("fvg", "order_block", "balayage", "structure", "avalement", "marteau", "interieure", "divergence",
+                    "fibonacci", "double_creux")
 
 
 @dataclass(frozen=True)
@@ -124,6 +144,20 @@ class StrategyParams:
     zscore_period: int = 20
     zscore_entry: float = 2.0
     heikin_bars: int = 2
+    # La lecture du graphique : des définitions de manuel, fixées d'avance (jamais ajustées sur les données).
+    swing_lookback: int = 60  # un sommet ou un creux marquant compte pendant 60 bougies
+    zone_valid: int = 30  # une zone (à combler, order block, retracement, double creux) attend le prix 30 bougies
+    gap_min_atr: float = 0.25  # zone à combler : au moins un quart de la taille moyenne d'une bougie
+    surge_bars: int = 3  # order block : une envolée d'au moins surge_atr fois la bougie moyenne en 3 bougies
+    surge_atr: float = 2.0
+    pattern_span: int = 10  # avalement, marteau : au plus bas des 10 dernières bougies
+    wick_ratio: float = 2.0  # marteau : la mèche basse vaut au moins 2 fois le corps
+    divergence_period: int = 14  # divergence : le RSI classique, sur 14 bougies
+    divergence_weak: float = 40.0  # et il était sous 40 au premier creux
+    fib_low: float = 0.5  # retracement : entre 50 % et 61,8 % de la jambe
+    fib_high: float = 0.618
+    leg_min_atr: float = 3.0  # une jambe d'au moins 3 fois la taille moyenne d'une bougie
+    double_tol: float = 0.5  # double creux : deux creux à moins d'une demi-bougie moyenne l'un de l'autre
 
     def __post_init__(self):
         if self.strategy_type not in STRATEGY_TYPES:
@@ -163,6 +197,11 @@ class StrategyParams:
             raise ValueError("PSAR_STEP doit être positif et au plus PSAR_MAX (< 1)")
         if not 1 <= self.ichi_tenkan < self.ichi_kijun < self.ichi_senkou:
             raise ValueError("ICHI_TENKAN < ICHI_KIJUN < ICHI_SENKOU")
+        if min(self.swing_lookback, self.zone_valid, self.surge_bars, self.pattern_span, self.divergence_period) < 2 \
+                or min(self.gap_min_atr, self.surge_atr, self.wick_ratio, self.leg_min_atr, self.double_tol) <= 0 \
+                or not 0 < self.fib_low < self.fib_high < 1 or not 0 < self.divergence_weak < 100:
+            raise ValueError("Réglages de la lecture du graphique impossibles (périodes >= 2, seuils positifs, "
+                             "FIB_LOW < FIB_HIGH entre 0 et 1)")
 
     @property
     def warmup_bars(self) -> int:
@@ -187,7 +226,9 @@ class StrategyParams:
             "ichimoku": [self.ichi_senkou + self.ichi_kijun + 2],
             "zscore": [self.zscore_period + 2],
             "heikin": [self.heikin_bars + 10],
-        }[self.strategy_type]
+        }.get(self.strategy_type) or [  # la lecture du graphique : sommets, creux et zones des dernières bougies
+            self.swing_lookback + self.zone_valid + 2 * self.level_window + self.atr_period + 2,
+            self.breakout_exit_period + 1, 5 * self.divergence_period]
         volume = [self.volume_period] if self.volume_mult else []
         squeeze = [self.bb_period + self.squeeze_period + 1] if self.squeeze_quantile else []
         return max([self.atr_period, self.trend_period, *volume, *squeeze, *periods]) + 1
@@ -215,6 +256,10 @@ class StrategyParams:
             return "suracheté"
         if self.strategy_type == "zscore":
             return "retour à la moyenne"
+        if self.strategy_type == "structure":
+            return "retour sous le dernier creux"
+        if self.strategy_type in PATTERN_FAMILIES:
+            return "essoufflement"
         return "rebond" if self.strategy_type in MEAN_REVERSION else "fin de tendance"
 
 
@@ -309,6 +354,8 @@ def compute_signals(df: pd.DataFrame, p: StrategyParams) -> pd.DataFrame:
         streak = green.rolling(p.heikin_bars, min_periods=p.heikin_bars).sum() == p.heikin_bars
         entry = streak & ~green.shift(p.heikin_bars, fill_value=True)
         exit_ = ~green
+    elif t in PATTERN_FAMILIES:
+        entry, exit_ = _pattern_signals(out, p)
     elif t == "impulsion":
         # Seulement la bougie où le mouvement apparaît : pas de rachat à chaque bougie d'une même envolée.
         rise = close / close.shift(p.impulse_bars) - 1
@@ -337,6 +384,60 @@ def compute_signals(df: pd.DataFrame, p: StrategyParams) -> pd.DataFrame:
     out["entry"] = (entry & trend_ok & valid).fillna(False).astype(bool)
     out["exit"] = exit_.fillna(False).astype(bool)
     return out
+
+
+def pattern_marks(df: pd.DataFrame, p: StrategyParams) -> dict[str, np.ndarray]:
+    """Ce qu'une technique de lecture du graphique regarde, bougie par bougie, pour le dessiner : `top` et `bottom`
+    (dernier sommet et dernier creux marquants), `zone_top` et `zone_bottom` (la zone attendue). Calculé par le code
+    qui donne les signaux : le graphique montre ce que le bot a vu."""
+    out = df.copy()
+    out["atr"] = atr(out, p.atr_period)
+    marks: dict[str, np.ndarray] = {}
+    _pattern_signals(out, p, marks)
+    return marks
+
+
+def _pattern_signals(out: pd.DataFrame, p: StrategyParams, marks: dict | None = None) -> tuple[pd.Series, pd.Series]:
+    """La lecture du graphique (tradingbot/patterns.py). Sortie commune, sauf pour la cassure de structure : le rebond
+    s'essouffle (clôture sous le plus bas des `breakout_exit_period` bougies précédentes)."""
+    t = p.strategy_type
+    high, low, open_, close = (out[k].to_numpy(float) for k in ("high", "low", "open", "close"))
+    size = out["atr"].to_numpy(float)
+    track = None
+    if marks is not None:
+        if t in ("structure", "balayage"):
+            marks["top"], marks["bottom"] = patterns.known_swings(high, low, p.level_window, p.swing_lookback)
+        elif t in ("fvg", "order_block", "fibonacci"):
+            track = marks["zone_top"], marks["zone_bottom"] = np.full(len(out), np.nan), np.full(len(out), np.nan)
+    if t == "structure":
+        entry, exit_ = patterns.structure_break(high, low, close, p.level_window, p.swing_lookback)
+        return pd.Series(entry, index=out.index), pd.Series(exit_, index=out.index)
+    if t == "balayage":
+        entry = patterns.liquidity_sweep(high, low, open_, close, p.level_window, p.swing_lookback)
+    elif t == "avalement":
+        entry = patterns.engulfing(high, low, open_, close, p.pattern_span)
+    elif t == "marteau":
+        entry = patterns.hammer(high, low, open_, close, size, p.pattern_span, p.wick_ratio)
+    elif t == "interieure":
+        entry = patterns.inside_break(high, low, close)
+    elif t == "divergence":
+        strength = rsi(out["close"], p.divergence_period).to_numpy(float)
+        entry = patterns.rsi_divergence(low, strength, p.level_window, p.swing_lookback, p.divergence_weak)
+    elif t == "double_creux":
+        entry = patterns.double_bottom(high, low, close, size, p.level_window, p.swing_lookback, p.double_tol,
+                                       p.zone_valid)
+    else:
+        if t == "fvg":
+            top, bottom = patterns.fair_value_gaps(high, low, size, p.gap_min_atr)
+        elif t == "order_block":
+            top, bottom = patterns.order_blocks(high, low, open_, close, size, p.surge_bars, p.surge_atr)
+        else:
+            top, bottom = patterns.fib_zones(high, low, size, p.level_window, p.swing_lookback, p.fib_low,
+                                             p.fib_high, p.leg_min_atr)
+        entry = patterns.zone_retest(low, open_, close, top, bottom, p.zone_valid,
+                                     "bottom" if t == "fibonacci" else "top", track)
+    lower = out["low"].rolling(p.breakout_exit_period, min_periods=p.breakout_exit_period).min().shift(1)
+    return pd.Series(entry, index=out.index), out["close"] < lower
 
 
 def exit_reason(exit_signal: bool, bars_held: int, p: StrategyParams) -> str | None:

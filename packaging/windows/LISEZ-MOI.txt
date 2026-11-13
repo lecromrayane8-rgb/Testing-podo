@@ -17,10 +17,12 @@ TES BOTS (argent fictif, en continu)
    moins 5 M$ échangés par jour, sans monnaies stables). Une crypto trop calme (moins de 3 % d'écart
    entre son plus haut et son plus bas du jour) passe en veille : ses bots n'ouvrent plus de trade.
 2. Le labo en direct : chaque crypto est testée dès qu'elle entre dans la liste, puis toutes les 3
-   heures : 39 techniques (RSI, Bollinger, cassures, moyennes mobiles, MACD, momentum, Supertrend,
+   heures : 51 techniques (RSI, Bollinger, cassures, moyennes mobiles, MACD, momentum, Supertrend,
    supports et résistances, impulsions, EMA 9/21, VWAP, stochastique, Keltner, ADX, Parabolic SAR,
-   Ichimoku, Heikin-Ashi...), à l'achat et à la vente à découvert, avec trois façons de sortir (par
-   la règle, objectif 2R, stop suiveur), en bougies de 1 min à 4 h : 1170 combinaisons par crypto,
+   Ichimoku, Heikin-Ashi... et la lecture du graphique : zones à combler, order blocks, prises de
+   liquidité, cassures de structure, avalement, marteau, bougie intérieure, divergence du RSI,
+   retracement de Fibonacci, double creux), à l'achat et à la vente à découvert, avec trois façons de
+   sortir (par la règle, objectif 2R, stop suiveur), en bougies de 1 min à 4 h : 1530 combinaisons par crypto,
    chacune calculée deux fois (sans et avec la sécurisation des gains), sur l'historique récent, frais
    compris. Une combinaison peut devenir un bot
    si elle gagne sur l'étude et la validation (les premiers 80 % de cet historique). Les derniers 20 %,
@@ -42,7 +44,7 @@ TES BOTS (argent fictif, en continu)
    (tendance de fond, volatilité, RSI, volume, heure), ses chances de gain estimées maintenant, et
    pourquoi chaque trade a gagné ou perdu. Ce sont des mesures : un bot n'entre que sur sa règle.
 5. La mesure à l'essai : à chaque test d'une crypto, les trades de TOUTES les combinaisons sont
-   comptés, pas seulement ceux des bots choisis : jusqu'à 70 200 « bots à l'essai » (60 cryptos × 1170
+   comptés, pas seulement ceux des bots choisis : jusqu'à 91 800 « bots à l'essai » (60 cryptos × 1530
    combinaisons), chacun mesuré sans et avec la sécurisation. Rien n'est choisi d'avance, donc la
    chance ne peut pas embellir cette mesure. C'est
    elle qui juge les stratégies. Compte une demi-heure à une heure avant les premiers trades comptés,
@@ -76,7 +78,7 @@ LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordina
 - Actualité : les derniers titres crypto, ce que le prix des cryptos citées a fait depuis, et
   l'indice peur et avidité. Pour comprendre : les bots ne tradent jamais sur les titres.
 - Prix : les vrais prix de Binance, OKX, Kraken, Coinbase et Bybit côte à côte.
-Sous « Plus » : l'École (treize leçons courtes avec un mini-quiz), les Réglages (nombre de cryptos,
+Sous « Plus » : l'École (quatorze leçons courtes avec un mini-quiz), les Réglages (nombre de cryptos,
 de bots, leviers, capital fictif, Telegram) et le Journal (ce que disent les bots, en direct).
 Le bouton « Arrêter les bots » est sur l'écran Direct ; « Lancer les bots » les relance. Le mode
 (testnet, réel) et les clés API ne se changent que dans le fichier .env : le site ne passe jamais en

@@ -61,8 +61,10 @@ relance les bots tout seul toutes les 20 secondes s'ils s'arrêtent, sauf si l'u
 1. Toutes les 10 minutes, les N cryptos USDT les plus agitées sur 24 h (au moins 5 M$ échangés par jour, sans monnaies
    stables). Sous `FLOTTE_MOUVEMENT_MIN` d'amplitude (3 % par défaut), une crypto passe en veille : ses bots n'ouvrent
    plus de trade et gèrent ceux en cours.
-2. Chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures : 39 techniques × 2 sens × 3
-   façons de sortir (par la règle, objectif 2R, stop suiveur) × 5 unités (1 min à 4 h) = 1170 combinaisons, chacune
+2. Chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures : 51 techniques (39 à base
+   d'indicateurs, 12 de lecture du graphique : zones à combler, order blocks, prises de liquidité, structure, bougies
+   de retournement, divergence, Fibonacci, double creux) × 2 sens × 3
+   façons de sortir (par la règle, objectif 2R, stop suiveur) × 5 unités (1 min à 4 h) = 1530 combinaisons, chacune
    simulée sans et avec la sécurisation des gains (`FLOTTE_SECURISATION`, `_SEUIL` en R, `_PART` en % : au seuil, une
    part de la position est encaissée et le stop du reste passe au prix d'entrée, frais compris), sur l'historique
    récent, frais des contrats à terme compris. Une combinaison peut devenir un bot

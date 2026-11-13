@@ -919,7 +919,9 @@ JS = r"""
     if (box.hidden) return;
     const t = sec.trial || {}, f = sec.final || {};
     $('#secure-intro').textContent = typo((sec.on ? 'Tes bots sécurisent leurs gains ' : 'Tes bots ne sécurisent pas leurs gains ; le labo mesure quand même la sécurisation ')
-      + secureText(sec.r, sec.part) + '. Le labo fait tourner chaque combinaison deux fois, sans et avec, sur les mêmes bougies.');
+      + secureText(sec.r, sec.part) + '. Le labo fait tourner chaque combinaison deux fois, sans et avec, sur les mêmes bougies.'
+      + (t.since ? ' La comparaison à l\'essai ne compte que les journées d\'après le ' + dayLabel(Date.parse(t.since))
+        + ' : ce jour-là, la mesure « avec » est repartie de zéro (réglage changé ou nouvelle version).' : ''));
     const trades = c => c && c.sans && c.sans.n ? thousands(c.sans.n) + ' trades sans, ' + thousands(c.avec.n) + ' avec' : '';
     const rows = [
       secureRow('Test final, combinaisons que le labo peut choisir', (f.coins || 0) + ' cryptos · ' + trades(f.eligible), f.eligible),
@@ -1336,7 +1338,9 @@ JS = r"""
     const out = [item('', 'var(--up)', 'hausse'), item('', 'var(--down)', 'baisse'), el('span', {text: 'barres du bas : le volume'})];
     const bands = new Set();
     for (const ln of d.lines || []) {
-      if (ln.dash && /-(up|low)$|^span-|^psar$|^out$/.test(ln.key)) {
+      if (/^zone-/.test(ln.key)) {  // une zone attendue : un rectangle sur le graphique, une seule entrée ici
+        if (ln.key === 'zone-up') out.push(item('', ln.color, 'rectangle : ' + ln.label.replace(' (bord haut)', '') + ' que le bot attend'));
+      } else if (ln.dash && /-(up|low)$|^span-|^psar$|^out$/.test(ln.key)) {
         const name = /^span-/.test(ln.key) ? 'le nuage (pointillés)' : /^(psar|out)$/.test(ln.key) ? ln.label + ' (pointillés)' : 'les bandes (pointillés)';
         if (!bands.has(name)) { bands.add(name); out.push(item('line', ln.color, name, true)); }
       } else out.push(item('line', ln.color, ln.label));
@@ -1442,7 +1446,25 @@ JS = r"""
         const top = Math.max(MT, Y(Math.max(bd.from, bd.to))), bottom = Math.min(PB, Y(Math.min(bd.from, bd.to)));
         if (bottom > top && W - MR > x0) root.append(svg('rect', {x: x0, width: W - MR - x0, y: top, height: bottom - top, fill: bd.color, opacity: 0.1}));
       }
+      const zoneUp = (o.lines || []).find(l => l.key === 'zone-up'), zoneLow = (o.lines || []).find(l => l.key === 'zone-low');
+      if (zoneUp && zoneLow) {  // la zone qu'une lecture du graphique attend : un rectangle, comme un trader la trace
+        let s = null;
+        const box = e => {
+          if (s === null) return;
+          const top = Y(zoneUp.values[s]), bottom = Y(zoneLow.values[s]);
+          root.append(svg('rect', {x: X(s) - slot / 2, width: X(e) - X(s) + slot, y: top, height: Math.max(2, bottom - top),
+            fill: zoneUp.color, 'fill-opacity': 0.3, stroke: zoneUp.color, 'stroke-width': 1, 'stroke-opacity': 0.9}));
+          s = null;
+        };
+        for (let i = a; i <= b; i++) {
+          const u = zoneUp.values[i], l = zoneLow.values[i], on = near(u) && near(l);
+          if (s !== null && (!on || u !== zoneUp.values[s] || l !== zoneLow.values[s])) box(i - 1);
+          if (on && s === null) s = i;
+        }
+        box(b);
+      }
       for (const ln of o.lines || []) {
+        if (zoneUp && zoneLow && /^zone-/.test(ln.key)) continue;  // dessinée en rectangle juste au-dessus
         let pts = [];
         const flush = () => { if (pts.length > 1) root.append(svg('polyline', {points: pts.join(' '), class: 'line', stroke: ln.color,
           'stroke-dasharray': ln.dash ? '5 4' : null, opacity: ln.dash ? 0.8 : null})); pts = []; };

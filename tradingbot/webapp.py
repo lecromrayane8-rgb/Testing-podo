@@ -478,6 +478,18 @@ FIELDS = (
 FIELD_KEYS = {f.key: f for f in FIELDS}
 
 
+def switch_value(field: Field, raw: str | None) -> str | None:
+    """Le choix d'une case oui/non tel que les bots le lisent : « oui » ou « non », quelle que soit l'écriture du
+    fichier .env (0, false, off, no… valent « non ») ; la valeur par défaut si la ligne est vide. None si elle est
+    illisible : les bots la refusent, et n'importe quel choix enregistré depuis le site la répare."""
+    if not str(raw or "").strip():
+        return field.default
+    try:
+        return clean_value(field, raw)
+    except ValueError:
+        return None
+
+
 def clean_value(field: Field, raw: str) -> str:
     """Valeur vérifiée, prête pour .env ; ValueError avec une explication sinon."""
     value = " ".join(str(raw).split())  # jamais de retour à la ligne : une ligne de .env par réglage
@@ -938,8 +950,8 @@ class Site:
             item = {"key": f.key, "title": f.title, "help": f.help, "kind": f.kind, "default": f.default}
             if f.kind == "secret":
                 item["set"] = bool(current)  # jamais renvoyé : un token ne s'affiche pas sur une page
-            else:
-                item["value"] = current
+            else:  # une case oui/non : le choix que les bots appliquent, pas le texte brut (« 0 » se lit « non »)
+                item["value"] = (switch_value(f, current) or f.default) if f.kind == "switch" else current
             fields.append(item)
         mode = settings.mode if settings else values.get("MODE", "paper")
         return {"fields": fields, "mode": mode, "mode_label": MODE_LABELS.get(mode, mode), "local": local,
@@ -955,7 +967,7 @@ class Site:
             if not str(raw).strip() and field.kind in ("secret", "money", "fee", "exchange", "number", "count", "switch"):
                 continue  # vide : on garde la valeur actuelle (le token enregistré, ou la valeur par défaut)
             value = clean_value(field, raw)
-            if field.kind == "switch" and value == (current.get(key) or field.default).strip().lower():
+            if field.kind == "switch" and value == switch_value(field, current.get(key)):
                 continue  # une liste envoie toujours son choix : inchangé, on n'écrit rien (et les bots ne redémarrent pas)
             cleaned[key] = value
         if not self.env_path.exists() and (self.root / ".env.example").exists():

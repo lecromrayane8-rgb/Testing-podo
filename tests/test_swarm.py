@@ -1105,6 +1105,56 @@ def test_the_site_compares_securing_on_the_same_days_and_the_same_coins(random_w
     assert off.summary()["secure"]["on"] is False and off.summary()["secure"]["trial"]["total"]["diff"] == pytest.approx(0.00045)
 
 
+def test_after_a_settings_change_with_and_without_are_compared_on_the_same_days(tmp_path, random_walk):
+    """Quand le seuil change, « avec » repart de zéro mais « sans » garde ses 30 jours. Comparer ses anciennes
+    journées aux nouvelles de « avec » comparerait deux marchés différents : la comparaison repart du lendemain, sur
+    des journées mesurées en entier par les deux (défaut trouvé à la relecture de l'étape 1)."""
+    market = FakeMarket({"X/USDT": random_walk})
+    market.i = 400
+    swarm = make_swarm(market, tmp_path)
+    assert "secure_since" not in swarm.trial  # une installation neuve : les deux mesures démarrent ensemble
+    plain = [-0.004] * 7 + [0.010]  # sans : sept mauvaises journées, puis une très bonne (aujourd'hui)
+    measured(swarm, "EMA 9/21", plain, variant="sans")
+    measured(swarm, "EMA 9/21", [m + 0.0001 for m in plain], variant="avec")  # avec : +0,01 % de mieux chaque jour
+    before = swarm.summary()["secure"]["trial"]
+    assert before["since"] is None and before["total"]["groups"] == 8
+    assert before["total"]["diff"] == pytest.approx(0.0001)
+    swarm.save()
+    today = swarm_module._iso(market.now_ms())[:10]
+    again = make_swarm(market, tmp_path, settings=SwarmSettings(secure_r=1.5))  # seuil changé : « avec » repart de zéro
+    assert again.trial["secure_since"] == today
+    measured(again, "EMA 9/21", [0.0101], variant="avec")  # la fin de la journée du changement, pour « avec » seulement
+    total = again.summary()["secure"]["trial"]["total"]
+    assert again.summary()["secure"]["trial"]["since"] == today
+    assert total["groups"] == 0 and total["diff"] is None  # rien de comparable : surtout pas « +1,2 %, mieux avec »
+    assert total["sans"]["n"] == total["avec"]["n"] == 0
+    assert again.trial["stats"]["unite:1h"]["n"] == 320  # la mesure « sans » elle-même garde ses journées
+    market.i += 24  # le lendemain : une journée entière, mesurée par les deux
+    measured(again, "EMA 9/21", [0.0020], variant="sans")
+    measured(again, "EMA 9/21", [0.0021], variant="avec")
+    trial = again.summary()["secure"]["trial"]
+    assert trial["total"]["groups"] == 1 and trial["total"]["sans"]["n"] == trial["total"]["avec"]["n"] == 40
+    assert trial["total"]["diff"] == pytest.approx(0.0001)
+    assert trial["units"][3]["key"] == "1h" and trial["units"][3]["sans"]["n"] == 40  # même règle pour chaque ligne
+    again.save()
+    assert make_swarm(market, tmp_path, settings=SwarmSettings(secure_r=1.5)).trial["secure_since"] == today  # gardé
+
+
+def test_a_measure_from_the_version_before_is_not_compared_with_the_new_one(tmp_path, random_walk):
+    """Le fichier d'essais d'avant la sécurisation n'a que des lignes « sans » (et pas de réglage noté) : ses journées
+    ne se comparent pas à celles de « avec », qui commence aujourd'hui."""
+    market = FakeMarket({"X/USDT": random_walk})
+    market.i = 400
+    swarm = make_swarm(market, tmp_path)
+    measured(swarm, "EMA 9/21", [0.001] * 5, variant="sans")
+    del swarm.trial["secure"]
+    swarm.trial_dirty = True
+    swarm.save()
+    again = make_swarm(market, tmp_path)
+    assert again.trial["secure_since"] == swarm_module._iso(market.now_ms())[:10]
+    assert again.summary()["secure"]["trial"]["total"]["groups"] == 0
+
+
 def test_changing_the_securing_settings_updates_every_bot_and_restarts_its_measure(tmp_path, random_walk):
     """La sécurisation est un réglage commun : au redémarrage, chaque bot le reçoit. Une position déjà ouverte garde
     le seuil de son ouverture. Et si le seuil ou la part changent, la mesure « avec » repart de zéro."""

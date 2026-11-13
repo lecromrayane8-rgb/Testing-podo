@@ -78,8 +78,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   position passent `endormi` : compte gardé, ni bougies ni prix demandés (`cycle` les saute), hors `max_bots` et hors
   rotation des fichiers ; au retour de la crypto, réveil (`last_ts` None, `woke` : aucune entrée sur une bougie finie
   avant le réveil, rien de rejoué) ; arrêt après `ASLEEP_DAYS` = 30 jours ou au-delà de `MAX_ASLEEP` = 1000.
-  `retest_coin` : `LIBRARY` (39 techniques) × `SIDES` × `fleet.EXITS` (règle, 2R, stop suiveur) × `TIMEFRAMES` (1m à
-  4h) = 1170 combinaisons, chacune simulée deux fois (`VARIANTS` : sans et avec la sécurisation des gains ; la
+  `retest_coin` : `LIBRARY` (51 techniques : 39 à base d'indicateurs, 12 de lecture du graphique) × `SIDES` ×
+  `fleet.EXITS` (règle, 2R, stop suiveur) × `TIMEFRAMES` (1m à 4h) = 1530 combinaisons, chacune simulée deux fois (`VARIANTS` : sans et avec la sécurisation des gains ; la
   variante des bots fournit les lignes qui choisissent ; `secure` = le test final des deux, pour toutes les
   combinaisons et pour les éligibles ; les bots d'avant en `securise` sont simulés à part), `_eligible` (étude et
   validation positives,
@@ -98,7 +98,9 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   trades : `recalee` si le haut à 95 % < 0, `prouvee` si le bas durci par Bonferroni > 0), `verdicts`,
   `_judge_strategies` (annonce ; bots d'une recalée en `sortie`, repris si le verdict est levé), `_secure_summary`
   (avec − sans : à l'essai par journées, sur le test final par cryptos, `risk.paired_bounds`), `_apply_security` (au
-  démarrage : chaque fiche reçoit le réglage ; seuil ou part changés → la mesure « avec » repart de zéro). Classement en direct, à part : `_learn` (chaque trade fini d'un bot, net
+  démarrage : chaque fiche reçoit le réglage ; seuil ou part changés → la mesure « avec » repart de zéro, et
+  `trial["secure_since"]` note ce jour : la comparaison avec/sans ne prend que les journées d'après, mesurées en
+  entier par les deux). Classement en direct, à part : `_learn` (chaque trade fini d'un bot, net
   sans levier, mêmes lignes `stat_keys`, jours gardés `LIVE_DAYS`), `ranking` (site ; le verdict affiché vient de la
   mesure à l'essai). Agents : `features` (tendance MM200 et
   pente, ATR %, RSI 14, volume, heure UTC), `buckets`, `profile`, `insights`, `probability` (tirée vers la moyenne,
@@ -114,7 +116,10 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   course sans arrêt, trades à l'essai comptés une seule fois quel que soit le nombre de tests, verdicts par journées,
   comparaison avec/sans refaite à la main, sommeil et réveil d'un bot.
 - `tradingbot/fleet.py` : le moteur commun au backtest et au direct. `technique` (`lab.ALL_VARIANTS` + `EXTRA` : EMA,
-  VWAP, stochastique, Keltner, ADX, Parabolic SAR, Ichimoku, écart à la moyenne, Heikin-Ashi), `Spec` = crypto, unité,
+  VWAP, stochastique, Keltner, ADX, Parabolic SAR, Ichimoku, écart à la moyenne, Heikin-Ashi, et les douze lectures
+  du graphique : « Zone à combler (FVG) » et « Order block » avec ou sans MM200, « Prise de liquidité », « Cassure de
+  structure », « Avalement », « Marteau », « Bougie intérieure », « Divergence RSI », « Retracement de Fibonacci »,
+  « Double creux » ; `_ZONE` = stop à 2 ATR, 48 bougies au plus), `Spec` = crypto, unité,
   technique, sens (`long`, ou `short` = même règle sur le graphique retourné, `mirror`), objectif (`target_r` 0 ou 2R),
   levier, `stop_mode` (`fixe` ; `suiveur` : à la distance du départ du meilleur prix ; `securise` : l'ancienne
   sortie, gardée pour les bots d'avant ; décidé à la clôture dans `_move_stop`, compte dès la bougie suivante, ne
@@ -159,6 +164,16 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   ni à CONFIRM_LIVE_TRADING, ni à MAX_CAPITAL. Sécurité : 127.0.0.1, en-tête `X-Demande` exigé pour toute action et
   pour les graphiques et l'actualité, contrôle de Host et d'Origin ; `--ipad` ouvre au Wi-Fi avec un code à 6 chiffres
   (`data/site-code.txt`, cookie). Page vérifiée à 1280, 820 et 390 px (démo : plateforme fictive, 96 bots).
+- `tradingbot/patterns.py` (13/11/2026) : la lecture du graphique écrite comme des règles, une définition de manuel
+  par figure, fixée d'avance. `last_swings`/`known_swings` (dernier sommet et dernier creux marquants : pivots de
+  `levels.pivot_points`, connus `window` bougies plus tard, oubliés après `lookback`), `structure_break`,
+  `liquidity_sweep`, `engulfing`, `hammer`, `inside_break`, `rsi_divergence`, `double_bottom`, `fair_value_gaps`,
+  `order_blocks`, `fib_zones` (les bords de la zone née à chaque bougie) et `zone_retest` (une zone attend le prix
+  `valid` bougies, la plus récente remplace l'ancienne, meurt si une clôture passe sous son bas, ne sert qu'une
+  fois ; `track` = la zone attendue, pour le graphique). Trois garanties testées (`tests/test_patterns.py`) : aucun
+  regard vers le futur (signaux inchangés quand on ajoute des bougies), mémoire courte (la fenêtre du direct voit ce
+  que voit le backtest), la vente à découvert lit la même figure sur le graphique retourné. Garde-fou : sur un marché
+  sans avantage, rien avant frais.
 - `tradingbot/levels.py` : supports et résistances comme un trader les trace : pivots (plus haut ou plus bas de
   `window` bougies de chaque côté, connus `window` bougies plus tard), zones regroupées (écart < `tol_mult` × taille
   moyenne d'une bougie, `candle_size` = moyenne simple du true range : pas d'EMA, donc identique sur la fenêtre du
@@ -176,7 +191,7 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   heure (`run(refresh=)`), explications à l'entrée et diagnostic à la sortie. `replay` (`trader --rejouer`,
   `rejeu.json`) : backtests `explain=True` fusionnés en un compte ; test de parité live/rejeu. Le bot en argent réel
   reste au comptant et sans levier.
-- `tradingbot/school.py` : l'école (13 leçons, dont la vente à découvert et l'objectif des bots, `FIGURES` : candle, chart, risk, leverage, fees, diagnoses ; quiz
+- `tradingbot/school.py` : l'école (14 leçons, dont la vente à découvert, l'objectif des bots et « Lire le graphique comme un trader », `FIGURES` : candle, chart, risk, leverage, fees, diagnoses ; quiz
   expliqués ; sources ; `examples` = vrais trades des bots, `data/bots/essaim/`). `tradingbot/news.py` : flux RSS (CoinDesk, Cointelegraph,
   Decrypt), `mentions`, `reaction` (mouvement depuis la publication), indice peur et avidité (alternative.me,
   `fng_study` sur 30 jours, épisodes comptés) ; information seulement, jamais d'ordre.
@@ -202,13 +217,16 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   pairs) et ce qu'en dit le labo de l'utilisateur (`evidence`, `portfolio_evidence`).
 - `BOTS=PAIRE@UNITE,...` : plusieurs bots dans une boucle (`live.run_bots`). En paper, un compte fictif par bot ;
   sur un vrai compte, `MAX_CAPITAL` est le montant de chaque bot (validé dans `config.py`).
-- `tradingbot/strategy.py` : vingt familles (`STRATEGY_TYPES`) : retour_moyenne (RSI, défaut), bollinger, cassure
+- `tradingbot/strategy.py` : trente familles (`STRATEGY_TYPES`) : retour_moyenne (RSI, défaut), bollinger, cassure
   (Donchian), bollinger_cassure, croisement, macd, momentum, supertrend, support (rebond venu d'au-dessus sur
   `next_support`, sortie à `next_resistance` ou support cassé), resistance (clôture > résistance + largeur, sortie
   sous le niveau ; niveaux de la bougie précédente), impulsion (hausse d'au moins `impulse_pct`
   en `impulse_bars` bougies, seulement la bougie où elle apparaît ; sortie « essoufflement » sous le plus bas des
   `breakout_exit_period` bougies), et depuis le 06/11/2026 ema_croisement, vwap (glissant), stochastique, keltner,
-  adx, psar, ichimoku (nuage décalé : seulement du passé), zscore, heikin (`indicators.py`). `compute_signals` produit `entry`/`exit`
+  adx, psar, ichimoku (nuage décalé : seulement du passé), zscore, heikin (`indicators.py`), et depuis le 13/11/2026
+  les dix `PATTERN_FAMILIES` (fvg, order_block, balayage, structure, avalement, marteau, interieure, divergence,
+  fibonacci, double_creux : `_pattern_signals` appelle `patterns.py` ; sortie « essoufflement », sauf structure :
+  retour sous le dernier creux ; `pattern_marks` = ce que la technique regarde, pour `fleet.overlays`). `compute_signals` produit `entry`/`exit`
   pour le backtest ET le live (tests de parité par famille). Le backtest respecte le même temps de chauffe que le live.
   Filtres d'achat optionnels pour toutes : volatilité (`min_atr_pct`), volume (`volume_mult`, `volume_period`),
   heures actives UTC (`active_hours`, « 13-21 ») et compression de Bollinger (`squeeze_quantile`, `squeeze_period`).
@@ -274,10 +292,11 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `hasard.py` : des cryptos en marche au hasard (un prix toutes les 10 s, bougies tirées de ce chemin : AUCUNE mèche
   ajoutée, sinon les objectifs gagnent artificiellement), le vrai `retest_coin` choisit ses bots, puis on regarde
   leur test final, leur « direct » sur la suite et la mesure à l'essai de toutes les combinaisons, sans et avec
-  sécurisation (`python audit/hasard.py 80 12 hasard.json`). `vrai.py` : les mêmes mesures sur de VRAIES bougies
+  sécurisation, puis chaque technique à part (`python audit/hasard.py 80 12 hasard.json`). `vrai.py` : les mêmes mesures sur de VRAIES bougies
   Binance (prix publics par le miroir `data-api.binance.vision`, cache hors du dépôt) : `essai --jours 14` rejoue la
   mesure à l'essai (univers reconstitué heure par heure, trades ouverts pendant que la crypto bougeait), `aujourdhui`
-  fait le test du moment sur chaque crypto suivie ; les deux comparent avec et sans sécurisation. `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
+  fait le test du moment sur chaque crypto suivie ; les deux comparent avec et sans sécurisation ; `essai` classe
+  aussi chaque technique (`--fin` rejoue exactement une période déjà mesurée). `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
 
@@ -289,13 +308,15 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
 - Code, commentaires, textes du site et messages en français ; noms de tests en anglais, qui disent le comportement
   (`test_a_trailing_stop_follows_the_best_price_and_never_goes_back`). Les tests de l'argent sont dans
   `tests/test_fleet.py` (moteur : stop, objectif, levier, frais, financement, liquidation) et `tests/test_swarm.py`
-  (parité direct/backtest, reprise, re-tests, classement).
+  (parité direct/backtest, reprise, re-tests, classement) ; les lectures du graphique dans `tests/test_patterns.py`
+  (chaque figure sur un graphique dessiné à la main, puis les garanties communes).
 - Les réglages d'une technique sont fixés d'avance, jamais ajustés sur les données. Les frais et le glissement des bots
   sont dans `execution.FUTURES`, comptés dans `fleet.Book` (`_open`, `_fill`, `_secure`, `_close`) et nulle part
   ailleurs. Garde-fou : sur un marché fabriqué sans avantage, le moteur doit rendre exactement les frais, avec ou
   sans sécurisation (`test_fleet`).
 - Un réglage du site passe par `webapp.FIELDS` (liste blanche, phrase d'aide `help`, bornes ; `switch` = oui ou non,
-  écrit seulement s'il change) et `swarm.SwarmSettings`.
+  écrit seulement s'il change ; `switch_value` = le choix tel que les bots le lisent, « 0 » ou « false » compris) et
+  `swarm.SwarmSettings`.
   La page est dans `tradingbot/sitepage.py` (CSS et JS dans des chaînes Python) : un texte venu des données s'insère
   avec `textContent` ; après une modification, `node --check` sur le JS et vérification à 1280, 820 et 390 px.
 - Pas de nouvelle dépendance sans nécessité : le site et les bots n'utilisent que la bibliothèque standard, ccxt,

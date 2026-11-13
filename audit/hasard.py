@@ -29,7 +29,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tradingbot.data import ohlcv_to_frame, timeframe_to_ms  # noqa: E402
-from tradingbot.fleet import simulate, spec_from  # noqa: E402
+from tradingbot.fleet import simulate, spec_from, technique  # noqa: E402
+from tradingbot.risk import clustered_bounds  # noqa: E402
+from tradingbot.strategy import PATTERN_FAMILIES  # noqa: E402
 from tradingbot.swarm import TEST_DAYS, SwarmSettings, retest_coin  # noqa: E402
 
 MIN, DAY = 60_000, 86_400_000
@@ -99,7 +101,9 @@ def study(job):
         trial = retest_coin(symbol, frames, settings, trial={"done": done, "active": [[T_CUT, None]], "final": True})["trial"]
         measured = [v for k, v in trial["stats"].items() if k.startswith("unite:")]
         out.update(holdout=result["holdout"], holdout_eligible=result["holdout_eligible"],
-                   trial={k: sum(v[k] for v in measured) for k in ("n", "total", "wins")})
+                   trial={k: sum(v[k] for v in measured) for k in ("n", "total", "wins")},
+                   trial_by={k.partition(":")[2]: [v["n"], v["total"], v["wins"]] for k, v in trial["stats"].items()
+                             if k.startswith("technique:")})
         if "secure" in result:  # depuis l'étape 1 : chaque combinaison est mesurée sans et avec la sécurisation des gains
             safe = [v for k, v in trial["stats"].items() if k.startswith("avec:unite:")]
             out.update(trial_safe={k: sum(v[k] for v in safe) for k in ("n", "total", "wins")},
@@ -164,6 +168,23 @@ def main():
                 (n0, m0, w0), (n1, m1, w1) = pooled(rows, plain), pooled(rows, safe)
                 print(f"sécurisation des gains, {title} : sans {m0:+.3%} par trade ({w0:.0%} gagnants, {n0} trades), "
                       f"avec {m1:+.3%} ({w1:.0%} gagnants, {n1} trades), écart {m1 - m0:+.3%}")
+    if MEASURES and out and "trial_by" in out[0]:
+        # Chaque technique sur du pur hasard, les deux groupes réunis : aucune ne doit s'écarter du prix des frais.
+        # La fourchette compare les cryptos entre elles (les trades d'une même crypto se ressemblent).
+        table = []
+        for name in sorted({k for r in out for k in r["trial_by"]}):
+            groups = [(r["trial_by"][name][0], r["trial_by"][name][1]) for r in out if name in r["trial_by"]]
+            mean, lo, hi = clustered_bounds(groups)
+            wins = sum(r["trial_by"][name][2] for r in out if name in r["trial_by"])
+            table.append((mean, lo, hi, sum(n for n, _ in groups), wins, name))
+        print("\n--- chaque technique à l'essai sur du pur hasard (toutes les cryptos ; * = lecture du graphique) ---")
+        print("Repère : de −0,09 % (entrée au marché, sortie par un ordre limite) à −0,14 % (tout au marché), plus le "
+              "financement des trades longs.\nIci un stop est servi à son prix exact alors que le chemin, tiré toutes "
+              "les 10 s, saute un peu au-delà : une technique au stop serré paraît meilleure d'environ 0,01 %.")
+        for mean, lo, hi, n, wins, name in sorted(table, reverse=True):
+            mark = "*" if technique(name).strategy_type in PATTERN_FAMILIES else " "
+            flag = "  <-- mieux que le coût le plus bas possible : à vérifier" if lo > -0.0009 else ""
+            print(f"{mark} {name:<42} {n:>7} trades  {mean:+.3%} [{lo:+.3%} ; {hi:+.3%}]  {wins / max(n, 1):.0%} gagnants{flag}")
     print(f"\n{time.time() - started:.0f} s")
 
 

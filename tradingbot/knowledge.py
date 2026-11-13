@@ -243,13 +243,114 @@ ENTRIES = (
      "research": "Très populaire sur les réseaux sociaux, peu étudié sérieusement : c'est une autre façon de suivre la "
                  "tendance, que le labo en direct juge crypto par crypto.",
      "sources": ("hudson_urquhart",)},
+    {"key": "fvg", "family": "fvg", "title": "Zone à combler (fair value gap)", "group": "Lire le graphique",
+     "measures": "Un trou laissé par trois bougies quand le prix part très vite : le plus bas de la troisième reste "
+                 "au-dessus du plus haut de la première. Entre les deux, presque personne n'a échangé.",
+     "reading": "Les traders s'attendent à ce que le prix revienne combler ce trou avant de repartir. Quand il y "
+                "redescend puis clôture au-dessus, le bot achète. La zone ne sert qu'une fois ; elle est oubliée après "
+                "30 bougies, ou si le prix clôture en dessous.",
+     "research": "Une notion de traders (la méthode dite « smart money »), pas de la recherche : à notre connaissance, "
+                 "aucune étude relue par des pairs ne l'a testée telle quelle. Ce qui s'en rapproche : les niveaux qui "
+                 "comptent sont ceux où le carnet d'ordres est fourni (Kavajecz et Odders-White). Seule la mesure à "
+                 "l'essai du bot peut la juger.",
+     "sources": ("kavajecz",)},
+    {"key": "order_block", "family": "order_block", "title": "Order block : la dernière bougie avant une envolée",
+     "group": "Lire le graphique",
+     "measures": "La dernière bougie baissière avant une forte hausse (au moins deux fois la taille moyenne d'une "
+                 "bougie en trois bougies). Les traders y voient l'endroit où de gros acheteurs sont entrés.",
+     "reading": "Quand le prix revient sur cette bougie puis clôture au-dessus, le bot achète, en pariant que ces "
+                "acheteurs défendront leur prix. Oubliée après 30 bougies, ou si le prix clôture sous la bougie.",
+     "research": "Comme la zone à combler : une notion de traders, jamais testée telle quelle par une étude relue par "
+                 "des pairs, à notre connaissance. L'idée voisine, que des ordres attendent à certains prix, est "
+                 "documentée sur les devises (Osler, 2003 ; Kavajecz et Odders-White).",
+     "sources": ("osler_2003", "kavajecz")},
+    {"key": "balayage", "family": "balayage", "title": "Prise de liquidité : le faux passage sous un creux",
+     "group": "Lire le graphique",
+     "measures": "Juste sous un creux marquant attendent les ordres stop de ceux qui ont acheté plus haut. Une mèche "
+                 "qui passe dessous les déclenche (elle « balaie la liquidité »), puis le prix remonte.",
+     "reading": "Si une bougie passe sous le dernier creux marquant mais clôture au-dessus, en hausse, le bot achète : "
+                "la cassure était un piège.",
+     "research": "Que les ordres stop s'entassent juste derrière les niveaux est documenté sur les devises : c'est ce "
+                 "qui accélère le mouvement quand un niveau cède (Osler, 2003). Que le retour en arrière se trade avec "
+                 "profit après frais, aucune étude solide ne le montre : à la mesure à l'essai de le dire.",
+     "sources": ("osler_2003",)},
+    {"key": "structure", "family": "structure", "title": "Cassure de structure : dépasser le dernier sommet",
+     "group": "Lire le graphique",
+     "measures": "Une tendance haussière est une suite de sommets et de creux de plus en plus hauts. Le dernier sommet "
+                 "marquant (le plus haut de cinq bougies de chaque côté) est la frontière.",
+     "reading": "Quand le prix clôture au-dessus du dernier sommet marquant, le bot achète ; il revend si le prix "
+                "clôture sous le dernier creux marquant : la structure est alors cassée dans l'autre sens.",
+     "research": "C'est une cassure de niveau : acheter le dépassement du plus haut récent rapportait sur le Dow Jones "
+                 "de 1897 à 1986, frais non comptés (Brock, Lakonishok et LeBaron), et les règles de cassure montrent "
+                 "une prévisibilité en crypto sur des bougies d'un jour (Hudson et Urquhart). En court terme, les "
+                 "frais décident.",
+     "sources": ("brock", "hudson_urquhart")},
+    {"key": "avalement", "family": "avalement", "title": "Avalement : une bougie qui recouvre la précédente",
+     "group": "Lire le graphique",
+     "measures": "Deux bougies : une rouge, puis une verte dont le corps recouvre entièrement celui de la rouge, après "
+                 "une baisse.",
+     "reading": "Les acheteurs ont repris la main en une bougie. Le bot achète si la figure apparaît au plus bas des "
+                "10 dernières bougies, et revend quand le rebond s'essouffle.",
+     "research": "Les chandeliers japonais sur trois jours ont montré un effet sur des actions américaines des années "
+                 "1990 (Caginalp et Laurent) ; reconnues automatiquement, les figures n'apportent qu'un peu "
+                 "d'information (Lo, Mamaysky et Wang). Rien de prouvé en crypto après frais.",
+     "sources": ("caginalp", "lo")},
+    {"key": "marteau", "family": "marteau", "title": "Marteau : une longue mèche basse", "group": "Lire le graphique",
+     "measures": "Une bougie au petit corps placé en haut, avec une mèche basse au moins deux fois plus longue : le "
+                 "prix a beaucoup baissé pendant la bougie, puis presque tout repris.",
+     "reading": "Au plus bas des 10 dernières bougies, c'est le signe que les acheteurs ont repoussé la baisse : le "
+                "bot achète. À l'envers (longue mèche haute au sommet), c'est une étoile filante : il vend à découvert.",
+     "research": "Mêmes études que pour l'avalement : un effet mesuré sur des actions (Caginalp et Laurent), faible "
+                 "une fois les figures reconnues automatiquement (Lo, Mamaysky et Wang), non prouvé en crypto.",
+     "sources": ("caginalp", "lo")},
+    {"key": "interieure", "family": "interieure", "title": "Bougie intérieure : la pause avant le mouvement",
+     "group": "Lire le graphique",
+     "measures": "Une bougie entièrement contenue dans la précédente : le marché hésite, acheteurs et vendeurs "
+                 "s'équilibrent.",
+     "reading": "Le bot attend la sortie : si le prix clôture au-dessus du plus haut de la bougie mère, il achète ; "
+                "sous son plus bas, il vend à découvert.",
+     "research": "Une petite cassure après un marché resserré, de la famille des cassures de canal, qui montrent une "
+                 "prévisibilité en crypto sur des bougies d'un jour (Hudson et Urquhart). Sur de petites unités, les "
+                 "fausses sorties sont nombreuses : à la mesure à l'essai de trancher.",
+     "sources": ("hudson_urquhart",)},
+    {"key": "divergence", "family": "divergence", "title": "Divergence du RSI : le prix baisse, plus sa force",
+     "group": "Lire le graphique",
+     "measures": "On compare deux creux du prix et le RSI (la force du mouvement) à ces deux moments. Il y a "
+                 "divergence quand le prix fait un creux plus bas, mais le RSI un creux plus haut.",
+     "reading": "La baisse s'essouffle : le bot achète quand le second creux est confirmé (cinq bougies plus tard), si "
+                "le RSI était faible (sous 40) au premier.",
+     "research": "Un pari sur le retournement. En crypto, les règles à contre-tendance ont en général moins bien "
+                 "résisté que les règles de tendance (Hudson et Urquhart), et les fortes baisses ne sont pas suivies "
+                 "d'un rebond exploitable après frais (Caporale et Plastun).",
+     "sources": ("hudson_urquhart", "caporale_overreactions")},
+    {"key": "fibonacci", "family": "fibonacci", "title": "Retracement de Fibonacci (50 % à 61,8 %)",
+     "group": "Lire le graphique",
+     "measures": "Après une jambe de hausse, le prix en reperd souvent une partie avant de repartir. Les traders "
+                 "surveillent la zone entre la moitié et 61,8 % de la jambe (un nombre tiré de la suite de Fibonacci).",
+     "reading": "Si le prix entre dans cette zone puis clôture en hausse, le bot achète. S'il clôture sous 61,8 %, la "
+                "zone est abandonnée.",
+     "research": "À notre connaissance, aucune étude solide ne montre que ces pourcentages arrêtent le prix mieux que "
+                 "d'autres : ils comptent surtout parce que beaucoup de traders les regardent. Les revues de l'analyse "
+                 "technique rappellent que bien des résultats disparaissent après frais et contrôle du hasard (Park "
+                 "et Irwin ; Hsu et Kuan).",
+     "sources": ("park_irwin", "hsu_kuan")},
+    {"key": "double_creux", "family": "double_creux", "title": "Double creux et double sommet",
+     "group": "Lire le graphique",
+     "measures": "Deux creux au même prix, séparés par un rebond : le marché a testé deux fois le même plancher sans "
+                 "le casser. La « ligne de cou » est le sommet entre les deux.",
+     "reading": "Le bot achète quand le prix clôture au-dessus de la ligne de cou, dans les 30 bougies qui suivent le "
+                "second creux. À l'envers (double sommet), il vend à découvert.",
+     "research": "Reconnues automatiquement sur des actions américaines, dix figures, dont le double creux et le "
+                 "double sommet, apportent un peu d'information (Lo, Mamaysky et Wang). L'épaule-tête-épaule tradée "
+                 "seule ne rapporte presque rien (Savin, Weller et Zvingelis) : prudence, donc.",
+     "sources": ("lo", "savin")},
     {"key": "volume", "uses": "volume_mult", "title": "Volume et attention", "group": "Filtres d'achat",
      "measures": "Le volume échangé pendant la bougie, comparé à sa moyenne.",
      "reading": "Un mouvement suivi par deux ou trois fois plus d'échanges que d'habitude a des acheteurs derrière lui.",
      "research": "En crypto, l'attention des investisseurs (recherches en ligne, échanges) aide à prévoir les rendements "
                  "(Liu et Tsyvinski). Les variantes « + volume » du labo testent ce filtre.",
      "sources": ("liu_tsyvinski",)},
-    {"key": "figures", "title": "Figures chartistes : épaule-tête-épaule, double sommet, chandeliers",
+    {"key": "figures", "title": "Figures chartistes : épaule-tête-épaule, triangles, drapeaux",
      "group": "Ce que le bot ne fait pas (encore)",
      "measures": "Des formes dessinées par le prix sur le graphique, reconnues à l'œil par les chartistes.",
      "reading": "Elles annoncent, dit-on, un retournement ou une continuation de la tendance.",
@@ -257,8 +358,9 @@ ENTRIES = (
                  "Mamaysky et Wang ; plus récemment Jiang, Kelly et Xiu avec de l'apprentissage automatique sur les "
                  "graphiques), mais trader l'épaule-tête-épaule seule ne rapporte presque rien (Savin, Weller et "
                  "Zvingelis). Les chandeliers sur 3 jours ont montré un effet sur des actions des années 1990 (Caginalp "
-                 "et Laurent). Leur défaut : on les voit souvent après coup. Le bot en garde la forme objective et "
-                 "testable : les cassures.",
+                 "et Laurent). Leur défaut : on les voit souvent après coup. Le bot trade celles qui se définissent "
+                 "sans ambiguïté (double creux, avalement, marteau, bougie intérieure : voir « Lire le graphique ») ; "
+                 "l'épaule-tête-épaule, les triangles et les drapeaux ne sont pas écrits.",
      "sources": ("lo", "savin", "caginalp", "jiang")},
     {"key": "momentum-croise", "portfolio": True, "title": "Momentum croisé : garder les cryptos qui ont le plus monté",
      "group": "Suivre une tendance",

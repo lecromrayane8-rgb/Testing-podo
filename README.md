@@ -3,8 +3,10 @@
 Bot de trading automatique en Python, connecté aux plateformes d'échange via [ccxt](https://github.com/ccxt/ccxt)
 (Binance par défaut, plus de 100 plateformes possibles). En argent réel, il trade uniquement à l'achat, au comptant
 (spot) et **sans levier**. En argent fictif, un **essaim de bots** (des centaines au plus) suit en continu les cryptos
-qui bougent le plus : chaque crypto est retestée toutes les 3 heures avec toutes les techniques du bot (39 techniques,
-vingt familles, à l'achat et à la vente à découvert, avec ou sans objectif, de 1 minute à 4 heures), et chaque
+qui bougent le plus : chaque crypto est retestée toutes les 3 heures avec toutes les techniques du bot (51 techniques,
+trente familles : les indicateurs et, depuis le 13/11/2026, la lecture du graphique : zones à combler, order blocks,
+prises de liquidité, cassures de structure, bougies de retournement, divergences, Fibonacci, double creux ; à l'achat
+et à la vente à découvert, avec ou sans objectif, de 1 minute à 4 heures), et chaque
 combinaison gagnante sur son historique récent devient un bot, avec levier, stop et objectif. Des agents d'analyse
 disent où chaque stratégie gagne et perd, et pourquoi chaque trade a gagné ou perdu. Le site montre tout : la liste des
 bots, les cryptos, la page de chaque bot avec un graphique zoomable, l'actualité et les prix.
@@ -145,8 +147,8 @@ Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au dir
    passe sous `FLOTTE_MOUVEMENT_MIN` (3 %), ou qui sort de la liste, passe **en veille** : ses bots n'ouvrent plus de
    trade et gèrent ceux en cours.
 2. **Le labo en direct** : chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures, sur
-   l'historique récent (2 jours en 1 min, 7 en 5 min, 20 en 15 min, 60 en 1 h, 240 en 4 h) : 39 techniques × 2 sens ×
-   3 façons de sortir (par la règle, objectif 2R, stop suiveur) × 5 unités = 1170 combinaisons, chacune simulée deux
+   l'historique récent (2 jours en 1 min, 7 en 5 min, 20 en 15 min, 60 en 1 h, 240 en 4 h) : 51 techniques × 2 sens ×
+   3 façons de sortir (par la règle, objectif 2R, stop suiveur) × 5 unités = 1530 combinaisons, chacune simulée deux
    fois (sans et avec la sécurisation des gains, voir le point 6), avec les frais des contrats à terme (0,05 % par
    ordre au marché, 0,02 % pour un ordre limite posé d'avance, glissement, financement toutes les 8 h compté comme un
    coût). L'historique est
@@ -188,7 +190,7 @@ Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au dir
    le stop. **Le labo mesure toujours les deux façons, avec et sans sécurisation**, et le site les compare (onglet
    Stratégies) : sécuriser donne plus de petits gains et moins de gros, sans créer d'avantage tout seul.
 7. **La mesure à l'essai** (onglet Stratégies, et un encadré sur l'écran Direct) : à chaque test d'une crypto, les
-   trades de **toutes** les combinaisons sont comptés, pas seulement ceux des bots choisis : jusqu'à 60 × 1170 = 70 200
+   trades de **toutes** les combinaisons sont comptés, pas seulement ceux des bots choisis : jusqu'à 60 × 1530 = 91 800
    « bots à l'essai », chacun mesuré sans et avec la sécurisation des gains (c'est la variante que tes bots utilisent
    qui juge les stratégies). Un trade compte une seule fois, à sa fermeture, et seulement s'il a été ouvert pendant que la
    crypto bougeait, comme un vrai bot ; quand une crypto s'arrête de bouger, ce qui est encore ouvert est compté à sa
@@ -253,7 +255,8 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Cinq on
   et ce que leur prix a fait depuis la publication ; l'indice peur et avidité, son année, et ce qui a suivi ses
   extrêmes (une observation, pas une règle). Les bots ne tradent jamais sur les titres.
 - **Prix** : les prix publics de plusieurs plateformes côte à côte.
-- Sous « Plus » : **École** (treize leçons courtes pour débutant, `tradingbot/school.py`, avec simulateurs, mini-quiz
+- Sous « Plus » : **École** (quatorze leçons courtes pour débutant, dont « Lire le graphique comme un trader »,
+  `tradingbot/school.py`, avec simulateurs, mini-quiz
   et exemples tirés des vrais trades des bots), **Réglages** (cryptos suivies, bots par crypto, mouvement minimum,
   leviers, capital fictif, plateforme des données, Telegram ; les bots redémarrent tout seuls quand on les change) et
   **Journal** (la sortie des commandes, en direct).
