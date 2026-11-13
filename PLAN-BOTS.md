@@ -358,6 +358,110 @@ Terminé quand : le labo compare avec et sans sécurisation sur le test final, e
   moins gros. Sur un vrai marché, elle peut donc aider les techniques qui rendent souvent leurs gains, et pénaliser
   celles qui vivent de quelques grands mouvements. C'est la mesure qui le dit, technique par technique.
 
+### Ce que montrent les vraies données (13/11/2026)
+
+Depuis le 13/11, cette session reçoit les prix publics de Binance (accord de l'utilisateur) : le vrai code du labo
+tourne donc sur de vraies bougies, sans attendre des jours sur le PC (`audit/vrai.py`). Argent fictif, aucune clé.
+
+**Le test du jour** (ce que ferait le bot en ce moment : 59 cryptos assez agitées, 1170 combinaisons chacune).
+Le test final est la partie de l'historique qui ne sert jamais à choisir.
+
+| Sur le test final, par trade, frais compris | Sans | Avec sécurisation | Écart |
+|---|---|---|---|
+| Toutes les combinaisons (646 000 trades) | −0,196 % | −0,177 % | +0,019 % (de +0,005 à +0,034) : mieux avec |
+| Celles qui peuvent devenir un bot (36 000 trades) | −0,398 % | −0,336 % | +0,062 % (de +0,005 à +0,119) : mieux avec |
+| Les choix du labo, avec (3 182 trades) | | −0,200 % (de −0,35 à −0,05) | |
+
+Comment le lire :
+
+- **Rien ne gagne.** Le repère « aucun avantage » est −0,14 % par trade (le prix des frais). Toutes les combinaisons
+  réunies font −0,18 % : à peu près les frais. Les combinaisons que le labo peut choisir font pire (−0,34 %) : avoir
+  gagné sur l'étude et la validation n'annonce pas un gain ensuite, plutôt l'inverse sur cette période.
+- **La sécurisation aide un peu** sur ces vraies bougies : entre +0,02 % et +0,06 % par trade, plus que le simple effet
+  des frais (+0,003 %). Elle ne rend pas les stratégies gagnantes.
+- Sur de vraies cryptos, 6,5 % des combinaisons « peuvent devenir un bot » ; sur des marchés tirés au hasard, 5,4 %.
+  Presque la même chose : le tri du labo, seul, ne distingue pas un vrai marché du hasard.
+- Limite : ce test final couvre les mêmes derniers jours pour toutes les cryptos. La fourchette compare les cryptos
+  entre elles, pas des périodes différentes. La mesure sur 14 jours (ci-dessous) compare les journées.
+
+**La mesure à l'essai rejouée sur 14 jours** (du 30/10 au 13/11/2026 : les 132 cryptos qui ont « bougé » au sens
+du bot, toutes les combinaisons, seulement les trades ouverts pendant que la crypto bougeait : 5,5 millions de trades).
+La fourchette compare les 15 journées entre elles.
+
+| À l'essai, par trade, frais compris | Résultat | Fourchette à 95 % |
+|---|---|---|
+| Toutes les combinaisons, avec sécurisation | −0,136 % | de −0,152 % à −0,121 % |
+| Toutes les combinaisons, sans | −0,144 % | |
+| Écart avec − sans | +0,007 % | de +0,001 % à +0,013 % : mieux avec, de très peu |
+| En 1 min / 5 min / 15 min | −0,134 % / −0,147 % / −0,140 % | |
+| En 1 h / 4 h | −0,129 % / −0,142 % | très larges (peu de trades) |
+| À l'achat / à la vente à découvert | −0,171 % / −0,104 % | le marché a baissé sur la période |
+| Stratégies nettement gagnantes (sur 195) | 0 | |
+| Stratégies nettement perdantes (« recalées ») | 89 | |
+
+Ce que ça veut dire :
+
+- **L'ensemble des 39 techniques ne gagne rien avant frais.** −0,136 % par trade, c'est le prix des frais (−0,14 %), à
+  la marge d'erreur près. Sur 5,5 millions de trades, ce n'est plus une question de chance.
+- **Aucune stratégie n'est prouvée**, et près d'une sur deux serait recalée au bout d'une semaine. C'est ce que le
+  site affichera sur le PC à partir du 7e jour : ce ne sera pas une panne.
+- **La sécurisation fait mieux, de très peu** : +0,007 % par trade, dont environ la moitié vient seulement des frais
+  (une sortie en ordre limite coûte moins cher). Elle rend les résultats plus réguliers ; elle ne crée pas d'avantage.
+- Les meilleures lignes sont toutes en 4 h, avec quelques centaines de trades et des fourchettes de plusieurs
+  pourcents de chaque côté : du bruit, pas une piste.
+
+La suite logique : ce n'est pas en réglant mieux ces techniques qu'on trouvera un avantage. Il faut d'autres
+informations (la lecture du graphique de l'étape 1 bis, le flux d'ordres des étapes 4 et 5, le contexte de l'étape 6),
+mesurées de la même façon, et accepter que la réponse puisse rester « rien ».
+
+**Trouvé en route : un quart des « cryptos » suivies sont des actions en jetons.** Sur les 66 paires assez échangées
+de Binance ce jour-là, 15 sont des actions ou des fonds américains (Nvidia, Google, MicroStrategy, et des fonds à
+levier ×3 comme SOXL), cotés en USDT. Le filtre du bot ne les reconnaît pas (il écarte les jetons à levier dont le nom
+finit par UP ou DOWN, pas ceux-là), ni quatre monnaies stables récentes (U, RLUSD, XUSD, RWUSD). Leurs résultats sont
+moins mauvais que ceux des vraies cryptos (−0,08 % contre −0,23 % par trade), ce qui est suspect : ces jetons
+s'échangent peu, et le moteur leur prête la même facilité d'exécution qu'au Bitcoin. Autre constat : sur la plupart
+des cryptos suivies, il s'échange environ 4 000 USDT par minute, moins que la position d'un seul bot de scalping
+(1000 USDT × 5) : l'exécution simulée est trop belle sur les petites cryptos (point M1 de l'audit). À décider par
+l'utilisateur : écarter les actions en jetons (recommandé), et à l'étape 2 limiter la taille d'une position à une
+part du volume réellement échangé.
+
+## Étape 1 bis — La lecture du graphique (demandée le 13/11/2026)
+
+La demande : des bots « très très complets », qui ne regardent pas seulement des indicateurs mais lisent le graphique
+comme un trader (zones à combler, order blocks, sommets et creux, structure, chandeliers...), et qui tiennent compte de
+l'actualité. « Le plus de paramètres possible, le plus de tests, voir les stratégies qui en ressortent. »
+
+Inventaire du 13/11, vérifié dans le code :
+
+| Lecture du graphique | Les bots s'en servent ? |
+|---|---|
+| Sommets et creux, supports et résistances, cassures | Oui (pivots, zones touchées 2 fois, plus haut de 20 ou 55 bougies) |
+| Tendance, moyennes, volume, VWAP, ATR, Heikin-Ashi | Oui |
+| Order blocks, zones à combler (fair value gaps) | Non |
+| Prises de liquidité, cassure de structure (BOS, CHoCH) | Non (seul « Rebond sur support » s'en approche) |
+| Chandeliers (avalement, marteau), figures (double creux) | Non |
+| Divergences, Fibonacci, lignes de tendance | Non |
+| Plusieurs unités de temps, tendance du Bitcoin | Non (étape 6) |
+| Carnet d'ordres, liquidations, open interest | Non (étapes 4 et 5) |
+| Chiffres ronds, sessions, actualité, peur et avidité | Affichés, jamais utilisés pour un ordre |
+
+Plan court :
+
+1. **Dix familles de techniques en plus**, chacune avec UNE définition précise, celle des manuels, fixée d'avance et
+   jamais ajustée sur nos données : zone à combler, order block, prise de liquidité, cassure de structure, avalement,
+   marteau, bougie intérieure, divergence du RSI, retracement de Fibonacci (50 à 61,8 %), double creux.
+2. **Les mêmes garanties que les 39 autres** : dans les deux sens (achat et vente à découvert), aucun regard vers le
+   futur (un sommet n'est connu que 5 bougies plus tard), mêmes signaux en direct qu'en backtest (test automatique
+   pour chaque technique), une phrase qui dit la règle en mots simples.
+3. **Mesurées comme les autres** : sur chaque crypto, dans 5 unités de temps, avec 3 sorties, sans et avec
+   sécurisation. Environ 300 combinaisons de plus par crypto.
+4. **L'actualité** : pas d'IA qui trade sur les titres (principe du projet : des règles testées). Ce qui se teste :
+   une pause autour des grandes annonces économiques et l'humeur du marché comme filtre. C'est l'étape 6.
+
+Dit franchement : « le plus de paramètres possible » est ce qui fabrique de faux gagnants. Plus on teste de
+techniques, plus la chance en fait sortir une : la mesure à l'essai en tient compte (le seuil « prouvée » se durcit
+avec le nombre de stratégies), et c'est pour cela qu'on ajoute des techniques, pas des réglages par technique.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
@@ -435,4 +539,6 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 |---|---|---|---|
 | 12/11/2026 | 0 — Audit | Faite : résumé, problèmes par gravité, point de référence | `7148d95` |
 | 13/11/2026 | 0 bis — Réparer la mesure et tout tester | Faite : test final mis à part, bots à l'essai, places gardées, heure de la plateforme, point de référence | `bac35d5` |
-| | 1 — Sécurisation des gains | En attente d'accord | |
+| 13/11/2026 | 0, suite — bots endormis, valeur d'une position, jour d'un trade rattrapé | Faite | `3b234da` |
+| 13/11/2026 | 1 — Sécurisation des gains | Faite : moteur, réglages, labo avec et sans, site, mesures sur de vraies bougies | `3b234da` |
+| | 1 bis — La lecture du graphique | Demandée le 13/11, à faire | |

@@ -427,3 +427,21 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   340 000 trades (le prix des frais : la mesure est honnête), 100 % des bots gardés, 4,3 trades par bot en 48 h.
   Reste à trancher (étape 3) : un bot sans position dont la crypto a quitté la liste depuis 6 h laisse sa place, et
   les bots en 1 h et 4 h mettront des semaines à faire 30 trades. Prochaine étape, à faire approuver : l'étape 1.
+- 13/11/2026 : l'utilisateur approuve l'étape 1 (« passe à l'objectif 1 »), demande de corriger ce qui reste
+  d'important de l'étape 0, et autorise les prix publics de Binance dans l'environnement cloud (carte approuvée). Fait,
+  point de retour `3b234da` : sécurisation des gains (part encaissée à +1R et stop au prix d'entrée, réglage commun,
+  chaque combinaison mesurée sans et avec), bots endormis au lieu d'arrêtés quand leur crypto quitte la liste, valeur
+  d'une position frais de sortie compris, `audit/vrai.py`. PREMIERS CHIFFRES RÉELS (vraies bougies Binance, 14 jours,
+  132 cryptos, 5,5 millions de trades à l'essai) : toutes les combinaisons réunies font −0,136 % par trade (de −0,152
+  à −0,121), soit le prix des frais (−0,14 %) : aucun avantage avant frais ; 0 stratégie nettement gagnante sur 195,
+  89 nettement perdantes ; la sécurisation fait +0,007 % par trade de mieux (de +0,001 à +0,013), dont la moitié vient
+  des frais. Test du jour (59 cryptos) : test final des choix du labo −0,20 % par trade. Sur du pur hasard, mêmes
+  ordres de grandeur (5,4 % de combinaisons éligibles contre 6,5 % en vrai). Trouvé et dit à l'utilisateur, à
+  trancher : 15 des 66 paires assez échangées sont des actions en jetons (NVDAB, GOOGLB, SOXLB...) que le filtre du
+  scanner ne reconnaît pas, plus quatre monnaies stables récentes ; et il s'échange environ 4 000 USDT par minute
+  sur une crypto suivie, moins que la position d'un bot de scalping (M1). Inventaire « lecture du graphique » fait
+  (order blocks, zones à combler, prises de liquidité, structure, chandeliers, divergences, Fibonacci : absents) ;
+  l'utilisateur demande de tout ajouter (« des bots très très complets », plus l'actualité) : c'est l'étape 1 bis de
+  `PLAN-BOTS.md` (dix familles, définitions fixées d'avance ; l'actualité reste des règles testées, étape 6). Il
+  demande aussi d'économiser les tokens (sa limite d'utilisation a été atteinte par des vérifications en parallèle) :
+  travailler seul, une relecture groupée au plus par étape.
