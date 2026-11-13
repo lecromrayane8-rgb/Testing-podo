@@ -69,14 +69,16 @@ class Variant:
     """Un compte fictif : la même règle, avec ou sans levier, avec ou sans stop suiveur."""
     key: str
     name: str
+    short: str
     leverage: float = 1.0
     stop: bool = False
 
 
-VARIANTS = (Variant("normal", "Le compte normal"),
-            Variant("stop", "Normal, avec stop suiveur", stop=True),
-            Variant("risque", "À risque : levier ×2", LEVERAGE),
-            Variant("risque_stop", "À risque ×2, avec stop suiveur", LEVERAGE, True))
+VARIANTS = (Variant("normal", "Le compte normal", "Normal"),
+            Variant("stop", "Normal, avec stop suiveur", "Normal + stop", stop=True),
+            Variant("risque", "À risque : levier ×2", "Risque ×2", LEVERAGE),
+            Variant("risque_stop", "À risque ×2, avec stop suiveur", "Risque ×2 + stop", LEVERAGE, True))
+ORDERS_SHOWN = 40  # les derniers ordres de chaque compte, sur la page
 
 
 def average(close: np.ndarray, n: int) -> np.ndarray:
@@ -471,8 +473,34 @@ def _ready(df: pd.DataFrame | None) -> bool:
     return df is not None and len(df) > max(AVERAGES) + 1
 
 
+def _account(variant: Variant, df: pd.DataFrame, since_ms: int, ex: ExecutionParams) -> dict:
+    """Un compte fictif depuis sa création : sa valeur, sa pire baisse, ce qu'il a payé, ses derniers ordres."""
+    run = replay(df, start_ts=since_ms, ex=ex, leverage=variant.leverage, stop=variant.stop)
+    started = bool(len(run))
+    return {"key": variant.key, "name": variant.name, "short": variant.short, "leverage": variant.leverage,
+            "stop": variant.stop, "since": since_ms, "started": started, "capital": run.capital,
+            "start": int(run.ts[0]) if started else None, "days": int(len(run)),
+            "value": float(run.value[-1]) if started else run.capital,
+            "hold": float(run.hold[-1]) if started else run.capital,
+            "level": int(run.level[-1]) if started else 0,
+            "worst": worst(run.value, run.capital) if started else 0.0,
+            "hold_worst": worst(run.hold, run.capital) if started else 0.0,
+            "costs": float(sum(o["cost"] for o in run.orders)), "paid": float(run.paid), "liquidated": run.dead,
+            "count": len(run.orders), "orders": [_order(o) for o in run.orders][::-1][:ORDERS_SHOWN]}
+
+
+def _past(variant: Variant, df: pd.DataFrame, ex: ExecutionParams) -> dict:
+    """Ce que ce compte aurait fait sur tout l'historique : ce que devient 1, la pire baisse, ce que ça a coûté."""
+    run = replay(df, ex=ex, leverage=variant.leverage, stop=variant.stop)
+    years = len(run) / 365
+    return {"key": variant.key, "name": variant.name, "short": variant.short, **growth(run.value, run.capital),
+            "orders_per_year": len(run.orders) / years if years else 0.0, "paid": float(run.paid),
+            "costs": float(sum(o["cost"] for o in run.orders)), "liquidated": run.dead}
+
+
 def coin_view(symbol: str, candles: Candles, since_ms: int, ex: ExecutionParams = SPOT) -> dict:
-    """Ce que le site montre pour une crypto : où en est la règle, le compte fictif et l'histoire année par année."""
+    """Ce que le site montre pour une crypto : où en est la règle, ses comptes fictifs (normal, avec stop suiveur, à
+    risque, à risque avec stop) et l'histoire année par année."""
     coin = symbol.split("/")[0]
     out = {"symbol": symbol, "coin": coin, "name": NAMES.get(coin, coin), "error": candles.error, "live": candles.live,
            "asof": candles.asof, "parts": len(AVERAGES)}
@@ -483,7 +511,8 @@ def coin_view(symbol: str, candles: Candles, since_ms: int, ex: ExecutionParams 
     close = df["close"].to_numpy(dtype=float)
     marks = thresholds(close[:-1] if candles.live else close)
     price = float(close[-1])
-    account = replay(df, start_ts=since_ms, ex=ex)
+    accounts = [_account(variant, df, since_ms, ex) for variant in VARIANTS]
+    line = stop_line(df["high"], df["low"], close)
     years = len(whole) / 365
     return _clean({
         **out, "ready": True, "price": price, "day": int(df["ts"].iloc[-1]), "next_open": int(df["ts"].iloc[-1]) + DAY_MS,
@@ -491,19 +520,13 @@ def coin_view(symbol: str, candles: Candles, since_ms: int, ex: ExecutionParams 
         "tonight": int(whole.decided),
         "averages": [{"days": n, "threshold": mark, "above": bool(mark is not None and price > mark),
                       "gap": price / mark - 1 if mark else None} for n, mark in zip(AVERAGES, marks)],
-        "account": {"since": since_ms, "started": bool(len(account)), "capital": account.capital,
-                    "start": int(account.ts[0]) if len(account) else None, "days": int(len(account)),
-                    "value": float(account.value[-1]) if len(account) else account.capital,
-                    "hold": float(account.hold[-1]) if len(account) else account.capital,
-                    "level": int(account.level[-1]) if len(account) else 0,
-                    "worst": worst(account.value, account.capital) if len(account) else 0.0,
-                    "hold_worst": worst(account.hold, account.capital) if len(account) else 0.0,
-                    "costs": float(sum(o["cost"] for o in account.orders)),
-                    "orders": [_order(o) for o in account.orders][::-1]},
+        "account": accounts[0], "accounts": accounts,
+        "stop": {"line": float(line[-1]), "allowed": bool(not price < line[-1])},
         "history": {"from": int(whole.ts[0]), "to": int(whole.ts[-1]), "years": years,
                     "rule": growth(whole.value, whole.capital), "hold": growth(whole.hold, whole.capital),
                     "orders": len(whole.orders), "orders_per_year": len(whole.orders) / years if years else 0.0,
-                    "inside": float((whole.level / whole.parts).mean()), "by_year": by_year(whole)},
+                    "inside": float((whole.level / whole.parts).mean()), "by_year": by_year(whole),
+                    "variants": [_past(variant, df, ex) for variant in VARIANTS]},
     })
 
 
@@ -520,7 +543,9 @@ def chart_view(symbol: str, candles: Candles, ex: ExecutionParams = SPOT) -> dic
         "symbol": symbol, "coin": symbol.split("/")[0],
         "candles": [[int(row[0]), *row[1:]] for row in shown[COLUMNS].to_numpy().tolist()],
         "lines": [{"key": f"moyenne-{n}", "label": f"Moyenne {n} jours", "color": color,
-                   "values": average(close, n)[first:].tolist()} for n, color in zip(AVERAGES, colors)],
+                   "values": average(close, n)[first:].tolist()} for n, color in zip(AVERAGES, colors)]
+        + [{"key": "stop-suiveur", "label": "Stop suiveur (pointillés)", "color": "var(--critical)", "dash": True,
+            "values": stop_line(df["high"], df["low"], close)[first:].tolist()}],
         "orders": [_order(o) for o in replay(df, ex=ex).orders if o["ts"] >= int(shown["ts"].iloc[0])]})
 
 
@@ -584,12 +609,17 @@ def report(data: dict) -> str:
                          f"{acc['capital']:,.0f} au départ ({pct(acc['value'] / acc['capital'] - 1)}) ; acheter et "
                          f"garder : {acc['hold']:,.2f} ({pct(acc['hold'] / acc['capital'] - 1)}) ; "
                          f"{len(acc['orders'])} ordre(s).")
+            lines.append("  Les autres comptes fictifs : " + " · ".join(
+                f"{a['short']} {a['value']:,.2f}" + (" (liquidé)" if a["liquidated"] else "") for a in c["accounts"][1:]))
         else:
             lines.append(f"  Compte fictif créé le {_day(acc['since'])} : il ouvre à la prochaine ouverture du jour.")
         h = c["history"]
         lines.append(f"  Depuis le {_day(h['from'])} ({h['years']:.1f} ans) : la règle ×{h['rule']['total']:.2f} "
                      f"(pire baisse {pct(h['rule']['worst'])}), acheter et garder ×{h['hold']['total']:.2f} "
                      f"(pire baisse {pct(h['hold']['worst'])}), {h['orders_per_year']:.0f} ordres par an.")
+        for v in h["variants"][1:]:
+            lines.append(f"    {v['name']} : ×{v['total']:.2f}, pire baisse {pct(v['worst'])}"
+                         + (f", liquidé le {_day(v['liquidated'])}" if v["liquidated"] else ""))
         lines.append(f"  {'Année':<7}{'La règle':>10}{'Garder':>10}{'Pire baisse : règle':>22}{'garder':>10}")
         for y in h["by_year"]:
             lines.append(f"  {y['year']:<7}{pct(y['rule']):>10}{pct(y['hold']):>10}{pct(y['rule_worst']):>22}"

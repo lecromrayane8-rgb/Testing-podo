@@ -156,7 +156,17 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `exits` (chaque sortie du marché d'un rejeu à UNE moyenne, jugée en cryptos contre « garder »), `as_backtest`
   (gain d'une sortie en logarithme : une moyenne simple annonce +1,1 % par sortie sur un marché sans avantage, le
   logarithme rend les frais), `robustness_rows` → `robustness.evaluate` (mêmes seuils que `robustesse`), `verdict`.
-  Tests : `tests/test_trend.py`.
+  Les comptes « à risque » (13/11/2026, définis dans l'en-tête du fichier et enregistrés avant d'être mesurés,
+  `7763d02`) : `VARIANTS` = normal, normal avec stop, à risque (`LEVERAGE` ×2), à risque avec stop, tous rejoués par
+  `replay(leverage=, stop=)`. Chaque jour, dans cet ordre : intérêts de la nuit sur l'argent emprunté
+  (`FUTURES.funding_rate_8h` × 3), ordre de la veille à l'ouverture (`why` = `regle`, `stop`, ou `levier` : un compte
+  qui emprunte est remis à son levier au-delà de `BAND` = 10 % d'écart), liquidation si le plus bas du jour (ou
+  l'ouverture) ne couvre plus `fleet.MAINTENANCE` (le compte vaut zéro pour toujours, `Run.dead`), valeur à la
+  clôture. Stop suiveur = chandelier de LeBeau, réglages d'origine (`STOP_DAYS` 22, `STOP_ATR` 3) : `stop_line`
+  (plus haut des 22 derniers jours moins 3 moyennes simples de l'amplitude vraie), `stop_allows` (clôture sous la
+  ligne → tout vendu à l'ouverture suivante ; retour quand une clôture repasse au-dessus). Sans levier ni stop, le
+  compte normal est inchangé (ses tests au centime près). `coin_view` : `accounts` (les quatre), `history.variants`,
+  `stop` ; `chart_view` : la ligne du stop en pointillés. Tests : `tests/test_trend.py`.
 - `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
   Refait le 06/11/2026 au soir autour de l'essaim (onglet Stratégies ajouté le 07/11, à deux mesures depuis le
   13/11 : « À l'essai » = `trial.ranking`, 30 jours, 7 jours, aujourd'hui, fourchette par journées, verdicts ou
@@ -167,7 +177,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `#crypto/SOL` = `/api/crypto` + `/api/crypto-graphique` : bots, graphique par unité, lecture, actualité, `best` du
   dernier test), page d'un bot (`#bot/<id>` = `/api/bot` + `/api/bot-graphique` : position au chiffre près, agents,
   direct contre backtest, trades expliqués, fiche `knowledge.ENTRIES`), Tendance (`renderTrend` : une fiche par crypto bâtie
-  une fois puis mise à jour, `Site.trend_view` gardée 10 s, `trend_chart`), Actualité ; sous « Plus » : Prix, École,
+  une fois puis mise à jour, `Site.trend_view` gardée 10 s, `trend_chart` ; les quatre comptes fictifs côte à côte,
+  les ordres du compte choisi (`trendPick`), ce que chaque compte aurait fait sur tout l'historique), Actualité ; sous « Plus » : Prix, École,
   Réglages, Journal. Onglet Stratégies : d'abord « Sécurisation des gains : avec ou sans ? » (`renderSecure`,
   `summary["secure"]`). Bots endormis : statut `endormi`, filtre « Endormis », tuile des bots sans eux. `zoomChart` :
   bougies, volume, lignes, zones, marques (entrée, stop, objectif, liquidation, seuil de sécurisation en pointillés),
@@ -602,3 +613,15 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   profondes), pas une façon de gagner plus ; elle n'a battu « garder » que là où les chutes sont énormes et
   fréquentes (les cryptos jusqu'ici). Argent fictif seulement. L'or n'a pas pu être testé (sources fermées aux
   robots) ; phrase ajoutée dans l'onglet « Tendance ». À faire approuver : la suite.
+- 13/11/2026 (nuit) : l'utilisateur demande « tu vois du potentiel dans le fictif ? » (répondu : peu sur le court
+  terme, une protection sur la tendance), puis « et si je te dis de prendre des risques », puis approuve un compte à
+  risque et demande des « stop-loss suiveurs… pour éviter, si on est en gain, une chute. Je sais pas si ça marche
+  comme ça ». Fait : comptes à risque du bot de tendance (définitions enregistrées avant mesure, `7763d02`), quatre
+  comptes fictifs côte à côte sur l'onglet « Tendance ». MESURÉ sur les vraies bougies (05/03/2018 → 12/11/2026),
+  Bitcoin puis Ether : normal ×15,8 (−50 %) et ×15,7 (−56 %) ; normal avec stop ×7,5 (−58 %) et ×7,9 (−68 %) ; à
+  risque ×2 : ×41,8 (−80 %) et ×13,4 (−88 %) ; à risque avec stop ×9,9 (−84 %) et ×4,9 (−96 %) ; garder ×6,2
+  (−77 %) et ×2,3 (−90 %). Donc : le stop suiveur n'a protégé dans aucun des quatre cas (moins de gain ET pire
+  baisse plus profonde : il vend sur des baisses ordinaires et rachète plus haut ; recoupé par un calcul
+  indépendant) ; le levier ×2 a multiplié le gain du Bitcoin, pas celui de l'Ether, avec des chutes de −80 % et
+  plus ; à ×3 l'Ether est liquidé (19/05/2021), à ×5 les deux (Bitcoin 27/06/2019, Ether 12/03/2020). Dit
+  franchement à l'utilisateur. Les comptes à risque sont là pour voir, pas pour être imités ; argent fictif.

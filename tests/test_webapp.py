@@ -302,7 +302,9 @@ def test_the_site_serves_its_page_and_only_obeys_its_own_page(server):
     assert "la mesure « avec » est repartie de zéro" in page  # la comparaison dit depuis quand elle compare
     # le bot de tendance : son onglet, son test de robustesse, et ses mises en garde
     assert 'href="#tendance"' in page and "<h1>Le bot de tendance</h1>" in page and 'id="trend-robust-rows"' in page
-    assert "Jamais de levier sur cette règle" in page and "Le passé ne garantit rien" in page
+    assert "Les comptes à risque sont là pour voir ce que le levier coûte" in page and "Le passé ne garantit rien" in page
+    assert "Ses comptes fictifs, côte à côte" in page and "Le stop suiveur n'a pas protégé sur le passé" in page
+    assert "il est liquidé, pour toujours" in page and "'remise au levier'" in page
     assert "Sur huit autres marchés" in page and "C'est une protection, pas une façon de gagner plus" in page
     assert "gagnant sur 3 périodes" not in page and "trois périodes" not in page  # le test final ne choisit plus
     for gone in ("Radar des mouvements", "Mes essais", "Labos", "Mon trader", "Tableau de bord"):
@@ -344,10 +346,12 @@ def test_the_trend_bot_is_served_to_the_page_only_and_stays_in_paper_money(serve
     assert status == 200 and [c["name"] for c in data["coins"]] == ["Bitcoin", "Ether"]
     assert data["coins"][0]["level"] == 3 and data["coins"][0]["history"]["rule"]["total"] > 1
     assert not data["coins"][0]["account"]["started"]  # créé à l'instant : il ouvre à la prochaine ouverture du jour
+    assert [a["key"] for a in data["coins"][0]["accounts"]] == ["normal", "stop", "risque", "risque_stop"]
+    assert len(data["coins"][0]["history"]["variants"]) == 4 and "line" in data["coins"][0]["stop"]
     assert len(data["robustness"]["rows"]) == 6 and "Argent fictif seulement" in data["robustness"]["verdict"]
     status, body, _ = request(base, "/api/tendance-graphique?c=btc", headers=PAGE)
     chart = json.loads(body)
-    assert status == 200 and len(chart["candles"]) == 420 and len(chart["lines"]) == 3
+    assert status == 200 and len(chart["candles"]) == 420 and len(chart["lines"]) == 4  # trois moyennes et le stop
     assert chart["orders"][0]["side"] == "achat"
     assert request(base, "/api/tendance-graphique?c=SOL", headers=PAGE)[0] == 400  # seulement le Bitcoin et l'Ether
     assert request(base, "/api/tendance-graphique?c=../.env", headers=PAGE)[0] == 400

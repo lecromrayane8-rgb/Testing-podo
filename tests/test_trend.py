@@ -477,10 +477,19 @@ def test_the_page_shows_where_the_rule_stands_and_an_account_that_opens_the_next
     chart = trend.chart_view("BTC/USDT", feed_on(tmp_path, exchange).get("BTC/USDT"))
     json.dumps(chart, allow_nan=False)
     assert len(chart["candles"]) == 400 and [ln["label"] for ln in chart["lines"]] == [
-        "Moyenne 50 jours", "Moyenne 100 jours", "Moyenne 200 jours"]
+        "Moyenne 50 jours", "Moyenne 100 jours", "Moyenne 200 jours", "Stop suiveur (pointillés)"]
+    assert chart["lines"][3]["dash"] and chart["lines"][3]["values"][-1] < frames["BTC/USDT"]["close"].iloc[399]
     assert chart["lines"][2]["values"][:199] == [None] * 199 and chart["lines"][2]["values"][199] > 0
     assert [(o["side"], o["ts"]) for o in chart["orders"]] == [("achat", start + 200 * DAY)]
     assert data["cost"] == pytest.approx(0.0015) and data["averages"] == [50, 100, 200]
+    # les quatre comptes fictifs, côte à côte : normal, avec stop suiveur, à risque, à risque avec stop
+    assert [a["key"] for a in btc["accounts"]] == ["normal", "stop", "risque", "risque_stop"]
+    assert btc["account"] == btc["accounts"][0] and all(not a["started"] and a["value"] == 1000.0 for a in btc["accounts"])
+    assert [a["short"] for a in btc["accounts"]] == ["Normal", "Normal + stop", "Risque ×2", "Risque ×2 + stop"]
+    past = {v["key"]: v for v in btc["history"]["variants"]}
+    assert past["normal"]["total"] == btc["history"]["rule"]["total"] and past["normal"]["paid"] == 0.0
+    assert past["risque"]["paid"] > 0 and past["risque"]["liquidated"] is None  # une hausse régulière : le levier paie, ici
+    assert past["risque"]["total"] > past["normal"]["total"] > 1 and btc["stop"]["allowed"] and btc["stop"]["line"] < btc["price"]
     assert len(data["robustness"]["rows"]) == 6 and "Argent fictif seulement" in data["robustness"]["verdict"]
     exchange.n = 402  # deux jours plus tard : le compte a ouvert au jour 400, au prix d'ouverture de ce jour
     later = page(tmp_path, exchange)["coins"][0]["account"]
@@ -490,6 +499,10 @@ def test_the_page_shows_where_the_rule_stands_and_an_account_that_opens_the_next
     assert later["value"] == pytest.approx(1000 * (1 - FEE) / (order["price"] * (1 + SLIP)) * frames["BTC/USDT"]["close"].iloc[401])
     assert later["value"] == pytest.approx(later["hold"])  # dedans en entier dès l'ouverture : comme « acheter et garder »
     assert later["costs"] == pytest.approx(order["cost"]) and order["cost"] == pytest.approx(1000 * (1 - (1 - FEE) / (1 + SLIP)))
+    risky = page(tmp_path, exchange)["coins"][0]["accounts"][2]  # le compte à risque : le double, et une nuit d'intérêts
+    assert risky["started"] and risky["leverage"] == 2.0 and risky["orders"][0]["why"] == "regle" and risky["count"] == 1
+    assert risky["orders"][0]["amount"] == pytest.approx(2000) and risky["paid"] == pytest.approx(1000 * NIGHT)
+    assert risky["value"] - 1000 == pytest.approx(2 * (later["value"] - 1000) - 1000 * NIGHT, rel=1e-6)
 
 
 def test_the_page_says_when_the_history_is_too_short_or_the_platform_silent(tmp_path):
@@ -511,7 +524,8 @@ def test_the_console_report_tells_the_same_story_as_the_page(tmp_path):
     trend.account_since(tmp_path / "tendance", datetime.fromtimestamp((start + 700 * DAY) / 1000, timezone.utc))
     text = trend.report(page(tmp_path, DailyExchange(frames, n=900)))
     for words in ("Bitcoin à", "Ether à", "moyenne  50 jours : à dépasser ce soir", "Compte fictif depuis le", "acheter et garder",
-                  "pire baisse", "Argent fictif : aucun ordre ne part sur une plateforme", "robustesse --tendance"):
+                  "pire baisse", "Argent fictif : aucun ordre ne part sur une plateforme", "robustesse --tendance",
+                  "Les autres comptes fictifs : Normal + stop", "Risque ×2 + stop", "À risque : levier ×2 : ×"):
         assert words in text
 
 

@@ -799,6 +799,47 @@ marché que sur presque tous ses mélanges.
   moins dures, et moins de gain que « garder ».
 - **Les frais décident, encore une fois.** Le bot de tendance reste en argent fictif.
 
+## Les comptes à risque du bot de tendance (13/11/2026, fait)
+
+Demande du 13/11 : « prendre des risques », puis « mets des stop-loss suiveurs… pour éviter, si on est en gain, une
+chute. Je sais pas si ça marche comme ça ». Tout est en argent fictif. Point de retour : `701905e`.
+
+### Ce qui a été fait
+
+Quatre comptes fictifs suivent maintenant la même règle, côte à côte sur l'onglet « Tendance » : le compte normal, le
+même avec un stop suiveur, un compte à risque (levier ×2) et le compte à risque avec stop. Leurs définitions ont été
+écrites et enregistrées dans git (`7763d02`) avant d'être mesurées, et n'ont pas été retouchées ensuite.
+
+- **Le levier ×2.** Le compte tient le double du compte normal. Ce qu'il emprunte lui coûte des intérêts (0,01 %
+  toutes les 8 heures, environ 11 % par an). Tant qu'il emprunte, il est remis à ×2 dès qu'il s'en écarte de plus de
+  10 %. Si sa valeur ne couvre plus sa position, il est liquidé : il vaut zéro, pour toujours.
+- **Le stop suiveur.** Le réglage classique des manuels (le « chandelier ») : le plus haut des 22 derniers jours,
+  moins trois bougies moyennes. Si le prix clôture dessous, le compte vend tout à l'ouverture suivante ; il revient
+  quand le prix repasse au-dessus de la ligne. La ligne est dessinée en pointillés sur le graphique.
+- **Les tests de l'argent** : le double de la part et les intérêts au centime, la remise au levier, la liquidation
+  au centime près, le marché qui ne va nulle part, la ligne du stop, et pour les quatre comptes : aucun ordre passé
+  ne change quand on ajoute des jours.
+
+### Ce que chaque compte aurait fait (vraies bougies, du 05/03/2018 au 12/11/2026, frais et intérêts compris)
+
+| Compte | Bitcoin | Ether |
+|---|---|---|
+| Acheter et garder | ×6,2 (pire baisse −77 %) | ×2,3 (−90 %) |
+| Le compte normal | ×15,8 (−50 %) | ×15,7 (−56 %) |
+| Normal, avec stop suiveur | ×7,5 (−58 %) | ×7,9 (−68 %) |
+| À risque : levier ×2 | ×41,8 (−80 %) | ×13,4 (−88 %) |
+| À risque ×2, avec stop suiveur | ×9,9 (−84 %) | ×4,9 (−96 %) |
+
+1. **Le stop suiveur n'a pas protégé.** Dans les quatre cas, le compte avec stop finit plus bas que le compte sans,
+   avec une pire baisse plus profonde. Il vend sur des baisses ordinaires et rachète plus haut ; la règle des moyennes
+   fait déjà, plus lentement, le travail d'un stop. Un calcul indépendant donne les mêmes chiffres.
+2. **Le levier ×2 n'est pas « deux fois mieux ».** Il a multiplié le gain du Bitcoin par 2,6, mais sur l'Ether il a
+   fini plus bas que le compte normal. Dans les deux cas, il a fait vivre une chute de −80 % ou pire.
+3. **Plus de levier, c'est la ruine.** À ×3, le compte sur l'Ether est liquidé (19/05/2021) ; à ×5, les deux
+   (Bitcoin le 27/06/2019, Ether le 12/03/2020).
+
+Ces comptes sont là pour voir ce que le risque donne et ce qu'il coûte, pas pour être imités.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
@@ -892,3 +933,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 13/11/2026 | Le grand test sur trois horizons (15 secondes à 1 jour, techniques seules et combinées au volume, au flux et au carnet d'ordres) | Fait : 15,8 millions de trades, aucune combinaison confirmée ; seule tient une règle de tendance simple sur le Bitcoin et l'Ether | `4517daa` |
 | 13/11/2026 | Le bot de tendance (argent fictif) | Fait : moteur et tests de l'argent, onglet « Tendance », porte `robustesse --tendance` (verdict : pas robuste, argent fictif seulement), outil de mesure sur le même moteur | `95db6b4` |
 | 13/11/2026 | La règle de tendance sur d'autres marchés (option A) | Fait : huit marchés, 39 à 77 ans, protocole enregistré avant le calcul. La règle ne bat « garder » sur aucun ; les tendances sont réelles mais les frais et le temps dehors mangent l'avantage. Une protection, pas un gain | `fe44aec` |
+| 13/11/2026 | Les comptes à risque du bot de tendance (levier ×2, stop suiveur) | Fait : quatre comptes fictifs côte à côte, définis avant d'être mesurés. Sur le passé, le stop suiveur n'a pas protégé ; le levier ×2 a aidé le Bitcoin, pas l'Ether, avec des chutes de −80 % et plus | `701905e` |

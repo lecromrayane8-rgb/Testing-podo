@@ -58,7 +58,10 @@ relance les bots tout seul toutes les 20 secondes s'ils s'arrêtent, sauf si l'u
 
 L'onglet « Tendance » est un bot à part, en argent fictif lui aussi : Bitcoin et Ether tenus seulement au-dessus de
 leur moyenne des 50, 100 et 200 derniers jours (un tiers du compte par moyenne dépassée), décision une fois par jour à
-la clôture, ordre à l'ouverture suivante, jamais de levier. Ses fichiers sont dans `data\tendance\` : `compte.json`
+la clôture, ordre à l'ouverture suivante. La page montre quatre comptes fictifs côte à côte : le compte normal (sans
+levier), le même avec un stop suiveur, un compte « à risque » (levier ×2 : intérêts sur l'emprunt, liquidation
+possible) et le compte à risque avec stop ; ils servent à voir ce que le risque coûte, pas à être imités (sur le
+passé, le stop n'a pas protégé et le levier a fait vivre des chutes de −80 % et plus). Ses fichiers sont dans `data\tendance\` : `compte.json`
 (la date de création du compte fictif, jamais changée), les bougies d'un jour gardées (`*_1d.csv`) et
 `robustesse.json` (le dernier test). Son compte est recalculé à partir des bougies : rien d'autre n'est à lire. Le
 test de robustesse ne le déclare pas « robuste » : ne propose jamais de le passer en argent réel. Sans le site, deux

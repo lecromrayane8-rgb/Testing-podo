@@ -151,11 +151,9 @@ select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid
 .pill { display: inline-flex; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px;
   color: var(--text-primary); white-space: nowrap; }
 .kpis.swarm-kpis .tile-value { font-size: 22px; }
-.kpis.trend-kpis { grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
-.kpis.trend-kpis .tile-value { font-size: 22px; }
 table.fit th { white-space: normal; vertical-align: bottom; }  /* un tableau qui doit tenir sur un téléphone */
 @media (max-width: 900px) { table.fit .mid { display: none; } }
-@media (max-width: 600px) { table.fit th, table.fit td { padding: 8px 8px; } }
+@media (max-width: 600px) { table.fit th, table.fit td { padding: 8px 8px; } table.fit .mob { display: inline; } }
 .kpis.swarm-kpis .tile-hero .tile-value { font-size: 30px; }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: var(--surface-2, rgba(127, 127, 127, 0.08)); }
@@ -322,7 +320,8 @@ BODY = """
     <p class="meta">Une seule règle, simple, en argent fictif : tenir du Bitcoin et de l'Ether seulement quand leur prix
       est au-dessus de sa moyenne des 50, 100 et 200 derniers jours, un tiers du compte par moyenne dépassée. Le bot
       décide une fois par jour, quand la journée se termine sur la plateforme, et passe son ordre à l'ouverture
-      suivante. Pas de levier, pas de vente à découvert. Rien ne part sur une plateforme.</p>
+      suivante. Rien ne part sur une plateforme. À côté du compte normal, trois comptes fictifs « pour voir » : le
+      même avec un stop suiveur, un compte à risque (levier ×2), et le compte à risque avec stop.</p>
     <p class="status-line" id="trend-status" aria-live="polite">Chargement de l'historique depuis 2017 (quelques
       secondes la première fois)…</p>
     <div id="trend-coins"></div>
@@ -352,8 +351,12 @@ BODY = """
           d'environ ×16 à ×10,5 (mesure du 13/11/2026).</li>
         <li>Le compte fictif suppose que l'ordre passe à l'ouverture du jour, même si le site était fermé. En argent
           réel, il faudrait un bot allumé à cette heure-là.</li>
-        <li>Jamais de levier sur cette règle : à ×2, la pire baisse mesurée passe de −50 % à −80 % ; à ×5, le compte
-          est liquidé.</li>
+        <li>Les comptes à risque sont là pour voir ce que le levier coûte, pas pour être imités. Sur le passé, le
+          levier ×2 a fait vivre des chutes de −80 % et plus, et sur l'Ether il a fini plus bas que le compte normal.
+          À ×3, le compte sur l'Ether aurait été liquidé (mai 2021) ; à ×5, les deux (mesures du 13/11/2026).</li>
+        <li>Le stop suiveur n'a pas protégé sur le passé : sur le Bitcoin comme sur l'Ether, le compte avec stop a
+          fini plus bas que le compte sans, avec une pire baisse plus profonde. Il vend sur des baisses ordinaires
+          et rachète plus haut (mesure du 13/11/2026).</li>
       </ul>
     </section>
   </div>
@@ -1868,11 +1871,14 @@ JS = r"""
 
   // --- le bot de tendance : une fiche par crypto, bâtie une fois puis mise à jour (le zoom du graphique reste) ---
   let trendData = null, trendReady = false;
-  const trendCharts = {};
+  const trendCharts = {}, trendPick = {};
   const TREND_PLACE = ['dehors', 'dedans pour un tiers', 'dedans pour deux tiers', 'dedans en entier'];
   function trendPlace(level) { return TREND_PLACE[Math.max(0, Math.min(3, level))]; }
   function clock(ms) { return new Date(ms).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'}); }
   function multiple(v) { return '×' + v.toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+  function named(long, short) {  // le nom entier sur ordinateur, le nom court sur téléphone
+    return el('td', {}, el('span', {class: 'opt', text: long}), el('span', {class: 'mob', text: short}));
+  }
   function headRow(...cells) {
     return el('thead', {}, el('tr', {}, ...cells.map(c => el('th', {class: c[1] || null, text: c[0]}))));
   }
@@ -1896,9 +1902,18 @@ JS = r"""
       el('div', {class: 'table-wrap'}, el('table', {class: 'fit'}, headRow(['Moyenne'], ['À dépasser ce soir', 'n'], ['Le prix est', 'opt'],
         ['Écart du prix', 'n']), part('tbody', 'avgs'))),
       part('p', 'tonight', 'note'),
-      el('h3', {class: 'group-title', text: 'Son compte fictif'}), part('div', 'kpis', 'kpis trend-kpis'), part('div', 'orders'),
+      el('h3', {class: 'group-title', text: 'Ses comptes fictifs, côte à côte'}), part('p', 'acc-intro', 'status-line'),
+      el('div', {class: 'table-wrap'}, el('table', {class: 'fit'}, headRow(['Compte'], ['Valeur', 'n'], ['Depuis le départ', 'n'],
+        ['Pire baisse', 'n opt'], ['Frais et intérêts', 'n opt mid'], ['Où il en est', 'opt']), part('tbody', 'accounts'))),
+      part('p', 'acc-note', 'note'),
+      el('p', {class: 'status-line', text: 'Les ordres de chaque compte :'}),
+      el('div', {class: 'controls'}, part('div', 'pick', 'seg')), part('div', 'orders'),
       el('h3', {class: 'group-title', text: 'Son graphique, en bougies d\'un jour'}), part('div', 'chart'), part('div', 'legend', 'legend'),
-      el('h3', {class: 'group-title', text: 'Ce que la règle aurait fait, année par année'}), part('p', 'history', 'status-line'),
+      el('h3', {class: 'group-title', text: 'Ce que chaque compte aurait fait sur tout l\'historique'}), part('p', 'history', 'status-line'),
+      el('div', {class: 'table-wrap'}, el('table', {class: 'fit'}, headRow(['Compte'], ['Multiplié par', 'n'], ['Pire baisse', 'n'],
+        ['Ordres par an', 'n opt'], ['Intérêts payés', 'n opt mid'], ['Liquidé', 'opt mid']), part('tbody', 'variants'))),
+      part('p', 'variants-note', 'note'),
+      el('h3', {class: 'group-title', text: 'Le compte normal, année par année'}),
       el('div', {class: 'table-wrap'}, el('table', {class: 'fit'}, headRow(['Année'], ['La règle', 'n'], ['Garder', 'n'],
         ['Pire baisse de la règle', 'n'], ['Pire baisse en gardant', 'n']), part('tbody', 'years')))];
   }
@@ -1937,25 +1952,56 @@ JS = r"""
       ? 'Si la journée finissait à ce prix, rien ne changerait : le bot resterait ' + place + '.'
       : 'Si la journée finissait à ce prix, le bot ' + (c.tonight > c.level ? 'achèterait' : 'vendrait') + ' à l\'ouverture suivante, pour être '
         + trendPlace(c.tonight) + '.');
-    $(id + 'kpis').replaceChildren(...(!acc.started
-      ? [tile('Compte fictif', usdt(acc.capital), 'créé le ' + fullDay(acc.since) + ' : il ouvre à ' + clock(c.next_open) + ', à la prochaine ouverture du jour')]
-      : [tile('Compte fictif', usdt(acc.value), pct(acc.value / acc.capital - 1) + ' depuis le ' + fullDay(acc.start) + ' · ' + trendPlace(acc.level)),
-        tile('Acheter et garder', usdt(acc.hold), pct(acc.hold / acc.capital - 1) + ' depuis le même jour'),
-        tile('Écart', usdt(acc.value - acc.hold, true), 'la règle moins « acheter et garder »'),
-        tile('Pire baisse', pct(acc.worst, 1), 'en gardant : ' + pct(acc.hold_worst, 1)),
-        tile('Ordres passés', String(acc.orders.length), 'frais et glissement payés : ' + usdt(acc.costs))]));
-    $(id + 'orders').replaceChildren(acc.orders.length ? el('div', {class: 'table-wrap'}, el('table', {class: 'fit'},
+    const first = c.accounts[0];
+    $(id + 'acc-intro').textContent = typo(first.started
+      ? thousands(first.capital) + ' USDT fictifs chacun, ouverts le ' + fullDay(first.start) + ' : la même règle, vécue de quatre façons.'
+      : thousands(first.capital) + ' USDT fictifs chacun. Créés le ' + fullDay(first.since) + ' : ils ouvrent à ' + clock(c.next_open)
+        + ', à la prochaine ouverture du jour, pour ne rien devoir à un prix déjà passé.');
+    const where = a => a.liquidated ? 'liquidé le ' + fullDay(a.liquidated) : !a.started ? 'pas encore ouvert'
+      : a.level > 0 ? trendPlace(a.level) + (a.leverage > 1 ? ', en double' : '') : a.stop && c.level > 0 ? 'sorti par son stop' : 'dehors';
+    $(id + 'accounts').replaceChildren(...c.accounts.map(a => el('tr', {},
+      named(a.name, a.short), el('td', {class: 'n'}, usdt(a.value).replace(' USDT', ''), el('span', {class: 'opt', text: ' USDT'})),
+      el('td', {class: 'n ' + cls(a.value - a.capital), text: pct(a.value / a.capital - 1)}),
+      el('td', {class: 'n opt', text: pct(a.worst, 1)}), el('td', {class: 'n opt mid', text: usdt(a.costs + a.paid)}),
+      el('td', {class: 'opt', text: where(a)}))),
+      el('tr', {}, named('Acheter et garder', 'Garder'),
+        el('td', {class: 'n'}, usdt(first.hold).replace(' USDT', ''), el('span', {class: 'opt', text: ' USDT'})),
+        el('td', {class: 'n ' + cls(first.hold - first.capital), text: pct(first.hold / first.capital - 1)}),
+        el('td', {class: 'n opt', text: pct(first.hold_worst, 1)}), el('td', {class: 'n opt mid', text: '—'}), el('td', {class: 'opt', text: '—'})));
+    $(id + 'acc-note').textContent = typo('À risque : le compte emprunte pour tenir le double du compte normal. Il paie des intérêts sur ce '
+      + 'qu\'il emprunte (0,01 % toutes les 8 heures, environ 11 % par an) et il est liquidé, pour toujours, si sa valeur ne couvre plus sa '
+      + 'position. Stop suiveur : si le prix clôture à plus de trois bougies moyennes sous son plus haut des 22 derniers jours (la ligne en '
+      + 'pointillés du graphique), le compte vend tout à l\'ouverture suivante ; il revient quand ce n\'est plus le cas. Aujourd\'hui, le stop '
+      + (c.stop.allowed ? 'laisse passer' : 'dit de sortir') + ' (ligne à ' + precise(c.stop.line) + ').');
+    const picked = c.accounts.find(a => a.key === trendPick[c.coin]) || first;
+    seg(id + 'pick', c.accounts.map(a => [a.key, a.short]), picked.key, k => { trendPick[c.coin] = k; fillTrend(c); });
+    const orderText = o => o.why === 'liquidation' ? '✕ liquidation'
+      : o.why === 'levier' ? (o.side === 'achat' ? '▲ ' : '▼ ') + 'remise au levier'
+      : o.why === 'stop' ? (o.side === 'achat' ? '▲ retour après le stop' : '▼ stop : vend tout')
+      : (o.side === 'achat' ? '▲ achète ' : '▼ vend ') + Math.abs(o.to - o.from) + ' tiers';
+    $(id + 'orders').replaceChildren(picked.orders.length ? el('div', {class: 'table-wrap'}, el('table', {class: 'fit'},
       headRow(['Jour'], ['Ordre'], ['Prix', 'n'], ['Montant', 'n opt'], ['Frais', 'n opt']),
-      el('tbody', {}, ...acc.orders.map(o => el('tr', {}, el('td', {text: fullDay(o.ts)}),
-        el('td', {class: o.side === 'achat' ? 'up' : 'down'}, (o.side === 'achat' ? '▲ achète ' : '▼ vend ') + Math.abs(o.to - o.from) + ' tiers',
-          el('span', {class: 'opt', text: ' (de ' + o.from + ' à ' + o.to + ')'})),
+      el('tbody', {}, ...picked.orders.map(o => el('tr', {}, el('td', {text: fullDay(o.ts)}),
+        el('td', {class: o.side === 'achat' ? 'up' : 'down'}, orderText(o),
+          o.why === 'regle' ? el('span', {class: 'opt', text: ' (de ' + o.from + ' à ' + o.to + ')'}) : null),
         el('td', {class: 'n', text: precise(o.price)}), el('td', {class: 'n opt', text: usdt(o.amount)}),
-        el('td', {class: 'n opt', text: usdt(o.cost)}))))))
-      : el('p', {class: 'note', text: typo(acc.started ? 'Aucun ordre depuis l\'ouverture du compte : la règle n\'a pas changé d\'avis.'
-        : 'Le compte ne doit rien à un prix déjà passé : son premier ordre, s\'il y en a un, partira à l\'ouverture du jour.')}));
+        el('td', {class: 'n opt', text: usdt(o.cost)}))))),
+      picked.count > picked.orders.length ? el('p', {class: 'note', text: 'Les ' + picked.orders.length + ' derniers ordres sur ' + picked.count + '.'}) : null)
+      : el('p', {class: 'note', text: typo(picked.started ? 'Aucun ordre depuis l\'ouverture de ce compte : la règle n\'a pas changé d\'avis.'
+        : 'Ce compte ne doit rien à un prix déjà passé : son premier ordre, s\'il y en a un, partira à l\'ouverture du jour.')}));
     $(id + 'history').textContent = typo('Depuis le ' + fullDay(h.from) + ' (' + dec(h.years) + ' ans), frais compris : la règle ' + multiple(h.rule.total)
       + ', pire baisse ' + pct(h.rule.worst, 0) + ' ; acheter et garder ' + multiple(h.hold.total) + ', pire baisse ' + pct(h.hold.worst, 0) + '. Environ '
       + Math.round(h.orders_per_year) + ' ordres par an, en crypto ' + Math.round(100 * h.inside) + ' % du temps en moyenne. Le passé ne garantit rien.');
+    $(id + 'variants').replaceChildren(...h.variants.map(v => el('tr', {},
+      named(v.name, v.short), el('td', {class: 'n', text: multiple(v.total)}), el('td', {class: 'n down', text: pct(v.worst, 0)}),
+      el('td', {class: 'n opt', text: String(Math.round(v.orders_per_year))}), el('td', {class: 'n opt mid', text: v.paid ? usdt(v.paid) : '—'}),
+      el('td', {class: 'opt mid', text: v.liquidated ? 'le ' + fullDay(v.liquidated) : 'non'}))),
+      el('tr', {}, named('Acheter et garder', 'Garder'), el('td', {class: 'n', text: multiple(h.hold.total)}),
+        el('td', {class: 'n down', text: pct(h.hold.worst, 0)}), el('td', {class: 'n opt', text: '0'}), el('td', {class: 'n opt mid', text: '—'}),
+        el('td', {class: 'opt mid', text: 'non'})));
+    $(id + 'variants-note').textContent = typo('Lis les deux colonnes ensemble : un compte peut finir plus haut et avoir fait vivre une chute bien '
+      + 'pire. Les intérêts sont en USDT, pour 1 000 placés au départ. Le stop suiveur vend aussi sur des baisses ordinaires et rachète plus haut : '
+      + 'il ne protège que si la chute continue. Le levier grossit les gains comme les pertes, et paie des intérêts. Le passé ne garantit rien.');
     $(id + 'years').replaceChildren(...h.by_year.map(y => el('tr', {},
       el('td', {}, String(y.year), y.days < 360 ? el('span', {class: 'opt', text: ' (incomplète)'}) : null),
       el('td', {class: 'n ' + cls(y.rule), text: pct(y.rule, 0)}), el('td', {class: 'n ' + cls(y.hold), text: pct(y.hold, 0)}),

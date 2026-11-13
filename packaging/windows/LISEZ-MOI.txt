@@ -83,7 +83,11 @@ LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordina
   (dedans ou dehors, depuis quand, le prix à dépasser ce soir), son compte fictif comparé à « acheter
   et garder », son graphique, ce que la règle aurait fait année par année depuis 2018, et son test
   de robustesse. À savoir : la règle a moins perdu que « garder » dans les grandes chutes, mais le
-  test ne la déclare pas « robuste ». Argent fictif seulement, jamais de levier.
+  test ne la déclare pas « robuste ». Argent fictif seulement. Quatre comptes fictifs sont montrés
+  côte à côte : le compte normal, le même avec un stop suiveur, un compte « à risque » (levier ×2 :
+  il emprunte, paie des intérêts et peut être liquidé) et le compte à risque avec stop. Ils servent
+  à voir ce que le risque donne et ce qu'il coûte : sur le passé, le stop suiveur n'a pas protégé,
+  et le levier a fait vivre des chutes de −80 % et plus.
 - Actualité : les derniers titres crypto, ce que le prix des cryptos citées a fait depuis, et
   l'indice peur et avidité. Pour comprendre : les bots ne tradent jamais sur les titres.
 Sous « Plus » : les Prix (Binance, OKX, Kraken, Coinbase et Bybit côte à côte), l'École (quatorze
