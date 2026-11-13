@@ -13,8 +13,15 @@ import ccxt
 STABLE_OR_PEGGED = {
     "USDT", "USDC", "FDUSD", "TUSD", "DAI", "BUSD", "USDP", "USDD", "USDE", "USD1", "PYUSD", "EUR", "EURI",
     "AEUR", "GBP", "TRY", "BRL", "PAXG", "XAUT", "WBTC", "WBETH", "BFUSD",
+    "U", "RLUSD", "XUSD", "RWUSD", "USDS",  # ajoutées le 13/11/2026 : restées à 1,00 $ à 2 % près sur 15 jours
 }
 LEVERAGED_SUFFIXES = ("UP", "DOWN", "BULL", "BEAR")
+# Actions et fonds en jetons de Binance (NVDAB, GOOGLB, SOXLB… : 105 paires le 13/11/2026). Ce ne sont pas des cryptos :
+# presque pas d'échanges la nuit et le week-end, donc des prix affichés auxquels on ne peut pas vraiment traiter.
+# Binance ne les étiquette pas. Deux indices réunis les désignent toutes sans toucher une seule crypto (vérifié sur
+# les 518 paires USDT ouvertes) : le nom finit par « B », et la paire n'est pas ouverte au groupe d'échange
+# « TRD_GRP_016 » (les cryptos ARB, BNB, SHIB… le sont). Sur une autre plateforme (pas de groupes) : rien n'est écarté.
+STOCK_TOKEN_SUFFIX, STOCK_TOKEN_CLOSED_GROUP = "B", "TRD_GRP_016"
 # Memecoins cotés sur Binance spot : gardés seulement s'ils sont assez échangés (pas de memecoins de lancement).
 MEMECOINS = ("DOGE/USDT", "SHIB/USDT", "PEPE/USDT", "FLOKI/USDT", "BONK/USDT", "WIF/USDT")
 
@@ -47,16 +54,25 @@ def pick_markets(
 
 def by_volume(exchange: ccxt.Exchange, quote: str = "USDT", top: int = 30,
               min_volume: float = 5_000_000) -> list[ScanResult]:
-    """Les `top` paires spot les plus échangées sur 24 h (sans monnaies stables ni tokens à levier)."""
+    """Les `top` paires spot les plus échangées sur 24 h (sans monnaies stables, tokens à levier ni actions en jetons)."""
     return sorted(liquid_markets(exchange, quote, min_volume), key=lambda r: r.volume, reverse=True)[:top]
 
 
+def tokenized_stock(market: dict) -> bool:
+    """Une action ou un fonds en jeton de Binance (voir STOCK_TOKEN_SUFFIX) : pas une crypto."""
+    groups = (market.get("info") or {}).get("permissionSets")
+    if not groups or not str(market.get("base", "")).endswith(STOCK_TOKEN_SUFFIX):
+        return False
+    return not any(STOCK_TOKEN_CLOSED_GROUP in group for group in groups)
+
+
 def tradable(market: dict | None, quote: str) -> bool:
-    """Une paire spot ouverte, cotée dans `quote`, qui n'est ni une monnaie stable ni un token à levier."""
+    """Une paire spot ouverte, cotée dans `quote`, qui n'est ni une monnaie stable, ni un token à levier, ni une
+    action en jeton."""
     if not market or not market.get("spot") or market.get("active") is False or market.get("quote") != quote:
         return False
     base = market.get("base", "")
-    return base not in STABLE_OR_PEGGED and not base.endswith(LEVERAGED_SUFFIXES)
+    return base not in STABLE_OR_PEGGED and not base.endswith(LEVERAGED_SUFFIXES) and not tokenized_stock(market)
 
 
 def liquid_markets(exchange: ccxt.Exchange, quote: str, min_volume: float) -> list[ScanResult]:

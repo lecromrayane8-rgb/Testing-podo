@@ -260,8 +260,9 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `/api/bots`) et qu'il lance une commande.
   `packaging/windows/CLAUDE.md` : consignes pour une session Claude ouverte sur le dossier du ZIP, sur le PC de
   l'utilisateur (commandes de l'exécutable, lecture des résultats, règles non négociables ; test de cohérence).
-- `tradingbot/scanner.py` : cryptos spot USDT les plus agitées sur 24 h, volume ≥ 5 M$, sans stables ni tokens à
-  levier ; `MEMECOINS` (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) gardés seulement s'ils sont assez échangés.
+- `tradingbot/scanner.py` : cryptos spot USDT les plus agitées sur 24 h, volume ≥ 5 M$, sans stables, tokens à
+  levier ni actions en jetons (`tokenized_stock` : nom en « B » ET paire fermée au groupe d'échange `TRD_GRP_016`
+  dans `info.permissionSets` ; 105 paires NVDAB, GOOGLB… le 13/11/2026, aucune crypto touchée) ; `MEMECOINS` (DOGE, SHIB, PEPE, FLOKI, BONK, WIF) gardés seulement s'ils sont assez échangés.
 - Commande `tournoi` (`main.py`) : stratégies « à surveiller »/« prometteur » d'un labo (`--labo`, défaut
   `laboratoire.json` ; le labo court terme écrit `laboratoire-court-terme.json` via `labo --resultats`) × cryptos du
   scanner (+ `--avec-marches-du-labo`), toujours en paper, un compte fictif par bot (`bot_label` = variante), données
@@ -296,7 +297,13 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   Binance (prix publics par le miroir `data-api.binance.vision`, cache hors du dépôt) : `essai --jours 14` rejoue la
   mesure à l'essai (univers reconstitué heure par heure, trades ouverts pendant que la crypto bougeait), `aujourdhui`
   fait le test du moment sur chaque crypto suivie ; les deux comparent avec et sans sécurisation ; `essai` classe
-  aussi chaque technique (`--fin` rejoue exactement une période déjà mesurée). `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
+  aussi chaque technique (`--fin` rejoue exactement une période déjà mesurée). `contexte.py` (étape 1 ter) : pour
+  chaque trade à l'essai (`Harvest.rows`, demandé seulement par cet outil), ce qu'on savait à la clôture du signal
+  (flux acheteurs/vendeurs et nombre de trades des bougies complètes `publicGetKlines`, tendance de l'unité
+  au-dessus et du Bitcoin, comptes acheteurs/vendeurs et intérêt ouvert des archives des contrats à terme), puis
+  « condition vraie » contre « fausse » jour par jour (`paired_bounds`, seuil durci), avec deux témoins (pile ou
+  face, et la bougie d'entrée connue après coup) : `trades`, `donnees`, `mesure` (`--dossier`, `--unites`).
+  `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
 
@@ -488,3 +495,14 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   d'ordres n'a pas d'historique (étape 4). Il a montré un live TikTok d'un « bot d'arbitrage Polymarket » (lien en
   bio) : dit de ne pas s'en inspirer (chiffres affichés incohérents, gains invraisemblables, autre produit) ; seule la
   présentation est bonne à prendre, et elle est déjà prévue à l'étape 3.
+- 13/11/2026 (nuit) : accord donné pour l'étape 1 ter (« vas-y »), avec la crainte de « cramer » ses tokens → la
+  mesure d'abord, hors des bots (`audit/contexte.py`), point de retour `8308621`. RÉSULTAT (14 jours, 108 cryptos,
+  5,36 millions de trades réels, tous à −0,141 %) : aucune des sept conditions (flux acheteurs/vendeurs, activité,
+  unité au-dessus, Bitcoin, foule des contrats à terme, intérêt ouvert, les trois d'accord) ne sépare les bons
+  trades des mauvais ; témoins conformes (pile ou face +0,002 %, triche +0,361 %). Deux pistes vues unité par unité
+  (4 h dans le sens de la tendance du jour ; contre-pied du Bitcoin en 1 h et 4 h) revérifiées sur 60 jours puis 60
+  jours encore avant : aucune ne tient. Donc RIEN n'est branché dans les bots ni le site. Fait dans le bot, approuvé :
+  actions en jetons écartées (`scanner.tokenized_stock`, 105 paires) et cinq monnaies stables de plus. Pas encore
+  mesuré : carnet d'ordres (étape 4, à enregistrer sur le PC), entrées par ordre limite (frais plus bas), horizons
+  de plusieurs jours. Leçon de méthode : une piste « significative » sur une période se revérifie toujours sur une
+  autre avant d'y croire. À faire approuver : la suite (étape 4 d'abord, pour lancer l'enregistrement, ou étape 2).

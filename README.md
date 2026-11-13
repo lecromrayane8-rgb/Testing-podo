@@ -143,7 +143,8 @@ python main.py flotte --une-fois      # un seul tour, pour vérifier
 Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au direct dans `tradingbot/fleet.py`) :
 
 1. **Les cryptos** : toutes les 10 minutes, les `FLOTTE_CRYPTOS` paires USDT les plus agitées sur 24 h (60 par défaut,
-   au moins 5 M$ échangés par jour, sans monnaies stables ni tokens à levier). Une crypto dont l'amplitude sur 24 h
+   au moins 5 M$ échangés par jour, sans monnaies stables, tokens à levier ni actions en jetons). Une crypto dont
+   l'amplitude sur 24 h
    passe sous `FLOTTE_MOUVEMENT_MIN` (3 %), ou qui sort de la liste, passe **en veille** : ses bots n'ouvrent plus de
    trade et gèrent ceux en cours.
 2. **Le labo en direct** : chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures, sur
@@ -354,7 +355,8 @@ python main.py labo --symbols BTC/USDT,ETH/USDT,SOL/USDT --timeframes 1m,5m,15m 
 
 `--scanner 8` ajoute les 8 cryptos les plus agitées des dernières 24 h, `--memecoins` les memecoins cotés sur
 Binance (DOGE, SHIB, PEPE, FLOKI, BONK, WIF). Le scanner ne garde que les paires spot en USDT échangées pour au
-moins 5 millions de dollars par jour, sans monnaies stables ni tokens à levier : sur une crypto peu échangée, le
+moins 5 millions de dollars par jour, sans monnaies stables, tokens à levier ni actions en jetons (NVDAB, GOOGLB… :
+ce ne sont pas des cryptos, elles ne s'échangent presque pas la nuit et le week-end) : sur une crypto peu échangée, le
 prix affiché n'est pas celui auquel on peut revendre. En 1 et 5 minutes, l'historique est limité à 60 et 300
 jours (environ 86 000 bougies) pour que le labo reste rapide. Les frais pèsent lourd sur de si petits mouvements
 (environ 0,3 % par aller-retour avec l'écart et le glissement) : c'est ce que ce labo vérifie. `--resultats` range

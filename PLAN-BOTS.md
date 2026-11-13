@@ -547,48 +547,70 @@ l'essai continuera de les suivre sur ton PC (14 jours ne jugent pas les unités 
 - Trouvé en route, à trancher : parmi les paires assez échangées de Binance, 15 sont des actions en jetons (NVDAB,
   GOOGLB, SOXLB...) et 4 des monnaies stables récentes ; le filtre du bot ne les reconnaît pas.
 
-## Étape 1 ter — Le contexte autour du signal (proposée le 13/11/2026, en attente d'accord)
+## Étape 1 ter — Le contexte autour du signal (la mesure : faite le 13/11/2026 ; rien à brancher)
 
-La demande, le 13/11 au soir : des bots « intelligents », pas de la technique pure. Lire le graphique (order blocks,
-zones...) ET regarder ce qui se passe en direct : qui achète, qui vend, le volume, la tendance du marché,
-l'actualité, les cryptos qui bougent. C'est le cœur des étapes 4 à 7 du plan ; la proposition est d'en avancer tout
-ce qui peut se tester dès maintenant sur de vraies données, puisque le graphique seul ne paie pas les frais
-(étape 1 bis).
+La demande, le 13/11 au soir : des bots « intelligents », pas de la technique pure. Lire le graphique ET regarder ce
+qui se passe en direct : qui achète, qui vend, le volume, la tendance du marché, l'actualité. Accord donné (« vas-y »),
+avec une inquiétude sur les tokens. D'où la méthode : **mesurer d'abord, avec un outil à part, sans toucher aux
+bots** ; ne brancher une condition dans les bots et le site que si la mesure montre qu'elle sert à quelque chose.
 
-Vérifié le 13/11 : ces données existent, gratuites, avec un historique, et sont lisibles depuis le cloud.
+### Ce qui a été fait
 
-| Ce que tu veux que le bot regarde | Où c'est | Historique |
-|---|---|---|
-| Qui pousse : la part du volume achetée « au marché » (acheteurs pressés contre vendeurs pressés) | Dans chaque bougie Binance | Oui |
-| Le nombre de trades de chaque bougie, le volume | Dans chaque bougie Binance | Oui |
-| Le nombre de comptes acheteurs pour un compte vendeur (tous les traders, et les plus gros) | Archives des contrats à terme, toutes les 5 min | Oui |
-| L'intérêt ouvert (l'argent engagé sur les contrats), le coût de financement | Archives des contrats à terme | Oui |
-| La tendance de l'unité au-dessus, la tendance du Bitcoin | Les bougies qu'on a déjà | Oui |
-| L'humeur du marché (indice peur et avidité) | Déjà sur le site | Oui (un point par jour) |
-| Le carnet d'ordres (les ordres en attente), les liquidations | Seulement en direct | Non : à enregistrer sur ton PC (étape 4) |
-| Les grandes annonces économiques | Un calendrier à brancher | Étape 6 |
+- **L'outil `audit/contexte.py`.** Pour chacun des trades à l'essai (toutes les combinaisons, vraies bougies Binance),
+  il note ce qu'on savait à la clôture de la bougie du signal, donc avant l'entrée, puis compare les trades pris
+  « condition vraie » aux autres, jour par jour. Sept conditions, écrites d'avance, un seul seuil chacune.
+- **Les données**, toutes gratuites et avec historique : le volume acheté « au marché » et le nombre de trades de
+  chaque bougie ; toutes les 5 minutes, le nombre de comptes acheteurs pour un vendeur et l'argent engagé sur les
+  contrats à terme (104 des 108 cryptos en ont un).
+- **Deux témoins**, pour savoir si la mesure sait voir quelque chose : un tirage à pile ou face (l'écart doit être
+  nul : +0,002 %, et sur 40 tirages 3 fausses alertes pour 2 attendues) et une « triche » (le sens de la bougie
+  d'entrée, connu seulement après coup : +0,361 %, et ces trades-là gagnent après frais). La mesure voit un avantage
+  quand il y en a un.
+- **Dans les bots (approuvé le 13/11)** : les actions en jetons de Binance ne sont plus suivies (105 paires : NVDAB,
+  GOOGLB, TSLAB... ; reconnues à leur nom en « B » et au groupe d'échange auquel elles sont fermées, aucune crypto
+  touchée), ni cinq monnaies stables récentes (U, RLUSD, XUSD, RWUSD, USDS).
 
-Plan court :
+### Le résultat : 14 jours, 108 cryptos, 5 355 096 trades réels (tous : −0,141 % par trade)
 
-1. **Un bot = une lecture du graphique (le déclencheur) + des conditions de contexte (les filtres).** Le bot ne prend
-   son signal que si le contexte est d'accord. Ce n'est pas une IA qui improvise : chaque condition est une règle
-   écrite d'avance, avec un seul seuil.
-2. **Six conditions pour commencer** : les acheteurs poussent (ou les vendeurs, pour une vente) ; l'activité est
-   au-dessus de sa moyenne ; la tendance de l'unité au-dessus va dans le même sens ; le Bitcoin ne va pas contre ; la
-   foule des traders n'est pas déjà toute du même côté ; l'humeur du marché n'est pas à l'extrême.
-3. **La mesure, comme pour la sécurisation** : pour chaque condition, une seule question posée sur des millions de
-   trades réels : « les trades pris quand la condition est vraie font-ils mieux que les autres, frais compris ? »
-   Six questions au lieu de milliers de combinaisons : très peu de place pour la chance.
-4. **Ensuite seulement, les combinaisons** (étape 7) : une lecture du graphique avec la ou les conditions qui ont
-   passé la mesure, jugées sur le test final et à l'essai.
-5. **Sur le site** : la page d'un bot dit quelles conditions étaient remplies à chaque entrée ; l'onglet Stratégies
-   compare « avec la condition » et « sans ».
+| Condition (dans le sens du trade) | Quand elle est vraie | Quand elle est fausse | Écart | Fourchette (durcie : 7 questions) |
+|---|---|---|---|---|
+| Qui pousse : acheteurs ou vendeurs « au marché » | −0,145 % | −0,137 % | −0,007 % | de −0,029 % à +0,014 % |
+| L'activité est au-dessus de sa moyenne | −0,142 % | −0,141 % | 0,000 % | de −0,023 % à +0,022 % |
+| L'unité au-dessus va dans le même sens | −0,140 % | −0,143 % | +0,004 % | de −0,045 % à +0,052 % |
+| Le Bitcoin va dans le même sens | −0,162 % | −0,120 % | −0,041 % | de −0,093 % à +0,010 % |
+| La foule des traders n'est pas déjà de ce côté | −0,134 % | −0,149 % | +0,015 % | de −0,030 % à +0,059 % |
+| L'argent engagé sur les contrats augmente | −0,144 % | −0,139 % | −0,005 % | de −0,017 % à +0,007 % |
+| Flux, unité au-dessus et Bitcoin d'accord | −0,161 % | −0,137 % | −0,023 % | de −0,072 % à +0,025 % |
 
-Dit franchement : ces données sont publiques aussi, donc rien ne garantit qu'elles donnent un avantage ; il est
-possible que la réponse soit encore « non ». Mais c'est la première fois que le bot regardera autre chose que le prix,
-et la mesure dira vite si une condition vaut quelque chose. Choisir les cryptos qui bougent, le bot le fait déjà
-(les 60 plus agitées, revues toutes les 10 minutes). L'étape 2 (gestion du risque) viendrait juste après : elle limite
-les pertes mais ne crée pas d'avantage.
+**Aucune condition ne sépare les bons trades des mauvais.** Que le contexte soit « d'accord » ou non, un trade fait
+le prix des frais. Même résultat pour les lectures du graphique et pour les indicateurs, à l'achat et à la vente.
+Le seul écart qui frôle le seuil (le Bitcoin : les trades pris dans son sens font 0,04 % de moins bien) est trois
+fois plus petit que les frais : même vrai, il ne rendrait aucun bot gagnant.
+
+### Deux pistes sont apparues ; vérifiées sur d'autres périodes, aucune ne tient
+
+En regardant unité par unité (35 comparaisons : il en sort toujours une ou deux par chance), deux écarts dépassaient.
+Chacun a été revérifié sur une période que la piste n'avait pas vue, la question fixée avant de regarder :
+
+| Piste (bots en bougies de 1 h et 4 h) | Là où elle est apparue | Vérification | Verdict |
+|---|---|---|---|
+| En 4 h, trader dans le sens de la tendance du jour | 14 jours : +3,15 % (de +1,28 à +5,02) | 60 jours d'avant : +0,18 % (de −0,77 à +1,13) ; 60 jours encore avant : −0,29 % (de −0,94 à +0,35) | Du bruit |
+| Trader à contre-pied du Bitcoin | 60 jours du 31/08 au 30/10 : 0,54 % de mieux (de 0,15 à 0,93) | 60 jours du 02/07 au 31/08 : 0,09 % de moins bien (de −0,56 à +0,39) | Pas confirmée |
+
+C'est l'intérêt de vérifier ailleurs : sur une seule période, la seconde piste avait l'air « prouvée ».
+
+### Ce que ça veut dire, et la décision
+
+- **Rien n'est branché dans les bots ni sur le site** : aucune de ces conditions ne changerait leurs résultats. La
+  partie coûteuse de l'étape (moteur, parité direct/backtest, site) n'a pas été faite, et n'a pas à l'être.
+- Indicateurs, lecture du graphique, flux, positions des traders, tendances : tout ce qui se lit dans des données
+  publiques à la bougie donne le même résultat, **le prix des frais (0,14 % par aller-retour)**. Ce n'est pas un
+  défaut du bot : ces informations sont vues par tout le monde, donc déjà dans les prix.
+- Ce qui n'a pas encore été mesuré : le **carnet d'ordres** et les liquidations (étape 4 : pas d'historique gratuit,
+  il faut enregistrer en direct sur ton PC pendant des semaines) ; des **frais plus bas** (entrer par un ordre limite
+  fait passer l'aller-retour de 0,14 % à 0,04-0,09 %, mais un ordre limite n'est servi que quand le prix vient à
+  lui : à mesurer en direct, pas sur des bougies) ; des **horizons de plusieurs jours** (le seul effet appuyé par
+  la recherche, le momentum : le labo portefeuille du bot existe déjà) ; le calendrier des annonces (étape 6).
 
 ## Étape 2 — Gestion du risque
 
@@ -670,4 +692,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 13/11/2026 | 0, suite — bots endormis, valeur d'une position, jour d'un trade rattrapé | Faite | `3b234da` |
 | 13/11/2026 | 1 — Sécurisation des gains | Faite : moteur, réglages, labo avec et sans, site, mesures sur de vraies bougies | `3b234da` |
 | 13/11/2026 | 1 bis — La lecture du graphique | Faite : 12 techniques (51 en tout), garanties testées, mesures sur du hasard et sur de vraies bougies ; deux défauts de l'étape 1 corrigés après relecture | `38b843b` |
-| | 1 ter — Le contexte autour du signal (acheteurs et vendeurs, activité, tendances, foule, humeur) | Proposée le 13/11, en attente d'accord | |
+| 13/11/2026 | 1 ter — Le contexte autour du signal | Mesure faite (sept conditions, 5,36 millions de trades, deux pistes revérifiées sur d'autres périodes) : aucun avantage, rien à brancher ; actions en jetons écartées | `8308621` |

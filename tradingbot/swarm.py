@@ -2,7 +2,8 @@
 
 Comment il travaille, sans jamais s'arrêter :
 1. Les cryptos : toutes les 10 minutes, les N paires USDT les plus agitées sur 24 h (au moins 5 M$ échangés par jour,
-   sans monnaies stables ni tokens à levier). Une crypto qui sort de la liste, ou dont l'amplitude sur 24 h tombe sous
+   sans monnaies stables, tokens à levier ni actions en jetons). Une crypto qui sort de la liste, ou dont l'amplitude
+   sur 24 h tombe sous
    le seuil (« pas assez de mouvement »), passe en veille : ses bots n'ouvrent plus de trade, ils gèrent ceux en cours.
 2. Le labo en direct : chaque crypto est retestée toutes les 3 heures, et dès qu'elle entre dans la liste. Toutes les
    techniques de la bibliothèque, à l'achat et à la vente à découvert, avec trois façons de sortir (par la règle,
@@ -487,6 +488,9 @@ class Harvest:
         self.final = bool(trial.get("final"))
         self.stats: dict[str, dict] = {}
         self.open = self.counted = 0
+        # Pour les mesures de contrôle (audit/contexte.py), jamais demandé par les bots : chaque trade compté de la
+        # variante des bots, un par un (unité, technique, sens, objectif, sortie, entrée, sortie, résultat net).
+        self.rows: list[tuple] | None = [] if trial.get("rows") else None
 
     def watched(self, ts: int) -> bool:
         return any(a <= ts <= b for a, b in self.active)
@@ -525,9 +529,13 @@ class Harvest:
                 d = rec["days"].setdefault(day, [0, 0.0, 0])
                 d[0], d[1], d[2] = d[0] + 1, d[1] + net, d[2] + int(net > 0)
         self.counted += int(tally)
+        if tally and self.rows is not None:
+            self.rows.append((spec.timeframe, spec.technique, spec.side, spec.target_r, spec.stop_mode,
+                              int(t["entry_ts"]), int(t["exit_ts"]), net))
 
     def result(self) -> dict:
-        return {"done": self.done, "stats": self.stats, "open": self.open, "counted": self.counted, "final": self.final}
+        out = {"done": self.done, "stats": self.stats, "open": self.open, "counted": self.counted, "final": self.final}
+        return out if self.rows is None else {**out, "rows": self.rows}
 
 
 def _holdout(rows: list[dict]) -> dict:

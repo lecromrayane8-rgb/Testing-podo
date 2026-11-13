@@ -1,6 +1,6 @@
 import pytest
 
-from tradingbot.scanner import MEMECOINS, pick_markets, scan_volatile
+from tradingbot.scanner import MEMECOINS, pick_markets, scan_volatile, tokenized_stock, tradable
 
 
 class FakeExchange:
@@ -50,6 +50,28 @@ def test_scanner_keeps_only_liquid_spot_cryptos_from_the_most_agitated():
     assert [r.symbol for r in found] == ["PEPE/USDT", "SOL/USDT"]
     assert found[0].amplitude == pytest.approx(0.25) and found[0].volume == 30e6
     assert found[0].change == pytest.approx(0.03)
+
+
+def binance_market(symbol, *groups):
+    """Une paire comme Binance la décrit : les groupes d'échange auxquels elle est ouverte."""
+    return {**market(symbol), "info": {"permissionSets": [["SPOT", *groups]]}}
+
+
+def test_tokenized_stocks_and_new_stablecoins_are_not_cryptos():
+    """Les actions en jetons de Binance (nom en « B », paire fermée au groupe TRD_GRP_016) ne sont pas suivies : presque
+    pas d'échanges la nuit et le week-end. Une crypto dont le nom finit par B reste suivie."""
+    crypto = ("TRD_GRP_004", "TRD_GRP_016", "TRD_GRP_017")
+    stock = ("TRD_GRP_004", "TRD_GRP_017")
+    assert tokenized_stock(binance_market("NVDAB/USDT", *stock)) and not tradable(binance_market("NVDAB/USDT", *stock), "USDT")
+    for symbol in ("ARB/USDT", "BNB/USDT", "SHIB/USDT"):  # des cryptos en « B » : ouvertes au groupe
+        assert tradable(binance_market(symbol, *crypto), "USDT")
+    assert tradable(binance_market("ACT/USDT", "TRD_GRP_004"), "USDT")  # fermée au groupe, mais pas un nom en « B »
+    assert tradable(market("ARB/USDT"), "USDT") and tradable(market("NVDAB/USDT"), "USDT")  # autre plateforme : pas de groupes
+    for stable in ("U/USDT", "RLUSD/USDT", "XUSD/USDT", "RWUSD/USDT", "USDS/USDT"):
+        assert not tradable(binance_market(stable, *crypto), "USDT")
+    ex = exchange(**{"NVDAB/USDT": (binance_market("NVDAB/USDT", *stock), ticker(0.30, 44e6)),
+                     "SOL/USDT": (binance_market("SOL/USDT", *crypto), ticker(0.05, 80e6))})
+    assert [r.symbol for r in scan_volatile(ex)] == ["SOL/USDT"]  # la plus agitée est une action : écartée
 
 
 def test_tournament_adds_liquid_memecoins_without_duplicates():

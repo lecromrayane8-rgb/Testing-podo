@@ -597,6 +597,13 @@ def test_every_combination_is_measured_once_whatever_the_number_of_tests(random_
     # Les totaux montrés sur le site (trades comptés, positions ouvertes) sont ceux de la variante des bots : par
     # défaut, avec la sécurisation des gains.
     assert once["open"] == opened > 0 and once["counted"] == once["stats"][SAFE + "unite:1h"]["n"]
+    # Pour les mesures de contrôle, les mêmes trades un par un (jamais demandés par les bots : rien de plus sinon).
+    assert "rows" not in once
+    listed = retest_coin("X/USDT", {"1h": df.iloc[:1100]}, settings,
+                         trial={"done": {}, "active": [[start, None]], "final": False, "rows": True})["trial"]
+    assert len(listed["rows"]) == listed["counted"] == once["counted"]
+    assert sum(r[-1] for r in listed["rows"]) == pytest.approx(once["stats"][SAFE + "unite:1h"]["total"])
+    assert all(r[0] == "1h" and r[5] >= start and r[6] >= r[5] for r in listed["rows"])
     # Une combinaison refaite à la main, sans puis avec la sécurisation : mêmes trades, mêmes sommes.
     s = Spec("court", "X/USDT", "1h", "Cassure 20/10", "long", 2.0, 3.0)
     for prefix, bot in (("", s), (SAFE, with_security(s, 1.0, 0.5))):

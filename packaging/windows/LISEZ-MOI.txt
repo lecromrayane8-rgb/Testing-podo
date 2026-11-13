@@ -14,7 +14,8 @@ nouveau dossier (ils gardent tes réglages et tes bots).
 
 TES BOTS (argent fictif, en continu)
 1. Les cryptos : toutes les 10 minutes, le bot prend les 60 cryptos qui bougent le plus sur 24 h (au
-   moins 5 M$ échangés par jour, sans monnaies stables). Une crypto trop calme (moins de 3 % d'écart
+   moins 5 M$ échangés par jour, sans monnaies stables ni actions en jetons comme NVDAB). Une crypto
+   trop calme (moins de 3 % d'écart
    entre son plus haut et son plus bas du jour) passe en veille : ses bots n'ouvrent plus de trade.
 2. Le labo en direct : chaque crypto est testée dès qu'elle entre dans la liste, puis toutes les 3
    heures : 51 techniques (RSI, Bollinger, cassures, moyennes mobiles, MACD, momentum, Supertrend,
