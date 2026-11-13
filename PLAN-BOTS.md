@@ -272,7 +272,9 @@ plusieurs journées, toutes cryptos réunies, sans choix préalable.
 - G3 (peu d'historique en très court terme), G5 (contrats à terme simulés sur les prix du comptant), M1 (glissement
   fixe), M2 (financement fixe), M5, M6 (étape 2), F1, F2, F4 à F7 : inchangés.
 - Trouvé pendant l'étape : un bot sans position dont la crypto a quitté la liste depuis 6 heures laisse sa place. C'est
-  une autre source de rotation, voulue à l'origine. À trancher à l'étape 3 (garder ces bots endormis ?).
+  une autre source de rotation, voulue à l'origine. Dans une simulation de 7,6 jours (petite liste fictive de 8
+  cryptos sur 16, qui change souvent), 155 arrêts sur 158 venaient de cette règle, et ces bots avaient fait 1 trade
+  (médiane). À trancher à l'étape 3 : garder ces bots endormis, avec leur historique, jusqu'au retour de leur crypto ?
 - Les bots en 1 h et 4 h font peu de trades (1,3 et 0,2 en 48 heures) : ils n'atteindront 30 trades qu'après des
   semaines ou des mois. Pour eux, c'est la mesure par stratégie, toutes cryptos réunies, qui parlera la première.
 - À surveiller à partir du 7e jour : si aucune stratégie n'a d'avantage, elles seront recalées une à une et leurs
