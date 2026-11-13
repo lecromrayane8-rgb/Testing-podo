@@ -10,6 +10,19 @@ son jour de départ : chaque nouveau jour ajoute une bougie, donc le « direct �
 continue, et un redémarrage ne change rien. La bougie du jour en cours (la dernière) ne décide jamais rien : elle donne
 le prix du moment et l'ordre parti à son ouverture.
 
+Les comptes « à risque » (13/11/2026, demande de l'utilisateur : « prendre des risques », « des stop-loss suiveurs »),
+définis AVANT d'être mesurés et jamais ajustés ensuite :
+- le levier : le compte tient en crypto `LEVERAGE` fois ce que tient le compte normal (×2 : « tout » devient le
+  double de sa valeur). Ce qu'il emprunte coûte le financement des contrats à terme (`FUTURES.funding_rate_8h`,
+  0,01 % toutes les 8 heures, environ 11 % par an), compté chaque jour. Tant qu'il emprunte, il est remis à son
+  levier dès qu'il s'en écarte de plus de `BAND` (10 %). Il est liquidé, et vaut alors zéro pour toujours, si sa
+  valeur ne couvre plus la marge de maintenance de sa position (`fleet.MAINTENANCE`), au plus bas de la journée ;
+- le stop suiveur : le « chandelier » de Chuck LeBeau avec ses réglages d'origine, le plus haut des 22 derniers jours
+  moins 3 bougies moyennes (moyenne simple de l'amplitude vraie sur 22 jours). Si une clôture passe dessous, le
+  compte vend tout à l'ouverture suivante ; il revient quand une clôture repasse au-dessus de la ligne.
+Les quatre comptes (`VARIANTS` : normal, normal avec stop, à risque, à risque avec stop) sont rejoués par la même
+fonction ; sans levier ni stop, rien ne change au compte normal.
+
 Rien ne part sur une plateforme : ce fichier ne passe aucun ordre et ne lit aucune clé."""
 from __future__ import annotations
 
@@ -28,7 +41,8 @@ import pandas as pd
 from .backtest import BacktestResult, Trade
 from .broker import atomic_write
 from .data import COLUMNS, ohlcv_to_frame
-from .execution import ExecutionParams
+from .execution import FUTURES, ExecutionParams
+from .fleet import MAINTENANCE
 from .robustness import ROBUST, RobustnessRow, evaluate, format_robustness
 
 log = logging.getLogger(__name__)
@@ -45,6 +59,24 @@ FOLDER = "tendance"  # dans le dossier des données : les bougies gardées, le c
 ACCOUNT_FILE = "compte.json"
 ROBUSTNESS_FILE = "robustesse.json"
 PERIODS = 4  # les sous-périodes du test de robustesse
+LEVERAGE = 2.0  # le compte « à risque » : le double de ce que tient le compte normal
+BAND = 0.10  # un compte qui emprunte est remis à son levier quand il s'en écarte de plus de 10 %
+STOP_DAYS, STOP_ATR = 22, 3.0  # le stop suiveur : le « chandelier » de LeBeau, ses réglages d'origine
+
+
+@dataclass(frozen=True)
+class Variant:
+    """Un compte fictif : la même règle, avec ou sans levier, avec ou sans stop suiveur."""
+    key: str
+    name: str
+    leverage: float = 1.0
+    stop: bool = False
+
+
+VARIANTS = (Variant("normal", "Le compte normal"),
+            Variant("stop", "Normal, avec stop suiveur", stop=True),
+            Variant("risque", "À risque : levier ×2", LEVERAGE),
+            Variant("risque_stop", "À risque ×2, avec stop suiveur", LEVERAGE, True))
 
 
 def average(close: np.ndarray, n: int) -> np.ndarray:
@@ -76,6 +108,27 @@ def thresholds(closed: np.ndarray, averages: tuple[int, ...] = AVERAGES) -> list
     return [float(closed[-(n - 1):].mean()) if len(closed) >= n - 1 else None for n in averages]
 
 
+def stop_line(high, low, close) -> np.ndarray:
+    """Le stop suiveur à la clôture de chaque jour : le plus haut des `STOP_DAYS` derniers jours moins `STOP_ATR`
+    bougies moyennes (la moyenne simple, sur `STOP_DAYS` jours, de l'amplitude vraie). NaN tant qu'il manque des
+    jours. Comme les moyennes : chaque valeur ne dépend que de ses derniers jours, pas de l'historique chargé."""
+    high, low, close = (np.asarray(x, dtype=float) for x in (high, low, close))
+    out = np.full(len(close), np.nan)
+    if len(close) > STOP_DAYS:
+        before = np.concatenate(([close[0]], close[:-1]))
+        true_range = np.maximum(high - low, np.maximum(np.abs(high - before), np.abs(low - before)))
+        top = np.lib.stride_tricks.sliding_window_view(high, STOP_DAYS).max(axis=1)
+        out[STOP_DAYS:] = (top - STOP_ATR * average(true_range, STOP_DAYS)[STOP_DAYS - 1:])[1:]
+    return out
+
+
+def stop_allows(high, low, close) -> np.ndarray:
+    """Ce que le stop suiveur décide à la clôture de chaque jour : vrai = le compte peut tenir sa position, faux = il
+    sort (clôture strictement sous la ligne). Sans ligne (historique trop court), il ne dit rien."""
+    line = stop_line(high, low, close)
+    return ~(np.asarray(close, dtype=float) < line)  # une comparaison avec NaN est fausse : pas de stop
+
+
 @dataclass
 class Run:
     """Un rejeu : le compte jour par jour, depuis son premier jour."""
@@ -90,6 +143,9 @@ class Run:
     qty: float
     decided: int = -1  # ce que la dernière clôture décide (−1 : pas assez d'historique)
     last: float = math.nan  # le dernier prix (la clôture de la dernière bougie)
+    paid: float = 0.0  # les intérêts payés sur l'argent emprunté
+    dead: int | None = None  # le jour de la liquidation (ms) : le compte vaut zéro depuis
+    allowed: bool = True  # ce que le stop suiveur décide à la dernière clôture (toujours vrai sans stop)
 
     def __len__(self) -> int:
         return len(self.ts)
@@ -98,11 +154,12 @@ class Run:
 def _trade(cash: float, qty: float, price: float, share: float, ex: ExecutionParams) -> tuple[float, float, dict]:
     """Ramène la part en crypto à `share` de la valeur du compte, par un ordre au marché au prix `price` du graphique.
     Achat : payé plus cher (glissement), frais pris sur la somme dépensée. Vente : vendue moins cher, frais pris sur ce
-    qu'elle rapporte. Le compte n'emprunte jamais : au plus tout l'argent, au plus toutes les cryptos."""
+    qu'elle rapporte. Jusqu'à `share` = 1, le compte n'emprunte jamais : au plus tout son argent, au plus toutes ses
+    cryptos. Au-delà (compte à levier), ce qui manque est emprunté : `cash` devient négatif, c'est sa dette."""
     before = cash + qty * price
     gap = share * before - qty * price
     if gap > 0:
-        spend = cash if share >= 1 else min(gap, cash)
+        spend = gap if share > 1 else cash if share >= 1 else min(gap, cash)
         fill = price * (1 + ex.slippage)
         bought = spend * (1 - ex.fee_rate) / fill
         cash, qty = cash - spend, qty + bought
@@ -117,36 +174,71 @@ def _trade(cash: float, qty: float, price: float, share: float, ex: ExecutionPar
 
 
 def replay(df: pd.DataFrame, start_ts: int | None = None, capital: float = CAPITAL, ex: ExecutionParams = SPOT,
-           averages: tuple[int, ...] = AVERAGES) -> Run:
-    """Rejoue la règle sur des bougies d'un jour (colonnes ts, open, close). Le compte ouvre au premier jour d'ouverture
-    `ts >= start_ts` qui a tout son historique derrière lui (sans `start_ts` : dès que possible). Chaque jour : ce que la
-    clôture de la VEILLE a décidé s'exécute à l'ouverture du jour ; le compte est ensuite valorisé à la clôture.
+           averages: tuple[int, ...] = AVERAGES, leverage: float = 1.0, stop: bool = False,
+           funding_8h: float = FUTURES.funding_rate_8h) -> Run:
+    """Rejoue la règle sur des bougies d'un jour (colonnes ts, open, high, low, close). Le compte ouvre au premier jour
+    d'ouverture `ts >= start_ts` qui a tout son historique derrière lui (sans `start_ts` : dès que possible). Chaque
+    jour, dans cet ordre : les intérêts de la nuit sur l'argent emprunté ; ce que la clôture de la VEILLE a décidé (la
+    règle, et le stop suiveur s'il y en a un) s'exécute à l'ouverture ; un compte qui emprunte est liquidé si le plus
+    bas du jour ne couvre plus sa marge ; puis le compte est valorisé à la clôture.
     Passé et futur sont séparés : ajouter des bougies ne change aucun ordre déjà passé."""
     ts = df["ts"].to_numpy(dtype="int64")
-    open_, close = df["open"].to_numpy(dtype=float), df["close"].to_numpy(dtype=float)
+    close = df["close"].to_numpy(dtype=float)
     want, parts, n = levels(close, averages), len(averages), len(ts)
+    high, low = df["high"].to_numpy(dtype=float), df["low"].to_numpy(dtype=float)
+    allows = stop_allows(high, low, close) if stop else None
     first = max(averages)  # la veille, la plus longue moyenne existe pour la première fois
     if start_ts is not None:
         first = max(first, int(np.searchsorted(ts, start_ts, side="left")))
     decided = int(want[-1]) if n else -1
     last = float(close[-1]) if n else math.nan
+    allowed = bool(allows[-1]) if allows is not None and n else True
     if first >= n:
         empty = np.array([], dtype=float)
-        return Run(ts[n:], empty, empty, np.array([], dtype=int), [], capital, parts, capital, 0.0, decided, last)
-    target = want[first - 1:n - 1]  # ce qui a été décidé la veille de chaque jour du compte
-    changes = np.flatnonzero(np.diff(np.concatenate(([0], target))) != 0)  # les jours où un ordre part
-    value, level = np.full(n - first, float(capital)), np.zeros(n - first, dtype=int)
-    cash, qty, held, orders = float(capital), 0.0, 0, []
-    for k, at in enumerate(changes):
-        i = first + int(at)
-        cash, qty, order = _trade(cash, qty, float(open_[i]), int(target[at]) / parts, ex)
-        orders.append({"ts": int(ts[i]), "from": held, "to": int(target[at]), **order})
-        held = int(target[at])
-        end = int(changes[k + 1]) if k + 1 < len(changes) else n - first
-        value[at:end] = cash + qty * close[i:first + end]
-        level[at:end] = held
-    hold = capital * (1 - ex.fee_rate) / (open_[first] * (1 + ex.slippage)) * close[first:]
-    return Run(ts[first:], value, hold, level, orders, capital, parts, cash, qty, decided, last)
+        return Run(ts[n:], empty, empty, np.array([], dtype=int), [], capital, parts, capital, 0.0, decided, last,
+                   allowed=allowed)
+    opens, lows, closes = df["open"].to_numpy(dtype=float).tolist(), low.tolist(), close.tolist()
+    rule = want.tolist()
+    gate = allows.tolist() if allows is not None else None
+    value, level = np.empty(n - first), np.zeros(n - first, dtype=int)
+    cash, qty, orders, paid, dead = float(capital), 0.0, [], 0.0, None
+    held, open_gate, aim, night = 0, True, 0.0, 3 * funding_8h  # trois périodes de 8 heures par jour
+    for i in range(first, n):
+        if dead is None:
+            price = opens[i]
+            if cash < 0:  # les intérêts de la nuit sur ce que le compte emprunte
+                paid, cash = paid - cash * night, cash * (1 + night)
+            today, today_gate = rule[i - 1], gate is None or gate[i - 1]
+            target = leverage * today / parts if today_gate else 0.0
+            if cash < 0 and cash + qty * price <= MAINTENANCE * qty * price:  # ouverture sous le prix de liquidation
+                dead = _liquidate(orders, int(ts[i]), price, held if open_gate else 0)
+            else:
+                why = None
+                if target != aim:
+                    why = "stop" if today_gate != open_gate else "regle"
+                elif cash < 0 and abs(qty * price / (cash + qty * price) - target) > BAND * target:
+                    why = "levier"  # la position a trop dérivé : le compte est remis à son levier
+                if why:
+                    before = held if open_gate else 0
+                    cash, qty, order = _trade(cash, qty, price, target, ex)
+                    orders.append({"ts": int(ts[i]), "from": before, "to": today if today_gate else 0, "why": why,
+                                   **order})
+                held, open_gate, aim = today, today_gate, target
+                if cash < 0 < qty and lows[i] <= -cash / (qty * (1 - MAINTENANCE)):  # liquidé au plus bas du jour
+                    dead = _liquidate(orders, int(ts[i]), -cash / (qty * (1 - MAINTENANCE)), held if open_gate else 0)
+            if dead is not None:
+                cash, qty, held = 0.0, 0.0, 0
+        value[i - first] = cash + qty * closes[i]
+        level[i - first] = held if open_gate and dead is None else 0
+    hold = capital * (1 - ex.fee_rate) / (opens[first] * (1 + ex.slippage)) * close[first:]
+    return Run(ts[first:], value, hold, level, orders, capital, parts, cash, qty, decided, last, paid, dead, allowed)
+
+
+def _liquidate(orders: list[dict], ts: int, price: float, held: int) -> int:
+    """La liquidation : la plateforme ferme la position, la marge qui restait part avec. Le compte vaut zéro."""
+    orders.append({"ts": ts, "from": held, "to": 0, "why": "liquidation", "side": "liquidation", "amount": 0.0,
+                   "units": 0.0, "fill": price, "price": price, "cost": 0.0, "value": 0.0, "qty": 0.0, "cash": 0.0})
+    return ts
 
 
 def worst(values: np.ndarray, base: float) -> float:
@@ -372,7 +464,7 @@ def _clean(value):
 
 
 def _order(order: dict) -> dict:
-    return {k: order[k] for k in ("ts", "side", "from", "to", "price", "fill", "amount", "cost", "value")}
+    return {k: order[k] for k in ("ts", "side", "from", "to", "why", "price", "fill", "amount", "cost", "value")}
 
 
 def _ready(df: pd.DataFrame | None) -> bool:

@@ -11,10 +11,13 @@ import pytest
 
 from tradingbot import trend
 from tradingbot.data import COLUMNS
+from tradingbot.execution import FUTURES
 from tradingbot.robustness import ROBUST
 
 DAY = trend.DAY_MS
 FEE, SLIP = trend.SPOT.fee_rate, trend.SPOT.slippage
+NIGHT = 3 * FUTURES.funding_rate_8h  # les intérêts d'une nuit sur l'argent emprunté : 0,03 %
+MARGIN = trend.MAINTENANCE
 
 
 def days(closes, opens=None, start=0):
@@ -171,6 +174,154 @@ def test_the_day_in_progress_never_decides_an_order():
         assert run.orders == base.orders and run.level.tolist() == base.level.tolist()
         assert run.value[:-1].tolist() == base.value[:-1].tolist()
         assert run.decided == (0 if factor < 1 else 3)
+
+
+# --- les comptes à risque : levier, intérêts, liquidation, stop suiveur ---------------------------------------------------
+
+def test_without_leverage_or_stop_the_account_never_borrows_and_pays_no_interest():
+    run = trend.replay(days(walk(20, 900)))
+    assert len(run.orders) > 50 and all(o["cash"] >= 0 and o["why"] == "regle" for o in run.orders)
+    assert run.paid == 0.0 and run.dead is None and run.allowed
+
+
+def test_a_leveraged_account_holds_twice_the_share_and_pays_interest_on_what_it_borrows():
+    closes = [100, 100, 110, 121, 121, 121]  # moyenne 2 jours : décisions -, 0, 1, 1, 0, 0
+    run = trend.replay(days(closes), capital=1000.0, averages=(2,), leverage=2.0)
+    assert [(o["ts"] // DAY, o["side"], o["why"], o["price"]) for o in run.orders] == [
+        (3, "achat", "regle", 110.0), (5, "vente", "regle", 121.0)]
+    units = 2000 * (1 - FEE) / (110 * (1 + SLIP))  # il achète pour le double de sa valeur : 1 000 à lui, 1 000 empruntés
+    assert run.orders[0]["amount"] == pytest.approx(2000) and run.orders[0]["cash"] == pytest.approx(-1000)
+    assert run.orders[0]["units"] == pytest.approx(units, rel=1e-12)
+    debt = 1000 * (1 + NIGHT)  # une nuit d'intérêts avant l'ouverture du jour 4
+    assert run.value.tolist() == pytest.approx([1000.0, units * 121 - 1000, units * 121 - debt,
+                                                units * 121 * (1 - SLIP) * (1 - FEE) - debt * (1 + NIGHT)], rel=1e-12)
+    assert run.paid == pytest.approx(1000 * NIGHT + debt * NIGHT, rel=1e-12) and run.cash == pytest.approx(run.value[-1])
+    assert run.qty == 0.0 and run.dead is None
+    plain = trend.replay(days(closes), capital=1000.0, averages=(2,))  # le compte normal, sur les mêmes jours
+    assert run.value[1] - 1000 == pytest.approx(2 * (plain.value[1] - 1000), rel=1e-9)  # le double du gain, frais compris
+    assert plain.paid == 0.0
+
+
+def test_a_borrowing_account_is_brought_back_to_its_leverage_only_beyond_the_band():
+    closes = [100, 100, 110, 130, 135, 150]  # le prix monte : la règle reste « dedans », la position dérive
+    run = trend.replay(days(closes), capital=1000.0, averages=(2,), leverage=2.0)
+    assert [(o["ts"] // DAY, o["why"]) for o in run.orders] == [(3, "regle"), (4, "levier")]  # rien au jour 5
+    units = 2000 * (1 - FEE) / (110 * (1 + SLIP))
+    value = units * 130 - 1000 * (1 + NIGHT)  # à l'ouverture du jour 4 : la position ne fait plus que 1,74 fois le compte
+    assert units * 130 / value == pytest.approx(1.7356, abs=1e-4) and abs(units * 130 / value - 2) > 2 * trend.BAND
+    again = run.orders[1]
+    assert again["side"] == "achat" and again["amount"] == pytest.approx(2 * value - units * 130, rel=1e-12)
+    assert again["qty"] * 130 / again["value"] == pytest.approx(2.0, abs=0.002)  # remis à ×2, aux frais près
+    assert again["qty"] * 135 / (again["cash"] * (1 + NIGHT) + again["qty"] * 135) == pytest.approx(1.93, abs=0.01)  # dans la bande
+
+
+def crash(low, open_=121.0):
+    """Le compte à levier du test ci-dessus, puis un jour 4 dont le plus bas (ou l'ouverture) plonge."""
+    df = days([100, 100, 110, 121, 100, 130, 140, 150])
+    df.loc[df.index[4], ["open", "low"]] = [open_, min(low, open_)]
+    return df, trend.replay(df, capital=1000.0, averages=(2,), leverage=2.0)
+
+
+def test_a_leveraged_account_is_liquidated_when_its_value_no_longer_covers_its_position():
+    units, debt = 2000 * (1 - FEE) / (110 * (1 + SLIP)), 1000 * (1 + NIGHT)
+    limit = debt / (units * (1 - MARGIN))  # sous ce prix, ce qui reste au compte ne couvre plus la marge de maintenance
+    assert limit == pytest.approx(55.37, abs=0.01)
+    df, dead = crash(limit - 0.01)
+    assert dead.dead == df["ts"].iloc[4] and dead.value.tolist()[2:] == [0.0] * 4  # liquidé : zéro, et pour toujours
+    assert dead.orders[-1]["side"] == "liquidation" and dead.orders[-1]["price"] == pytest.approx(limit, rel=1e-12)
+    assert len(dead.orders) == 2 and dead.cash == 0.0 and dead.qty == 0.0 and dead.level.tolist()[2:] == [0] * 4
+    _, alive = crash(limit + 0.01)  # un centime au-dessus : il survit, et la règle continue
+    assert alive.dead is None and alive.value[2] == pytest.approx(units * 100 - debt, rel=1e-12) and len(alive.orders) > 2
+    _, gap = crash(60.0, open_=50.0)  # une ouverture déjà sous le prix de liquidation : liquidé à l'ouverture
+    assert gap.dead is not None and gap.orders[-1]["price"] == 50.0 and gap.value[2] == 0.0
+    growth = trend.growth(dead.value, dead.capital)
+    assert growth["total"] == 0.0 and growth["worst"] == -1.0 and growth["yearly"] == -1.0
+
+
+def test_on_a_market_that_goes_nowhere_a_leveraged_account_gives_back_its_costs_and_its_interest():
+    closes = [100, 100] + [102, 98] * 10 + [98]
+    run = trend.replay(days(closes, opens=[100] * len(closes)), capital=1000.0, averages=(2,), leverage=2.0)
+    assert [o["side"] for o in run.orders] == ["achat", "vente"] * 10 and run.dead is None
+    value, paid = 1000.0, 0.0
+    for _ in range(10):  # acheter le double à 100, payer une nuit d'intérêts sur l'emprunt, tout revendre à 100
+        units = 2 * value * (1 - FEE) / (100 * (1 + SLIP))
+        paid += value * NIGHT
+        value = units * 100 * (1 - SLIP) * (1 - FEE) - value * (1 + NIGHT)
+    assert run.cash == pytest.approx(value, rel=1e-12) and run.paid == pytest.approx(paid, rel=1e-12)
+    assert value / 1000 == pytest.approx((2 * (1 - FEE) ** 2 * (1 - SLIP) / (1 + SLIP) - 1 - NIGHT) ** 10, rel=1e-12)
+
+
+def test_the_trailing_stop_sits_three_average_candles_under_the_high_of_the_last_22_days():
+    closes = np.array([100.0] * 30 + [90.0] * 30)
+    high, low = closes + 1, closes - 1
+    line = trend.stop_line(high, low, closes)
+    assert np.isnan(line[:22]).all() and line[22] == pytest.approx(101 - 3 * 2)  # bougie moyenne : 2 ; plus haut : 101
+    assert line[30] == pytest.approx(101 - 3 * (21 * 2 + 11) / 22)  # le jour de la chute : une bougie de 11
+    allows = trend.stop_allows(high, low, closes)
+    assert allows[:30].all() and not allows[30:51].any()  # sous la ligne : dehors, tant que l'ancien sommet compte
+    assert allows[52:].all() and line[59] == pytest.approx(91 - 3 * 2)  # 22 jours plus tard, la ligne est redescendue
+    assert trend.stop_allows(high[:5], low[:5], closes[:5]).all()  # pas assez de jours : le stop ne dit rien
+    wild = walk(21, 400)
+    h, lo = wild * 1.02, wild * 0.97
+    for k in (40, 150, 399):  # aucune valeur ne dépend de l'historique chargé avant ses 23 derniers jours
+        assert trend.stop_line(h[k - 30:k + 1], lo[k - 30:k + 1], wild[k - 30:k + 1])[-1] == trend.stop_line(h, lo, wild)[k]
+        assert trend.stop_allows(h[:k + 1], lo[:k + 1], wild[:k + 1]).tolist() == trend.stop_allows(h, lo, wild)[:k + 1].tolist()
+
+
+def test_the_stop_takes_the_account_out_at_the_next_open_and_brings_it_back_when_the_line_allows():
+    closes = np.concatenate([100 + 0.1 * np.arange(40), 85 + 0.1 * np.arange(40)])  # monte, chute de 19, remonte
+    df = days(closes)
+    plain = trend.replay(df, averages=(2,))
+    stopped = trend.replay(df, averages=(2,), stop=True)
+    assert [(o["ts"] // DAY, o["side"]) for o in plain.orders] == [(2, "achat"), (41, "vente"), (42, "achat")]
+    # la règle revient dès le jour 42 (le prix remonte) ; le stop, lui, garde le compte dehors sous sa ligne
+    assert [(o["ts"] // DAY, o["side"], o["why"]) for o in stopped.orders][:2] == [(2, "achat", "regle"), (41, "vente", "stop")]
+    back = stopped.orders[2]
+    allows = trend.stop_allows(df["high"], df["low"], df["close"])
+    first_ok = int(np.flatnonzero(allows[41:])[0]) + 41  # la première clôture que le stop laisse passer après la chute
+    assert first_ok > 50 and (back["ts"] // DAY, back["side"], back["why"]) == (first_ok + 1, "achat", "stop")
+    assert back["price"] == df["open"].iloc[first_ok + 1] and (back["from"], back["to"]) == (0, 1)
+    out = slice(41 - 2, first_ok + 1 - 2)  # le compte ouvre au jour 2 : du jour 41 au jour first_ok, il ne tient rien
+    assert stopped.level[out].sum() == 0 and stopped.level[first_ok + 1 - 2] == 1 and plain.level[out].sum() > 0
+    assert not allows[40] and stopped.allowed and len(stopped.orders) == 3
+
+
+def wicked(seed, n):
+    """Un marché au hasard avec de vraies mèches (le stop suiveur regarde les plus hauts et les plus bas)."""
+    df = days(walk(seed, n))
+    rng = np.random.default_rng(seed)
+    df["high"] = df[["open", "close"]].max(axis=1) * (1 + rng.uniform(0, 0.02, n))
+    df["low"] = df[["open", "close"]].min(axis=1) * (1 - rng.uniform(0, 0.02, n))
+    return df
+
+
+@pytest.mark.parametrize("variant", trend.VARIANTS, ids=lambda v: v.key)
+def test_no_account_ever_rewrites_its_past_or_lets_the_day_in_progress_decide(variant):
+    df = wicked(22, 700)
+    play = lambda frame, **kw: trend.replay(frame, leverage=variant.leverage, stop=variant.stop, **kw)  # noqa: E731
+    whole = play(df)
+    assert len(whole.orders) > 20
+    for k in (201, 333, 480, 699):  # ajouter des jours ne change aucun ordre déjà passé
+        part = play(df.iloc[:k])
+        assert part.orders == [o for o in whole.orders if o["ts"] < df["ts"].iloc[k]]
+        assert part.value.tolist() == whole.value[:len(part)].tolist() and part.paid <= whole.paid
+    start = int(df["ts"].iloc[400]) + 1  # le compte fictif créé au jour 400 : le même, vu jour après jour
+    final = play(df, start_ts=start)
+    assert play(df.iloc[:600], start_ts=start).value.tolist() == final.value[:199].tolist()
+    moved = df.copy()  # le prix du moment bouge : aucun ordre passé ne change
+    moved.loc[moved.index[-1], ["high", "close"]] *= 1.5
+    assert play(moved).orders == whole.orders and play(moved).value[:-1].tolist() == whole.value[:-1].tolist()
+
+
+def test_the_four_accounts_are_the_same_rule_with_or_without_leverage_and_stop():
+    assert [(v.key, v.leverage, v.stop) for v in trend.VARIANTS] == [
+        ("normal", 1.0, False), ("stop", 1.0, True), ("risque", 2.0, False), ("risque_stop", 2.0, True)]
+    df = wicked(23, 900)
+    runs = {v.key: trend.replay(df, leverage=v.leverage, stop=v.stop) for v in trend.VARIANTS}
+    assert runs["normal"].paid == runs["stop"].paid == 0.0 and runs["risque"].paid > 0
+    assert (runs["stop"].level <= runs["normal"].level).all()  # le stop ne fait jamais tenir plus que la règle
+    assert {o["why"] for o in runs["risque_stop"].orders} <= {"regle", "stop", "levier", "liquidation"}
+    assert {o["why"] for o in runs["normal"].orders} == {"regle"}
 
 
 # --- le test de robustesse : chaque sortie contre « garder » ----------------------------------------------------------
