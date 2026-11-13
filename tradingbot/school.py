@@ -366,12 +366,16 @@ LESSONS = (
                   "hasard. C'est le piège numéro un : la sur-optimisation."},
          {"example": "Pile ou face : 20 personnes lancent chacune une pièce 10 fois. L'une d'elles fera sans doute 8 "
                      "piles sur 10. Elle n'a aucun talent : le hasard s'est concentré sur elle."},
-         {"text": "Comment tes bots s'en protègent : chaque re-test coupe l'historique en trois (étude, validation, et "
-                  "une période récente qui doit aussi gagner), compte tous les frais, et ne garde que des combinaisons "
-                  "gagnantes sur les trois. Ça ne suffit pas : sur des centaines d'essais, certaines passent par "
-                  "chance."},
-         {"text": "Ensuite vient l'argent fictif en direct : la vraie preuve, sur des données que personne n'a vues. Un "
-                  "bot qui perd nettement est arrêté. Puis, après plusieurs semaines, le testnet. L'argent réel en "
+         {"text": "Comment tes bots s'en protègent : chaque re-test coupe l'historique en trois. Les deux premiers "
+                  "morceaux (l'étude et la validation) servent à choisir, tous frais comptés. Le troisième, le test "
+                  "final, n'est jamais regardé pour choisir : il sert à vérifier ce que vaut le choix. Ça ne suffit "
+                  "pas : sur des centaines d'essais, certaines combinaisons passent par chance."},
+         {"text": "Alors tes bots mesurent tout : chaque combinaison tourne « à l'essai » sur chaque crypto qui bouge, "
+                  "et tous ses trades sont comptés, sans rien choisir d'avance. La chance ne peut pas embellir une "
+                  "mesure où rien n'est choisi. Une stratégie n'est « prouvée » que si elle gagne sur plusieurs "
+                  "journées différentes, avec un seuil durci : mille trades gagnants le même jour ne prouvent rien, "
+                  "parce qu'ils ont tous profité du même mouvement."},
+         {"text": "Un bot qui perd nettement est arrêté. Puis, après plusieurs semaines, le testnet. L'argent réel en "
                   "dernier, et seulement avec ce que tu acceptes de perdre."},
      ],
      "remember": ["Essayer beaucoup de règles finit toujours par en trouver une qui a gagné par hasard.",

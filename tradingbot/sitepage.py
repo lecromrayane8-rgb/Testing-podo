@@ -227,6 +227,15 @@ BODY = """
       <div class="row" id="swarm-actions"></div>
     </div>
     <section><div class="kpis swarm-kpis" id="swarm-kpis"></div></section>
+    <section id="trial-box" hidden>
+      <div class="section-head"><h2>La mesure à l'essai</h2><a class="link" href="#strategies">Le classement des stratégies</a></div>
+      <div class="facts" id="trial-facts"></div>
+      <p class="note">À l'essai : toutes les combinaisons (technique, sens, sortie, unité de temps) tournent en argent
+        fictif sur chaque crypto qui bouge, avec le même moteur que les bots. Leurs trades sont comptés sans rien choisir
+        d'avance : la chance ne peut pas embellir cette mesure. Test final : ce que les combinaisons choisies par le labo
+        ont fait sur la partie de l'historique qui n'a pas servi à les choisir. Point de référence : les chiffres du site
+        avant cette mesure.</p>
+    </section>
     <section>
       <div class="section-head"><h2>Tous les bots</h2><p class="muted" id="bots-count"></p></div>
       <div class="controls">
@@ -247,8 +256,9 @@ BODY = """
     <section><h2>Ce qui vient de se passer</h2><ol class="events" id="swarm-events"></ol></section>
     <p class="note">Chaque bot a son capital fictif (1000 USDT, réglable) et le met en entier dans chaque trade, avec le
       levier de son horizon : un stop touché peut coûter plusieurs pourcents de son capital, et un bot peut être liquidé.
-      Les combinaisons gagnantes sur l'historique sont souvent chanceuses : c'est le direct qui tranche, et un bot qui ne
-      gagne plus est arrêté.</p>
+      Les combinaisons gagnantes sur l'historique sont souvent chanceuses : ce sont la mesure à l'essai et le direct qui
+      tranchent. Un bot garde sa place d'un test à l'autre ; il n'est arrêté que s'il est liquidé, à moitié ruiné,
+      nettement perdant après 20 trades, ou si sa stratégie est recalée.</p>
   </div>
   <div id="view-cryptos" class="view" hidden>
     <h1>Les cryptos suivies</h1>
@@ -260,22 +270,15 @@ BODY = """
       bots de la crypto, en USDT fictifs.</p>
   </div>
   <div id="view-strategies" class="view" hidden>
-    <h1>Les stratégies en direct</h1>
-    <p class="meta">Chaque trade fini de chaque bot compte pour sa stratégie : une technique dans une unité de temps,
-      toutes cryptos réunies. « Par trade » : le gain moyen d'un trade, frais compris, sans levier (pour comparer des
-      bots qui n'ont pas le même levier). Après 30 trades, une stratégie nettement gagnante est « prouvée » (seuil
-      durci : sur des dizaines de stratégies, la chance en ferait gagner) et passe en priorité aux tests des cryptos ;
-      une stratégie nettement perdante est « recalée » : les tests ne la prennent plus et ses bots s'arrêtent après
-      leur trade. Le classement du jour est là pour information : sur une journée, c'est surtout du hasard.</p>
+    <h1>Les stratégies</h1>
+    <div class="controls"><div class="seg" role="group" aria-label="Mesure affichée" id="rank-source"></div></div>
+    <p class="meta" id="rank-meta"></p>
     <p class="status-line" id="rank-intro"></p>
     <div class="controls"><div class="seg" role="group" aria-label="Classer par" id="rank-period"></div></div>
     <div class="table-wrap"><table><thead><tr><th>Stratégie</th><th class="n opt">Trades</th><th class="n opt">Gagnants</th>
       <th class="n" id="rank-head">Par trade</th><th class="n opt">Fourchette à 95 %</th><th class="n opt">Aujourd'hui</th>
       <th class="n opt">7 jours</th><th>Verdict</th></tr></thead><tbody id="rank-rows"></tbody></table></div>
-    <p class="note">Classement prudent : une stratégie qui a peu de trades est tirée vers zéro (comme si elle avait 10
-      trades nuls de plus), pour qu'un seul coup de chance ne la mette pas en tête. Aujourd'hui et 7 jours : gain moyen
-      par trade · nombre de trades (la journée commence à minuit en temps universel, 1 h du matin en France l'hiver).
-      Fourchette : où se trouve probablement le vrai gain moyen ; tant qu'elle contient zéro, rien n'est prouvé.</p>
+    <p class="note" id="rank-note"></p>
     <section id="rank-exits"></section>
     <section><div class="compare" id="rank-more"></div></section>
   </div>
@@ -659,10 +662,11 @@ JS = r"""
   }
   function exitShort(b) { const s = SHORT_EXITS[b.exit || exitLabel(b.target_r, b.stop_mode)]; return s ? ' · ' + s : ''; }
   function liveChip(verdict) {
-    if (verdict === 'prouvee') return chip('ok', 'stratégie prouvée en direct');
-    if (verdict === 'recalee') return chip('bad', 'stratégie recalée en direct');
+    if (verdict === 'prouvee') return chip('ok', 'stratégie prouvée à l\'essai');
+    if (verdict === 'recalee') return chip('bad', 'stratégie recalée à l\'essai');
     return null;
   }
+  function thousands(v) { return (v || 0).toLocaleString('fr-FR'); }
   function probaText(p) {
     if (!p) return 'Estimation disponible à la prochaine bougie.';
     return 'D\'après ' + p.trades + ' trades de son backtest, dans les conditions du moment (' + (p.conditions && p.conditions.length
@@ -770,6 +774,15 @@ JS = r"""
       tile('Trades terminés', String(t.count || 0), t.win_rate === null || t.win_rate === undefined ? 'aucun encore' :
         Math.round(100 * t.win_rate) + ' % gagnants'),
       tile('Humeur du marché', d.mood ? Math.round(d.mood.value) + ' / 100' : '—', d.mood ? 'peur et avidité : ' + d.mood.zone : 'indisponible'));
+    const tr = d.trial || {}, ho = d.holdout || {}, ref = d.reference;
+    $('#trial-box').hidden = !d.ready;
+    $('#trial-facts').replaceChildren(
+      fact('Bots à l\'essai', thousands(tr.bots) + (tr.coins ? ' sur ' + tr.coins + (tr.coins > 1 ? ' cryptos' : ' crypto') : '')),
+      fact('Trades comptés', tr.n ? thousands(tr.n) + ' en ' + tr.days + (tr.days > 1 ? ' jours' : ' jour') : 'aucun encore'),
+      fact('Par trade, à l\'essai', tr.n ? pct(tr.mean, 2) + (tr.lo === null || tr.lo === undefined ? '' : ' (de ' + pct(tr.lo, 2) + ' à ' + pct(tr.hi, 2) + ')') : '—', tr.n ? cls(tr.mean) : ''),
+      fact('Test final des choix du labo', ho.n ? pct(ho.mean, 2) + ' par trade · ' + thousands(ho.n) + ' trades' : '—', ho.n ? cls(ho.mean) : ''),
+      fact('Point de référence' + (ref ? ' (' + dayLabel(Date.parse(ref.saved)) + ')' : ''), !ref ? '—' : !ref.count ? 'aucun trade avant' :
+        thousands(ref.count) + ' trades · ' + Math.round(100 * ref.win_rate) + ' % gagnants · ' + pct(ref.pnl_pct, 1)));
     seg('#filter-team', [['tous', 'Tous'], ['scalping', 'Scalping'], ['court', 'Court terme'], ['long', 'Long terme']], filter.team,
       k => { filter.team = k; filter.limit = PAGE_SIZE; saveFilter(); renderDirect(); });
     seg('#filter-status', [['tous', 'Tous'], ['position', 'En position'], ['actif', 'Actifs'], ['veille', 'En veille']], filter.status,
@@ -809,55 +822,87 @@ JS = r"""
   }
   $('#bots-sort').addEventListener('change', e => { filter.sort = e.target.value; saveFilter(); renderDirect(); });
 
-  // --- le classement des stratégies en direct ---
-  let rankBy = 'all';
+  // --- le classement des stratégies : à l'essai (toutes les combinaisons) ou en direct (les bots choisis) ---
+  let rankBy = 'all', rankSource = 'essai';
   const PRUDENCE = 10;  // le classement fait comme si chaque stratégie avait 10 trades nuls de plus
-  try { rankBy = localStorage.getItem('classement') || 'all'; } catch (e) {}
+  try { rankBy = localStorage.getItem('classement') || 'all'; rankSource = localStorage.getItem('classement-mesure') || 'essai'; } catch (e) {}
   const SIDE_NAMES = {long: '▲ à l\'achat', short: '▼ à la vente à découvert'};
-  function verdictChip(r, min) {
+  const RANK_TEXT = {
+    essai: {all: '30 jours',
+      meta: 'À l\'essai : toutes les combinaisons tournent en argent fictif sur chaque crypto qui bouge, avec le même moteur que les bots, '
+        + 'et tous leurs trades sont comptés, sans rien choisir d\'avance. Une stratégie : une technique dans une unité de temps, à l\'achat et à '
+        + 'la vente à découvert, avec ses quatre sorties, toutes cryptos réunies. « Par trade » : le gain moyen d\'un trade, frais compris, '
+        + 'sans levier. Après 7 jours, une stratégie nettement gagnante est « prouvée » (seuil durci : sur des dizaines de stratégies, la '
+        + 'chance en ferait gagner) et passe en priorité aux tests des cryptos ; une stratégie nettement perdante est « recalée » : les '
+        + 'tests ne la prennent plus et ses bots s\'arrêtent après leur trade.',
+      note: 'Fourchette : où se trouve probablement le vrai gain moyen. Elle compare les journées entre elles, parce que les trades d\'une même '
+        + 'journée se ressemblent (quand le marché chute, toutes les ventes à découvert gagnent ensemble) : mille trades le même jour ne '
+        + 'valent pas mille preuves. Tant qu\'elle contient zéro, rien n\'est prouvé. '},
+    direct: {all: 'Tout le direct',
+      meta: 'En direct : seulement les trades finis des bots choisis par le labo, comptés pour leur stratégie (une technique dans une unité '
+        + 'de temps, toutes cryptos réunies). « Par trade » : le gain moyen d\'un trade, frais compris, sans levier (pour comparer des bots '
+        + 'qui n\'ont pas le même levier). C\'est ce que tes bots ont vraiment fait ; le verdict, lui, vient de la mesure à l\'essai, qui '
+        + 'compte bien plus de trades.',
+      note: 'Fourchette : où se trouve probablement le vrai gain moyen ; tant qu\'elle contient zéro, rien n\'est prouvé. '}};
+  const RANK_NOTE = 'Classement prudent : une stratégie qui a peu de trades est tirée vers zéro (comme si elle avait 10 trades nuls de plus), '
+    + 'pour qu\'un seul coup de chance ne la mette pas en tête. Aujourd\'hui et 7 jours : gain moyen par trade · nombre de trades (la journée '
+    + 'commence à minuit en temps universel, 1 h du matin en France l\'hiver). Le classement du jour est là pour information : sur une '
+    + 'journée, c\'est surtout du hasard.';
+  function verdictChip(r, minDays) {
     if (r.verdict === 'prouvee') return chip('ok', 'prouvée');
     if (r.verdict === 'recalee') return chip('bad', 'recalée');
-    return chip('idle', r.n < min ? r.n + ' / ' + min + ' trades' : 'à confirmer');
+    if (r.days !== undefined && r.days < minDays) return chip('idle', r.days + ' / ' + minDays + ' jours');
+    return chip('idle', 'à confirmer');
   }
-  function periodText(n, mean) { return n ? pct(mean, 2) + ' · ' + n : '—'; }
+  function periodText(n, mean) { return n ? pct(mean, 2) + ' · ' + thousands(n) : '—'; }
   function smallRanking(title, rows, name) {
     return el('div', {}, el('h3', {class: 'group-title', text: title}), rows.length ? el('div', {class: 'table-wrap'}, el('table', {},
       el('thead', {}, el('tr', {}, el('th', {text: ''}), el('th', {class: 'n', text: 'Trades'}), el('th', {class: 'n', text: 'Gagnants'}),
         el('th', {class: 'n', text: 'Par trade'}), el('th', {class: 'n opt', text: 'Aujourd\'hui'}))),
-      el('tbody', {}, ...rows.map(r => el('tr', {}, el('td', {text: name(r.key)}), el('td', {class: 'n', text: String(r.n)}),
+      el('tbody', {}, ...rows.map(r => el('tr', {}, el('td', {text: name(r.key)}), el('td', {class: 'n', text: thousands(r.n)}),
         el('td', {class: 'n', text: Math.round(100 * r.win) + ' %'}), el('td', {class: 'n ' + cls(r.mean), text: pct(r.mean, 2)}),
         el('td', {class: 'n opt ' + cls(r.today_mean), text: periodText(r.today_n, r.today_mean)})))))) :
       el('p', {class: 'muted', text: 'Pas encore de trade terminé.'}));
   }
   function renderStrategies() {
-    const r = swarm.ranking || {strategie: [], sortie: [], sens: [], unite: [], min_trades: 30}, min = r.min_trades || 30;
-    seg('#rank-period', [['all', 'Tout le direct'], ['week', '7 jours'], ['today', 'Aujourd\'hui']], rankBy, k => {
+    const essai = rankSource !== 'direct', trial = swarm.trial || {}, text = RANK_TEXT[essai ? 'essai' : 'direct'];
+    const r = (essai ? trial.ranking : swarm.ranking) || {strategie: [], sortie: [], sens: [], unite: []};
+    const minDays = (trial.ranking || {}).min_days || 7;
+    seg('#rank-source', [['essai', 'À l\'essai : toutes les combinaisons'], ['direct', 'En direct : les bots choisis']], essai ? 'essai' : 'direct', k => {
+      rankSource = k; try { localStorage.setItem('classement-mesure', k); } catch (e) {} renderStrategies(); });
+    $('#rank-meta').textContent = typo(text.meta);
+    $('#rank-note').textContent = typo(text.note + RANK_NOTE);
+    seg('#rank-period', [['all', text.all], ['week', '7 jours'], ['today', 'Aujourd\'hui']], rankBy, k => {
       rankBy = k; try { localStorage.setItem('classement', k); } catch (e) {} renderStrategies(); });
     // la période choisie : nombre de trades et gain moyen ; le classement est prudent (peu de trades = tiré vers zéro)
     const period = x => rankBy === 'today' ? [x.today_n, x.today_mean] : rankBy === 'week' ? [x.week_n, x.week_mean] : [x.n, x.mean];
     const prudent = x => { const [n, m] = period(x); return n ? m * n / (n + PRUDENCE) : -1e9; };
-    const rows = r.strategie.slice().sort((a, b) => prudent(b) - prudent(a));
+    const rows = (r.strategie || []).slice().sort((a, b) => prudent(b) - prudent(a));
     $('#rank-head').textContent = {all: 'Par trade', week: 'Par trade, 7 jours', today: 'Par trade, aujourd\'hui'}[rankBy];
     const proven = rows.filter(x => x.verdict === 'prouvee').length, failed = rows.filter(x => x.verdict === 'recalee').length;
-    $('#rank-intro').textContent = rows.length ? rows.length + ' stratégies ont déjà fini des trades en direct · ' + proven + ' prouvée'
-      + (proven > 1 ? 's' : '') + ' · ' + failed + ' recalée' + (failed > 1 ? 's' : '') + '.' : 'Le classement se remplit à chaque trade fini.';
+    const verdicts = proven + ' prouvée' + (proven > 1 ? 's' : '') + ' · ' + failed + ' recalée' + (failed > 1 ? 's' : '') + '.';
+    $('#rank-intro').textContent = !rows.length ? (essai ? 'La mesure se remplit à chaque test d\'une crypto (toutes les 3 heures) : les premiers '
+        + 'trades arrivent quelques heures après le lancement.' : 'Le classement se remplit à chaque trade fini d\'un bot.') :
+      essai ? thousands(trial.bots) + ' bots à l\'essai · ' + thousands(trial.n) + ' trades comptés en ' + trial.days + (trial.days > 1 ? ' jours' : ' jour')
+        + ' · ' + rows.length + ' stratégies · ' + verdicts :
+      rows.length + ' stratégies ont déjà fini des trades en direct · ' + verdicts;
     const body = $('#rank-rows'); body.replaceChildren();
     if (!rows.length) body.append(el('tr', {}, el('td', {colspan: '8', class: 'muted wrap', text: 'Aucun trade terminé pour l\'instant.'})));
     for (const x of rows) {
       const [n, m] = period(x);
       body.append(el('tr', {class: x.verdict === 'prouvee' ? 'strong-row' : null},
       el('td', {class: 'wrap'}, el('strong', {text: x.technique}), el('span', {class: 'sub', text: x.tf_label + ' · ' + tradesText(n)})),
-      el('td', {class: 'n opt', text: String(x.n)}),
+      el('td', {class: 'n opt', text: thousands(x.n)}),
       el('td', {class: 'n opt', text: Math.round(100 * x.win) + ' %'}),
       el('td', {class: 'n focus ' + cls(m), text: n ? pct(m, 2) : '—'}),
-      el('td', {class: 'n opt', text: x.lo === null ? '—' : pct(x.lo, 2) + ' à ' + pct(x.hi, 2)}),
+      el('td', {class: 'n opt', text: x.lo === null || x.lo === undefined ? '—' : pct(x.lo, 2) + ' à ' + pct(x.hi, 2)}),
       el('td', {class: 'n opt ' + cls(x.today_mean), text: periodText(x.today_n, x.today_mean)}),
       el('td', {class: 'n opt ' + cls(x.week_mean), text: periodText(x.week_n, x.week_mean)}),
-      el('td', {}, verdictChip(x, min))));
+      el('td', {}, verdictChip(x, minDays))));
     }
-    $('#rank-exits').replaceChildren(smallRanking('Par façon de sortir', r.sortie, k => k.charAt(0).toUpperCase() + k.slice(1)));
-    $('#rank-more').replaceChildren(smallRanking('Par sens', r.sens, k => SIDE_NAMES[k] || k),
-      smallRanking('Par unité de temps', r.unite, k => TF_LABELS[k] || k));
+    $('#rank-exits').replaceChildren(smallRanking('Par façon de sortir', r.sortie || [], k => k.charAt(0).toUpperCase() + k.slice(1)));
+    $('#rank-more').replaceChildren(smallRanking('Par sens', r.sens || [], k => SIDE_NAMES[k] || k),
+      smallRanking('Par unité de temps', r.unite || [], k => TF_LABELS[k] || k));
   }
 
   // --- les cryptos suivies ---
@@ -943,7 +988,7 @@ JS = r"""
       onclick: () => { coinTf = tf; coinChart = null; last.coinChart = 0; renderCoin(); drawCoinChart(); }})));
     $('#coin-bots').replaceChildren(d.bots.length ? el('div', {class: 'bot-grid'}, ...d.bots.map(botCard)) :
       el('p', {class: 'empty-box', text: c.status === 'aucune stratégie gagnante' ? 'Le dernier test n\'a trouvé aucune combinaison '
-        + 'gagnante sur ses trois périodes : pas de bot ici, c\'est voulu.' : 'Pas de bot sur cette crypto pour l\'instant.'}));
+        + 'gagnante sur l\'étude et la validation : pas de bot ici, c\'est voulu.' : 'Pas de bot sur cette crypto pour l\'instant.'}));
     const mood = d.mood ? 'Humeur du marché : ' + Math.round(d.mood.value) + ' / 100 (' + d.mood.zone + ').' : 'Humeur du marché indisponible.';
     $('#coin-news').replaceChildren(el('h2', {text: 'L\'humeur et l\'actualité'}), el('p', {class: 'muted', text: mood}),
       ...(d.news.length ? d.news.map(n => el('div', {class: 'news-item'}, el('a', {href: n.link, target: '_blank', rel: 'noopener noreferrer', text: n.title}),
@@ -965,23 +1010,24 @@ JS = r"""
   }
   function bestTable(c) {
     const rows = (c.best || []).map(r => el('tr', {},
-      el('td', {class: 'wrap', text: r.technique + exitShort(r) + (r.live === 'prouvee' ? ' · prouvée en direct' : r.live === 'recalee'
-        ? ' · recalée en direct' : '')}),
+      el('td', {class: 'wrap', text: r.technique + exitShort(r) + (r.live === 'prouvee' ? ' · prouvée à l\'essai' : r.live === 'recalee'
+        ? ' · recalée à l\'essai' : '')}),
       el('td', {text: TF_LABELS[r.timeframe] + ' · ' + (r.side === 'long' ? 'achat' : 'vente')}),
       el('td', {class: 'n', text: String(r.sv_n)}),
       el('td', {class: 'n ' + cls(r.sv_mean), text: pct(r.sv_mean, 2)}),
       el('td', {class: 'n opt ' + cls(r.test_mean), text: r.test_n ? pct(r.test_mean, 2) : '—'}),
       el('td', {class: 'n opt', text: bigPct(r.total_return)}),
-      el('td', {text: r.eligible ? '✓' : '✕', title: r.eligible ? 'Gagnante sur ses trois périodes : peut devenir un bot' : null})));
+      el('td', {text: r.eligible ? '✓' : '✕', title: r.eligible ? 'Gagnante sur l\'étude et la validation : peut devenir un bot' : null})));
     return [el('h2', {text: 'Ce que le labo en direct y a testé'}),
       el('p', {class: 'meta', text: c.n_tested ? c.n_tested + ' combinaisons testées sur l\'historique récent (frais des contrats à terme compris), '
-        + (c.n_eligible || 0) + ' gagnantes sur leurs trois périodes. Les mieux classées :' : 'Pas encore testée.'}),
+        + (c.n_eligible || 0) + ' gagnantes sur l\'étude et la validation ; toutes sont mesurées à l\'essai. Les mieux classées :' : 'Pas encore testée.'}),
       rows.length ? el('div', {class: 'table-wrap'}, el('table', {}, el('thead', {}, el('tr', {}, el('th', {text: 'Combinaison'}),
         el('th', {text: 'Unité · sens'}), el('th', {class: 'n', text: 'Trades'}), el('th', {class: 'n', text: 'Par trade'}),
-        el('th', {class: 'n opt', text: 'Récent'}), el('th', {class: 'n opt', text: 'Avec levier'}), el('th', {text: 'Bot'}))), el('tbody', {}, ...rows))) : null,
-      el('p', {class: 'note', text: 'Par trade : le gain moyen d\'un trade, frais compris, sans levier, sur l\'étude et la validation. Récent : la dernière '
-        + 'période de l\'historique, jamais regardée pour choisir. Avec levier : le capital d\'un bot sur tout l\'historique. Choisir parmi '
-        + 'des centaines de combinaisons fait toujours sortir des gagnants par chance : c\'est le direct qui tranche.'})];
+        el('th', {class: 'n opt', text: 'Test final'}), el('th', {class: 'n opt', text: 'Avec levier'}), el('th', {text: 'Bot'}))), el('tbody', {}, ...rows))) : null,
+      el('p', {class: 'note', text: 'Par trade : le gain moyen d\'un trade, frais compris, sans levier, sur l\'étude et la validation. Test final : les '
+        + 'derniers 20 % de l\'historique, jamais regardés pour choisir : ils mesurent ce que vaut le choix. Avec levier : le capital d\'un bot sur '
+        + 'tout l\'historique. Choisir parmi des centaines de combinaisons fait toujours sortir des gagnants par chance : ce sont la mesure à '
+        + 'l\'essai et le direct qui tranchent.'})];
   }
   function drawCoinChart() {
     const host = $('#coin-chart');
@@ -1054,7 +1100,7 @@ JS = r"""
     const p = b.position;
     if (!p) return el('div', {class: 'position-box'}, el('p', {class: 'muted', text: b.dead ? 'Arrêté : ' + b.dead + '.' :
       b.status === 'veille' ? 'En veille : la crypto ne bouge pas assez, il n\'ouvre pas de trade.' :
-      b.status === 'sortie' ? 'En sortie : le dernier test ne le garde plus, il s\'arrête.' :
+      b.status === 'sortie' ? 'En sortie : sa stratégie est recalée (elle perd nettement à l\'essai), il s\'arrête.' :
       'Pas de position : il attend son signal.' + (b.pending && b.pending.kind === 'entry' ? ' Son signal vient de tomber : il entre au prochain tour.' : '')}));
     const long = p.side === 'long';
     return el('div', {class: 'position-box'},
@@ -1097,7 +1143,8 @@ JS = r"""
     const b = botData, bt = b.backtest || {};
     $('#bot-back').setAttribute('href', '#crypto/' + b.coin);
     $('#bot-back').textContent = '← ' + b.coin + ' et ses bots';
-    const label = {'3': ['ok', 'gagnant sur 3 périodes'], '2': ['warn', 'gagnant sur 2 périodes']}[b.label] || ['idle', b.label || '—'];
+    const label = {'3': ['ok', 'test final gagnant'], '2': ['idle', 'test final : trop peu de trades'], '1': ['warn', 'test final perdant'],
+      '0': ['warn', 'ne gagne plus au backtest']}[b.label] || ['idle', b.label || '—'];
     $('#bot-head').replaceChildren(
       el('div', {}, el('p', {class: 'eyebrow', text: (TEAMS[b.team] || '') + ' · ' + b.tf_label + ' · argent fictif'}),
         el('h1', {text: b.coin + ' · ' + b.technique})),
@@ -1121,7 +1168,8 @@ JS = r"""
       el('h3', {class: 'group-title', text: 'Où elle perd'}),
       ...(ins.losses.length ? ins.losses.map(x => el('p', {class: 'lesson-line', text: x})) : [el('p', {class: 'muted', text: 'Pas d\'écart net dans son backtest.'})]),
       el('p', {class: 'note', text: 'Mesuré sur les trades de son backtest : des tendances, pas des certitudes (peu de trades par case). '
-        + 'Le bot ne change jamais ses réglages : il est retesté toutes les 3 heures sur des données fraîches, et arrêté s\'il ne gagne plus.'}));
+        + 'Le bot ne change jamais ses réglages. Il garde sa place d\'un test à l\'autre : seuls ses garde-fous (liquidation, moitié du '
+        + 'capital perdue, pertes nettes après 20 trades) ou une stratégie recalée l\'arrêtent.'}));
     $('#bot-compare').replaceChildren(el('h2', {text: 'En direct et dans le backtest'}),
       el('div', {class: 'compare'},
         el('div', {class: 'tile'}, el('p', {class: 'tile-label', text: 'En direct, depuis le ' + when(b.started)}),
@@ -1132,7 +1180,7 @@ JS = r"""
           el('p', {class: 'tile-value', text: pct(bt.mean, 2) + ' par trade'}),
           el('p', {class: 'tile-sub', text: (bt.trades || 0) + ' trades, frais compris, sans levier · avec levier ' + bigPct(bt.total_return)
             + ' · pire baisse ' + pct(bt.drawdown || 0, 0)}),
-          el('p', {class: 'tile-sub', text: 'Étude ' + pct(bt.study_mean, 2) + ' · validation ' + pct(bt.valid_mean, 2) + ' · récent '
+          el('p', {class: 'tile-sub', text: 'Étude ' + pct(bt.study_mean, 2) + ' · validation ' + pct(bt.valid_mean, 2) + ' · test final '
             + (bt.test_n ? pct(bt.test_mean, 2) : '—')}),
           el('p', {class: 'tile-sub', text: b.label_text || ''}))));
     const done = (b.trades || []).slice().reverse();  // du plus ancien au plus récent

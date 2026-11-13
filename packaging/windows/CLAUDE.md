@@ -15,12 +15,20 @@ place, puis lui dises en quelques lignes ce qui en ressort.
 - `data\bots\essaim.json` : le résumé que lit le site, réécrit à chaque tour (toutes les 5 secondes) : `totals`
   (valeur, résultat, trades, bots arrêtés compris), `coins` (une ligne par crypto suivie : `amplitude` sur 24 h,
   `moving` = assez de mouvement, `status`, `tested`, `n_tested`, `n_eligible`, `best` = les combinaisons les mieux
-  classées de son dernier test), `bots` (chaque bot en bref, avec sa `position`), `events` et `retired`.
+  classées de son dernier test), `bots` (chaque bot en bref, avec sa `position`), `events` et `retired` ; `trial` (la
+  mesure à l'essai : `bots` = combinaisons mesurées, `n` trades comptés sur 30 jours, `mean` par trade, `lo` et `hi` sa
+  fourchette, `days`, `ranking` par stratégie avec `verdict`), `holdout` (le test final des choix du labo) et
+  `reference` (le point de référence).
 - `data\bots\essaim\<id>.json` : le compte complet de chaque bot : `spec` (crypto, unité, technique, sens, objectif,
   levier), `book` (argent, position, trades avec `roi`, `net`, `reason`, `diagnosis`, `analysis`), `backtest` (son
   dernier test, avec `profile` = où sa stratégie gagne et perd), `status` (`actif`, `veille`, `sortie`).
 - `data\bots\essaim-etat.json` : la mémoire de l'essaim (cryptos suivies, prochains tests, combinaisons mises de côté
-  24 h dans `banned`, classement en direct dans `live` et `verdicts`) ; `data\bots\en-cours.json` : le signal de vie (les bots tournent si son heure a moins de 45 s).
+  24 h dans `banned`, classement des bots en direct dans `live`, `verdicts`) ; `data\bots\en-cours.json` : le signal de
+  vie (les bots tournent si son heure a moins de 45 s).
+- `data\bots\essaim-essais.json` : la mesure à l'essai (`stats` : une ligne par stratégie `strategie:technique|unité`,
+  par `sortie:`, `sens:`, `unite:`, `technique:` et par combinaison complète `detail:` ; `n`, `total`, `wins`, `gain`,
+  `r`, et `days` = trades, somme et gagnants de chaque jour). `data\bots\reference.json` : les chiffres du site au
+  premier lancement de cette version (`totals`, `ranking`), jamais réécrits : le point de comparaison.
 - `data\bot.log` : le journal. Les anciens labos, tournois et le trader fictif écrivent toujours dans `data\` quand
   on les lance depuis `autres lanceurs\`.
 - `autres lanceurs\` : un fichier .bat par commande ; `LISEZ-MOI.txt` : le mode d'emploi de l'utilisateur.
@@ -50,24 +58,29 @@ relance les bots tout seul toutes les 20 secondes s'ils s'arrêtent, sauf si l'u
    plus de trade et gèrent ceux en cours.
 2. Chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures : 39 techniques × 2 sens × 4
    façons de sortir (par la règle, objectif 2R, stop suiveur, objectif 2R + stop sécurisé) × 5 unités (1 min à 4 h) =
-   1560 combinaisons, sur l'historique récent, frais des contrats à terme compris. Une combinaison ne devient un bot que si elle gagne sur l'étude, la validation et la période récente, avec
-   assez de trades et sans liquidation. Au plus `FLOTTE_BOTS_PAR_CRYPTO` bots par crypto (8 par défaut, 60 cryptos :
-   480 bots au plus).
+   1560 combinaisons, sur l'historique récent, frais des contrats à terme compris. Une combinaison peut devenir un bot
+   si elle gagne sur l'étude et la validation (les premiers 80 % de l'historique), avec assez de trades et sans
+   liquidation. Le test final (les derniers 20 %) n'est jamais regardé pour choisir : il mesure ce que vaut le choix
+   (`holdout`). Au plus `FLOTTE_BOTS_PAR_CRYPTO` bots par crypto (8 par défaut, 60 cryptos : 480 bots au plus).
 3. Chaque bot met tout son capital fictif à chaque trade, avec le levier de son horizon (×5 scalping, ×3 court terme,
-   ×1 long terme par défaut), réduit si le stop est loin. Un bot que le dernier test ne garde plus finit son trade puis
-   s'arrête ; un bot liquidé, à moitié ruiné ou nettement perdant après 20 trades est arrêté et sa combinaison mise de
-   côté 24 h.
+   ×1 long terme par défaut), réduit si le stop est loin. Un bot garde sa place d'un test à l'autre ; il n'est arrêté
+   que s'il est liquidé, à moitié ruiné ou nettement perdant après 20 trades (sa combinaison est alors mise de côté
+   24 h), si sa stratégie est recalée, ou si sa crypto a quitté la liste depuis 6 heures.
 4. Les agents d'analyse mesurent, sur le backtest de chaque bot, dans quelles conditions sa stratégie gagne ou perd
    (tendance de fond, volatilité, RSI, volume, heure), une probabilité de gain dans les conditions du moment, et
    pourquoi chaque trade réel a gagné ou perdu. Ce sont des mesures : un bot n'entre que sur le signal de sa règle.
-5. Le classement en direct (`essaim-etat.json` : `live`, une ligne par stratégie, sortie, sens et unité, avec `n`,
-   `total`, `wins` et `days` ; `verdicts`) : après 30 trades, une stratégie (technique × unité, toutes cryptos réunies)
-   nettement gagnante est « prouvee » et passe en priorité aux tests ; nettement perdante, « recalee » : plus prise,
-   ses bots s'arrêtent après leur trade. Dans `essaim.json`, `ranking` donne le classement que montre le site.
+5. La mesure à l'essai (`essaim-essais.json`) : à chaque test d'une crypto, les trades de toutes les combinaisons sont
+   comptés (pas seulement ceux des bots choisis), une seule fois, et seulement s'ils ont été ouverts pendant que la
+   crypto bougeait. Aucun choix préalable : c'est la mesure à laquelle se fier. Elle juge les stratégies (technique ×
+   unité, toutes cryptos réunies) sur 30 jours, avec une fourchette qui compare les journées entre elles : après 7
+   jours, une stratégie nettement gagnante est « prouvee » et passe en priorité aux tests ; nettement perdante,
+   « recalee » : plus prise, ses bots s'arrêtent après leur trade. Dans `essaim.json`, `trial.ranking` donne ce
+   classement, et `ranking` celui des seuls bots en direct (`essaim-etat.json` : `live`).
 
 Pour expliquer un bot ou un trade à l'utilisateur, lis son fichier `data\bots\essaim\<id>.json` : `diagnosis` et
 `analysis` de chaque trade, `backtest.profile`. Choisir parmi des centaines de combinaisons fait toujours sortir des
-gagnants par chance : dis-le, c'est le direct qui tranche. Le levier et la vente à découvert n'existent qu'en argent
+gagnants par chance : dis-le, ce sont la mesure à l'essai et le direct qui tranchent. Un bot en gain ne prouve rien
+tant que sa stratégie n'est pas « prouvee » à l'essai. Le levier et la vente à découvert n'existent qu'en argent
 fictif.
 
 ## Règles non négociables

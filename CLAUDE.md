@@ -54,30 +54,51 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `tournoi`, `portefeuille`, `prix`, `telegram`, `check`, `run`, `tableau`, `reset-guard`). Sans argument (double-clic
   sur l'exécutable Windows), `site`. `NothingRetained` : un labo qui ne retient rien n'est pas une panne (code 0).
 - `tradingbot/swarm.py` : l'essaim de bots en argent fictif (commande `flotte`, lanceur 19, lancé tout seul par le site).
-  `SwarmSettings` (`FLOTTE_CAPITAL`, `FLOTTE_CRYPTOS` 60 au plus 80, `FLOTTE_BOTS_PAR_CRYPTO` 8 au plus 10,
+  `SwarmSettings` (`FLOTTE_CAPITAL`, `FLOTTE_CRYPTOS` 60 au plus 80, `FLOTTE_BOTS_PAR_CRYPTO` 8 au plus 20,
   `FLOTTE_MOUVEMENT_MIN` 3 %, `FLOTTE_LEVIER_SCALPING/COURT/LONG` 5/3/1 ; `max_bots` = cryptos × bots). `Swarm.cycle`
-  (un tour toutes les 5 s) : résultats des re-tests (`apply_test` : nouveaux bots, `sortie` pour ceux que le test ne
-  garde plus), univers toutes les 10 min (`_refresh_universe` : `scanner.liquid_markets` trié par amplitude ; sous
-  `min_move` ou hors liste → `veille`, plus d'entrée ; nouvel essai dans 1 min si la liste échoue), re-test de chaque
-  crypto agitée toutes les 3 h (`_schedule_tests` → `Retester` : un fil télécharge `TEST_DAYS`, un
-  `ProcessPoolExecutor(1)` calcule, repli dans le fil), bougies par (crypto, unité) via `CandleStore` (tout une fois,
-  puis les 5 dernières), `_on_candles` (même ordre que le backtest : `range_bar` sur les bougies manquées, `close_bar`,
-  `open_bar` au prix du moment), stop et objectif au prix du moment, `_retire` (liquidé, moitié du capital, gardien
-  après `ELIMINATE_AFTER` trades → arrêté et `banned` 24 h ; `sortie` → arrêté sans mise de côté), humeur (`mood` =
-  `fetch_mood`, une fois par heure). `retest_coin` : `LIBRARY` (39 techniques) × `SIDES` × `fleet.EXITS` (règle, 2R,
-  stop suiveur, 2R + stop sécurisé) × `TIMEFRAMES` (1m à 4h) = 1560 combinaisons, `_eligible` (étude, validation et
-  test final positifs si ≥ 5 trades, `MIN_TRADES`, jamais liquidée), `_choose` (stratégies prouvées d'abord, recalées
-  jamais, familles variées, 2 par unité au plus), `profile`. Classement en direct : `_learn` (chaque trade fini, net
-  sans levier, par `strategie:` technique|unité, `technique:`, `sortie:`, `sens:`, `unite:`, jours gardés
-  `LIVE_DAYS`), `verdicts` (≥ `LIVE_MIN_TRADES` trades : `recalee` si borne haute à 95 % < 0, `prouvee` si borne basse
-  durcie par Bonferroni > 0), `_judge_strategies` (annonce, bots d'une recalée en `sortie`), `ranking` (site). Agents : `features` (tendance MM200 et
+  (un tour toutes les 5 s, à l'heure de la plateforme : `PlatformClock`, `fetch_time` toutes les 10 min puis horloge
+  monotone ; sans elle, horloge du PC) : résultats des re-tests (`apply_test` : les bots en place gardent leur place,
+  leur fiche est rafraîchie par `kept`, les places libres reçoivent les mieux classées ; un test ne met plus personne
+  en `sortie`), univers toutes les 10 min (`_refresh_universe` : `scanner.liquid_markets` trié par amplitude ; sous
+  `min_move` ou hors liste → `veille`, plus d'entrée ; `_stretch` note les périodes où la crypto bouge : `stretches`,
+  `moving_since`, close à la dernière fois vue après 30 min sans nouvelles), re-test de chaque crypto agitée toutes
+  les 3 h (`_schedule_tests` → `Retester.submit(symbol, banned, verdicts, keep, trial)` : un fil télécharge
+  `TEST_DAYS` sans la bougie en cours, un `ProcessPoolExecutor(1)` calcule, repli dans le fil ; une crypto qui ne
+  bouge plus reçoit une heure après, `CLOSE_DELAY_S`, un dernier test `final` qui clôt sa mesure à l'essai), bougies
+  par (crypto, unité) via `CandleStore` (tout une fois, puis les 5 dernières ; `closed` : une bougie n'est terminée
+  que si la suivante existe, ou si l'heure de la plateforme a dépassé sa fin ; la bougie attendue pas encore finie →
+  nouvel essai 5 s plus tard, puis de moins en moins souvent), `_on_candles` (même ordre que le backtest : `range_bar`
+  sur les bougies manquées, `close_bar`, `open_bar` au prix du moment), stop et objectif au prix du moment, `_retire`
+  (liquidé, moitié du capital, gardien après `ELIMINATE_AFTER` trades → arrêté et `banned` 24 h ; `sortie` =
+  stratégie recalée → arrêté sans mise de côté ; crypto hors liste depuis 6 h), humeur (`mood` = `fetch_mood`, une
+  fois par heure). `retest_coin` : `LIBRARY` (39 techniques) × `SIDES` × `fleet.EXITS` (règle, 2R, stop suiveur, 2R +
+  stop sécurisé) × `TIMEFRAMES` (1m à 4h) = 1560 combinaisons, `_eligible` (étude et validation positives,
+  `MIN_TRADES`, pas de liquidation avant le test final ; LE TEST FINAL N'EST JAMAIS REGARDÉ POUR CHOISIR), `_label`
+  (ce que dit le test final : « 3 » gagnant, « 1 » perdant, « 2 » trop peu de trades, « 0 » bot en place qui ne
+  gagne plus), `_choose(rows, k, verdicts, taken)` (stratégies prouvées d'abord, recalées jamais, familles variées,
+  `per_timeframe(k)` par unité : 2 jusqu'à 8 bots ; `taken` = les bots en place), `holdout` (le test final de ce que
+  le labo choisirait), `profile`. La mesure à l'essai (ce qui juge) : `Harvest` compte dans chaque test les trades de
+  TOUTES les combinaisons, une seule fois (`done` : dernière bougie du test précédent, par unité) et seulement s'ils
+  ont été ouverts pendant que la crypto bougeait (`active`) ; la position encore ouverte attend, sauf au test
+  `final` (comptée à sa valeur du moment) ; lignes `strategie:` technique|unité, `technique:`, `sortie:`, `sens:`,
+  `unite:` (avec le détail par jour) et `detail:` (combinaison complète) : `n`, `total`, `total_sq`, `wins`, `gain`,
+  `r` ; `_merge_trial`, `trial_view` (30 jours `TRIAL_DAYS`, fourchette `risk.clustered_bounds` qui compare les
+  journées, verdicts après `TRIAL_MIN_DAYS` = 7 jours et `LIVE_MIN_TRADES` trades : `recalee` si le haut à 95 % < 0,
+  `prouvee` si le bas durci par Bonferroni > 0), `verdicts`, `_judge_strategies` (annonce ; bots d'une recalée en
+  `sortie`, repris si le verdict est levé). Classement en direct, à part : `_learn` (chaque trade fini d'un bot, net
+  sans levier, mêmes lignes `stat_keys`, jours gardés `LIVE_DAYS`), `ranking` (site ; le verdict affiché vient de la
+  mesure à l'essai). Agents : `features` (tendance MM200 et
   pente, ATR %, RSI 14, volume, heure UTC), `buckets`, `profile`, `insights`, `probability` (tirée vers la moyenne,
-  `SHRINK`), `trade_analysis` (après chaque trade). Fichiers : `essaim.json` (résumé du site, `summary`, `bot_brief`),
-  `essaim-etat.json` (`STATE_FILE`, la mémoire, écrite si `state_dirty` ou toutes les 10 min ; un test perdu au
-  redémarrage est refait), `essaim/<id>.json` (compte de chaque bot, écrit s'il change ou toutes les 10 min), verrou
-  `en-cours.json` (fil de signal de vie toutes les 10 s). `run` : réseau coupé → tours retentés de plus en plus tard.
+  `SHRINK`), `trade_analysis` (après chaque trade). Fichiers : `essaim.json` (résumé du site, `summary`, `bot_brief` ;
+  `trial`, `holdout`, `reference`), `essaim-etat.json` (`STATE_FILE`, la mémoire, écrite si `state_dirty` ou toutes
+  les 10 min ; un test perdu au redémarrage est refait), `essaim-essais.json` (`TRIAL_FILE`, la mesure à l'essai,
+  écrite quand un test l'a complétée), `reference.json` (`REFERENCE_FILE` : les chiffres du site au premier lancement
+  de cette version, lus dans l'ancien résumé avant de le réécrire ; jamais réécrit), `essaim/<id>.json` (compte de
+  chaque bot, écrit s'il change, et tous à tour de rôle en 10 min : `rotation`), verrou `en-cours.json` (fil de signal
+  de vie toutes les 10 s, à l'horloge du PC). `run` : réseau coupé → tours retentés de plus en plus tard.
   Tests : parité direct/backtest (`test_swarm`) et signaux de la fenêtre du direct = tout l'historique, pour chaque
-  technique dans les deux sens (`test_fleet`), reprise après redémarrage identique à une course sans arrêt.
+  technique dans les deux sens (`test_fleet`), reprise après redémarrage identique à une course sans arrêt, trades à
+  l'essai comptés une seule fois quel que soit le nombre de tests, verdicts par journées.
 - `tradingbot/fleet.py` : le moteur commun au backtest et au direct. `technique` (`lab.ALL_VARIANTS` + `EXTRA` : EMA,
   VWAP, stochastique, Keltner, ADX, Parabolic SAR, Ichimoku, écart à la moyenne, Heikin-Ashi), `Spec` = crypto, unité,
   technique, sens (`long`, ou `short` = même règle sur le graphique retourné, `mirror`), objectif (`target_r` 0 ou 2R),
@@ -87,13 +108,18 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `close_bar`) ; tout le capital ×
   levier, levier réduit pour que le stop passe avant la liquidation (`LIQ_SAFETY`), frais `execution.FUTURES`,
   financement compté comme un coût dans les deux sens, liquidation = toute la mise ; `explain=True` : `diagnosis`.
-  `simulate`, `judge` (étude/validation/test comme le labo, `score` = moyenne / dispersion sur étude + validation),
+  `simulate`, `judge` (étude 50 % / validation 30 % / test final 20 % ; un trade à cheval sur le test final ne compte
+  nulle part ; `test_total`, `test_sq`, `test_wins` ; `liquidated_early` ; `score` = moyenne / dispersion sur étude +
+  validation),
   `condition`/`entry_rule`/`exit_rule` (règles en mots, dans les deux sens), `overlays`, `chart_view` (lignes de la
   technique, vrais trades, trades de la règle sur les bougies affichées, position), `fleet_running` (`HEARTBEAT_S`).
 - `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
-  Refait le 06/11/2026 au soir autour de l'essaim (onglet Stratégies ajouté le 07/11 : `ranking`, tout le direct,
-  7 jours, aujourd'hui, verdicts) : onglets Direct (`/api/bots` = `swarm_data` : `swarm_step`,
-  totaux, tous les bots avec filtres, tri et pages de 30, événements, bouton « Arrêter les bots »), Cryptos (liste ;
+  Refait le 06/11/2026 au soir autour de l'essaim (onglet Stratégies ajouté le 07/11, à deux mesures depuis le
+  13/11 : « À l'essai » = `trial.ranking`, 30 jours, 7 jours, aujourd'hui, fourchette par journées, verdicts ou
+  jours manquants ; « En direct » = `ranking`, les seuls bots) : onglets Direct (`/api/bots` = `swarm_data` :
+  `swarm_step`, totaux, encadré « La mesure à l'essai » (bots à l'essai, trades comptés, par trade, test final des
+  choix du labo, point de référence), tous les bots avec filtres, tri et pages de 30, événements, bouton « Arrêter
+  les bots »), Cryptos (liste ;
   `#crypto/SOL` = `/api/crypto` + `/api/crypto-graphique` : bots, graphique par unité, lecture, actualité, `best` du
   dernier test), page d'un bot (`#bot/<id>` = `/api/bot` + `/api/bot-graphique` : position au chiffre près, agents,
   direct contre backtest, trades expliqués, fiche `knowledge.ENTRIES`), Actualité, Prix ; sous « Plus » : École,
@@ -200,6 +226,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `laboratoire.json` ; le labo court terme écrit `laboratoire-court-terme.json` via `labo --resultats`) × cryptos du
   scanner (+ `--avec-marches-du-labo`), toujours en paper, un compte fictif par bot (`bot_label` = variante), données
   partagées par crypto (`CcxtBroker` avec cache), un dossier par labo (`data/tournoi/`, `data/tournoi-court-terme/`).
+- `risk.student_t` et `risk.clustered_bounds` : la fourchette d'une moyenne quand les trades d'un même groupe (une
+  journée) se ressemblent ; loi de Student faite maison (pas de scipy), vérifiée contre les tables.
 - Élimination (`risk.TradeStats`, `elimination_reason`, `is_candidate`) : après `ELIMINATE_AFTER_TRADES` trades,
   borne haute à 95 % < 0 → plus d'entrée ; mêmes règles en backtest et en live (test de parité). Jamais de
   modification automatique des réglages. « Candidate au testnet » : ≥ 30 trades et borne basse > 0, seuil durci
@@ -218,10 +246,13 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
 - Le guide du trading pour l'utilisateur est un document Claude Docs : https://claude.ai/artifact/3CF8W3xks9c3oxa3mNqbA5
 - `packaging/` et `.github/workflows/windows-package.yml` : version Windows sans Python, publiée en pré-version
   `windows-dev` (https://github.com/lecromrayane8-rgb/Testing-podo/releases/tag/windows-dev).
-- `audit/` : les mesures de l'audit du 12/11/2026, hors du bot (rien n'est lu sur une plateforme, rien n'est écrit dans
-  `data/`). `hasard.py` : des cryptos en marche au hasard, le vrai `retest_coin` choisit ses bots, puis on les fait
-  tourner sur la suite (`python audit/hasard.py 80 12 hasard.json`). `rotation.py` : le test refait toutes les 3 h
-  pendant 48 h, pour compter les bots remplacés et leur durée de vie.
+- `audit/` : les mesures de contrôle, hors du bot (rien n'est lu sur une plateforme, rien n'est écrit dans `data/`).
+  `hasard.py` : des cryptos en marche au hasard (un prix toutes les 10 s, bougies tirées de ce chemin : AUCUNE mèche
+  ajoutée, sinon les objectifs gagnent artificiellement), le vrai `retest_coin` choisit ses bots, puis on regarde
+  leur test final, leur « direct » sur la suite et la mesure à l'essai de toutes les combinaisons
+  (`python audit/hasard.py 80 12 hasard.json`). `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
+  vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
+  (`git worktree add ... bac35d5`) pour comparer avant et après.
 
 ## Vérifications et conventions
 
@@ -346,5 +377,17 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   tournent sur les prix du comptant, « bougie finie » dépend de l'horloge du PC. Proposée et en attente d'accord :
   l'étape 0 bis (test final mis de côté, trades de toutes les combinaisons gardés comme « bots à l'essai », bots plus
   arrêtés pour un changement de classement, bougie finie d'après la plateforme, point de référence enregistré au
-  lancement). Ne rien coder avant son accord. Les deux mesures se refont avec `audit/hasard.py` et
-  `audit/rotation.py` (à relancer après chaque changement du labo : c'est le repère « aucun avantage »).
+  lancement). Les deux mesures se refont avec `audit/hasard.py` et `audit/rotation.py` (à relancer après chaque
+  changement du labo ou du moteur : c'est le repère « aucun avantage »).
+- 12 et 13/11/2026 : l'utilisateur approuve l'étape 0 bis (« Oui »). Faite, point de retour `bac35d5` : test final
+  mis à part (`_eligible`), mesure à l'essai de toutes les combinaisons (`Harvest`, `essaim-essais.json`, verdicts par
+  journées), bots gardés d'un test à l'autre (`apply_test`), bougie finie d'après la plateforme (`PlatformClock`,
+  `CandleStore.closed`), point de référence (`reference.json`), site (encadré « La mesure à l'essai », onglet
+  Stratégies à deux mesures), jusqu'à 20 bots par crypto. Erreur de MA mesure trouvée et dite : `audit/hasard.py`
+  ajoutait des mèches au hasard aux bougies, ce qui avantageait les objectifs (ordres limites) ; refait avec des
+  bougies tirées du seul chemin du prix. Chiffres justes, sur du pur hasard : avant, 43 combinaisons « gagnantes sur
+  3 périodes » (2,7 %), 5,8 bots par crypto, backtest +0,89 % puis −0,17 % par trade, 82 % des bots gardés d'un test
+  au suivant, 0,6 trade par bot en 48 h ; après, test final −0,10 %, direct −0,13 %, mesure à l'essai −0,14 % sur
+  340 000 trades (le prix des frais : la mesure est honnête), 100 % des bots gardés, 4,3 trades par bot en 48 h.
+  Reste à trancher (étape 3) : un bot sans position dont la crypto a quitté la liste depuis 6 h laisse sa place, et
+  les bots en 1 h et 4 h mettront des semaines à faire 30 trades. Prochaine étape, à faire approuver : l'étape 1.

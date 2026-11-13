@@ -601,17 +601,23 @@ def _mean(xs: list[float]) -> float:
 
 
 def judge(book: Book, start_ts: int, end_ts: int) -> dict:
-    """Une combinaison jugée comme au labo : étude, validation (classement) et test final (jamais regardé pour
-    choisir). Rendements par trade sans levier (`net`, frais compris) ; résultat total avec le levier."""
+    """Une combinaison jugée comme au labo : étude, validation (ce sont elles qui servent à choisir) et test final,
+    jamais regardé pour choisir : il mesure ce que vaut le choix. Un trade ouvert avant le test final et fermé pendant
+    (à cheval) ne compte ni dans le choix ni dans la mesure : son résultat dépend des deux périodes. Rendements par
+    trade sans levier (`net`, frais compris) ; résultat total avec le levier."""
     spec, s = book.spec, book.s
     cut = start_ts + (end_ts - start_ts) * STUDY_SHARE
     test_start = start_ts + (end_ts - start_ts) * (1 - TEST_SHARE)
     parts: dict[str, list[float]] = {"study": [], "valid": [], "test": []}
     gross = []
+    liquidated_early = False
     for t in s["trades"]:
-        part = "study" if t["entry_ts"] < cut else "valid" if t["entry_ts"] < test_start else "test"
-        parts[part].append(t["net"])
         gross.append(t["gross"])
+        if t["entry_ts"] >= test_start:
+            parts["test"].append(t["net"])
+        elif t["exit_ts"] < test_start:
+            parts["study" if t["entry_ts"] < cut else "valid"].append(t["net"])
+            liquidated_early = liquidated_early or t["reason"] == "liquidation"
     sv = parts["study"] + parts["valid"]
     n = len(sv)
     std = float(np.std(sv, ddof=1)) if n > 1 else math.nan
@@ -625,8 +631,11 @@ def judge(book: Book, start_ts: int, end_ts: int) -> dict:
         "study_n": len(parts["study"]), "study_mean": _mean(parts["study"]),
         "valid_n": len(parts["valid"]), "valid_mean": _mean(parts["valid"]),
         "test_n": len(parts["test"]), "test_mean": _mean(parts["test"]),
+        "test_total": float(sum(parts["test"])), "test_sq": float(sum(x * x for x in parts["test"])),
+        "test_wins": sum(x > 0 for x in parts["test"]),
         "sv_n": n, "sv_mean": mean, "score": score,
         "total_return": s["cash"] / s["start"] - 1, "drawdown": s["drawdown"], "liquidated": s["dead"] == "liquidé",
+        "liquidated_early": liquidated_early,  # avant le test final : la seule liquidation que le choix a le droit de voir
         "start_ts": int(start_ts), "end_ts": int(end_ts),
     }
 

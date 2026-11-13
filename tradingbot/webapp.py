@@ -446,8 +446,9 @@ FIELDS = (
           "gardent le leur).", "money", "1000"),
     Field("FLOTTE_CRYPTOS", "Cryptos suivies", f"Les plus agitées du moment, de 1 à {MAX_COINS}. Plus il y en a, plus il "
           "y a de bots (et de calcul).", "count", "60", (1, MAX_COINS)),
-    Field("FLOTTE_BOTS_PAR_CRYPTO", "Bots au plus par crypto", f"De 1 à {MAX_BOTS_PER_COIN} : seules les combinaisons qui "
-          "gagnent sur leur historique deviennent des bots.", "count", "8", (1, MAX_BOTS_PER_COIN)),
+    Field("FLOTTE_BOTS_PAR_CRYPTO", "Bots au plus par crypto", f"De 1 à {MAX_BOTS_PER_COIN}. Seules les combinaisons qui "
+          "gagnent sur leur historique deviennent des bots ; toutes les autres sont mesurées à l'essai, sans limite.",
+          "count", "8", (1, MAX_BOTS_PER_COIN)),
     Field("FLOTTE_MOUVEMENT_MIN", "Mouvement minimum (%)", "Amplitude sur 24 h en dessous de laquelle une crypto passe en "
           "veille (ses bots n'ouvrent plus de trade). 3 = 3 %.", "number", "3", (0, 50)),
     Field("FLOTTE_LEVIER_SCALPING", "Levier du scalping (1 et 5 min)", "De 1 à 20. Réduit pour un trade dont le stop "
@@ -560,19 +561,30 @@ def swarm_step(data: dict, running: bool) -> dict:
         if not data.get("ready"):
             return {"title": "Lance tes bots", "action": "flotte",
                     "text": "Le bot va suivre les cryptos qui bougent le plus, tester toutes ses stratégies sur chacune "
-                            "(à l'achat et à la vente à découvert) et lancer un bot pour chaque combinaison gagnante, en "
-                            "argent fictif. Aucun argent réel."}
+                            "(à l'achat et à la vente à découvert), lancer des bots sur les mieux classées et mesurer "
+                            "toutes les autres à l'essai, en argent fictif. Aucun argent réel."}
         return {"title": "Tes bots sont à l'arrêt", "action": "flotte",
                 "text": "Relance-les : ils reprennent exactement où ils en étaient (positions, capital, trades)."}
     if not totals.get("bots"):
+        rows = ((data.get("trial") or {}).get("ranking") or {}).get("strategie") or []
+        failed = sum(1 for r in rows if r.get("verdict") == "recalee")
+        if failed and failed >= len(rows) / 2:  # ce n'est pas une panne : il faut le dire
+            return {"title": "Aucun bot en ce moment : les stratégies perdent à l'essai",
+                    "text": f"{failed} stratégies sur {len(rows)} sont recalées : mesurées sur toutes les cryptos, elles "
+                            "perdent nettement, frais compris, et leurs bots se sont arrêtés. Ce n'est pas une panne. "
+                            "Toutes les combinaisons restent mesurées à l'essai : des bots renaîtront dès qu'une "
+                            "stratégie ne perdra plus."}
         return {"title": "Le labo en direct teste les cryptos",
                 "text": f"{tester.get('done', 0)} crypto(s) testée(s), {tester.get('queue', 0)} en attente. Chaque test "
                         "essaie des centaines de combinaisons sur l'historique récent ; un bot naît dès qu'une "
-                        "combinaison gagne, frais compris, sur ses trois périodes. Compte quelques minutes."}
+                        "combinaison gagne, frais compris, sur l'étude et la validation. Compte quelques minutes."}
+    trial = (data.get("trial") or {}).get("bots") or 0
+    measured = f" {trial:,} combinaisons sont mesurées à l'essai.".replace(",", "\u202f") if trial else ""
     return {"title": f"{totals['bots']} bots tournent en argent fictif",
             "text": f"Sur {totals.get('coins', 0)} cryptos suivies, dont {totals.get('moving', 0)} assez agitées. "
-                    f"{totals.get('positions', 0)} en position. Chaque crypto est retestée toutes les 3 heures ; un bot "
-                    "qui faiblit laisse sa place. Rien ne part jamais sur une plateforme."}
+                    f"{totals.get('positions', 0)} en position. Chaque crypto est retestée toutes les 3 heures : un bot "
+                    f"garde sa place, les places libres en reçoivent de nouveaux.{measured} Rien ne part jamais sur une "
+                    "plateforme."}
 
 
 class Site:

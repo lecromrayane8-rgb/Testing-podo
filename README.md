@@ -149,19 +149,26 @@ Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au dir
    4 façons de sortir (par la règle, objectif 2R, stop suiveur, objectif 2R + stop sécurisé) × 5 unités = 1560
    combinaisons, avec les frais des contrats à terme (0,05 % par ordre au marché,
    0,02 % pour un objectif posé d'avance, glissement, financement toutes les 8 h compté comme un coût). L'historique est
-   coupé comme au labo : étude, validation, période récente. Une combinaison ne devient un bot que si elle gagne sur
-   les trois (frais compris), avec assez de trades et sans liquidation. Au plus `FLOTTE_BOTS_PAR_CRYPTO` bots par
-   crypto (8), des familles et des unités variées : 480 bots au plus par défaut. Les tests tournent à part (un fil
-   télécharge, un processus calcule) : le direct n'attend jamais.
+   coupé comme au labo : étude (50 %), validation (30 %), test final (20 %). Une combinaison peut devenir un bot si
+   elle gagne sur l'étude et sur la validation (frais compris), avec assez de trades et sans liquidation. **Le test
+   final n'est jamais regardé pour choisir** : il mesure ce que vaut le choix, et le site l'affiche. Au plus
+   `FLOTTE_BOTS_PAR_CRYPTO` bots par crypto (8, réglable jusqu'à 20), des familles et des unités variées : 480 bots au
+   plus par défaut, 1600 au maximum. Les tests tournent à part (un fil télécharge, un processus calcule) : le direct
+   n'attend jamais.
 3. **Les bots** : tout le capital fictif du bot (`FLOTTE_CAPITAL`, 1000 USDT) à chaque trade, avec le levier de son
    horizon (`FLOTTE_LEVIER_SCALPING` ×5 en 1 et 5 min, `FLOTTE_LEVIER_COURT` ×3 en 15 min et 1 h,
    `FLOTTE_LEVIER_LONG` ×1 en 4 h), réduit pour un trade dont le stop est loin : le stop passe toujours avant la
    liquidation. Même moteur que le backtest (`Book`), bougie clôturée par bougie clôturée, et stop et objectif surveillés
    au prix du moment toutes les 5 secondes (tests de parité : mêmes trades en direct qu'en backtest, et mêmes signaux
-   sur la fenêtre lue en direct que sur tout l'historique, pour chaque technique dans les deux sens).
-4. **Les arrêts** : un bot que le dernier test ne garde plus finit son trade puis s'arrête ; un bot liquidé, qui a
-   perdu la moitié de son capital ou que le gardien juge nettement perdant après 20 trades est arrêté, et sa
-   combinaison mise de côté 24 h. Ses résultats restent comptés dans le bilan. Jamais un réglage changé après une perte.
+   sur la fenêtre lue en direct que sur tout l'historique, pour chaque technique dans les deux sens). Une bougie n'est
+   « terminée » que lorsque la plateforme a ouvert la suivante, ou que l'heure de la plateforme a dépassé sa fin : jamais
+   d'après la seule horloge de l'ordinateur, qui peut avancer ou retarder.
+4. **Les arrêts** : un bot garde sa place d'un test à l'autre (un classement qui bouge ne l'arrête plus) ; le test ne
+   fait que rafraîchir sa fiche et remplir les places libres. Un bot liquidé, qui a perdu la moitié de son capital ou
+   que le gardien juge nettement perdant après 20 trades est arrêté, et sa combinaison mise de côté 24 h ; un bot dont
+   la stratégie est recalée finit son trade puis s'arrête ; un bot sans position dont la crypto a quitté la liste
+   depuis 6 heures laisse sa place. Ses résultats restent comptés dans le bilan. Jamais un réglage changé après une
+   perte.
 5. **Les agents d'analyse** : sur les trades du backtest de chaque bot, dans quelles conditions sa stratégie gagne ou
    perd (tendance de fond, volatilité, RSI, volume, heure de la journée), sa probabilité de gain dans les conditions
    du moment (tirée vers sa moyenne quand les cas sont peu nombreux), et après chaque trade réel, pourquoi il a gagné
@@ -171,17 +178,30 @@ Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au dir
    trade a gagné une fois sa distance de stop. Décidés à la clôture, ils comptent dès la bougie suivante, en backtest
    comme en direct ; ils ne reculent jamais. Ce sont des façons de sortir testées comme les autres : une crypto ne les
    garde que si elles y gagnent.
-7. **Le classement en direct** (onglet Stratégies) : chaque trade fini compte pour sa stratégie (une technique dans une
-   unité de temps, toutes cryptos réunies), sa façon de sortir, son sens et son unité, sur tout le direct, la journée
-   et les 7 derniers jours. Après 30 trades, une stratégie nettement gagnante (borne basse de sa fourchette positive,
-   seuil durci par le nombre de stratégies comparées) est « prouvée » et passe en priorité aux tests des cryptos ; une
-   stratégie nettement perdante (borne haute négative) est « recalée » : les tests ne la prennent plus et ses bots
-   s'arrêtent après leur trade. Le classement du jour est montré pour information : sur une journée, c'est du hasard.
+7. **La mesure à l'essai** (onglet Stratégies, et un encadré sur l'écran Direct) : à chaque test d'une crypto, les
+   trades de **toutes** les combinaisons sont comptés, pas seulement ceux des bots choisis : jusqu'à 60 × 1560 = 93 600
+   « bots à l'essai ». Un trade compte une seule fois, à sa fermeture, et seulement s'il a été ouvert pendant que la
+   crypto bougeait, comme un vrai bot ; quand une crypto s'arrête de bouger, ce qui est encore ouvert est compté à sa
+   valeur du moment, frais de sortie compris. Rien n'est choisi d'avance : la chance ne peut pas embellir cette
+   mesure. C'est elle qui juge les stratégies (une technique dans une unité de temps, toutes cryptos réunies), sur les
+   30 derniers jours. La fourchette compare les journées entre elles, parce que les trades d'une même journée se
+   ressemblent : mille trades le même jour ne valent pas mille preuves. Après 7 jours, une stratégie nettement
+   gagnante (bas de la fourchette positif, seuil durci par le nombre de stratégies comparées) est « prouvée » et passe
+   en priorité aux tests des cryptos ; une stratégie nettement perdante (haut de la fourchette négatif) est
+   « recalée » : les tests ne la prennent plus et ses bots s'arrêtent après leur trade.
+8. **Le classement en direct** : chaque trade fini d'un bot compte aussi pour sa stratégie, sa façon de sortir, son
+   sens et son unité, sur tout le direct, la journée et les 7 derniers jours. C'est ce que les bots choisis ont
+   vraiment fait, à côté de la mesure à l'essai. Le classement du jour est montré pour information : sur une journée,
+   c'est du hasard.
 
 L'état est repris au redémarrage : `data/bots/essaim-etat.json` (cryptos, tests, combinaisons mises de côté),
-`data/bots/essaim/<id>.json` (le compte complet de chaque bot) ; `data/bots/essaim.json` est le résumé que lit le
-site, réécrit à chaque tour. Choisir parmi des centaines de combinaisons fait toujours sortir des gagnants par
-chance : c'est le direct qui tranche. Le bot en argent réel, lui, reste au comptant et sans levier.
+`data/bots/essaim-essais.json` (la mesure à l'essai), `data/bots/essaim/<id>.json` (le compte complet de chaque bot) ;
+`data/bots/essaim.json` est le résumé que lit le site, réécrit à chaque tour ; `data/bots/reference.json` garde, une
+fois pour toutes, les chiffres du site au premier lancement de la version qui mesure à l'essai (le point de
+comparaison). Choisir parmi des centaines de combinaisons fait toujours sortir des gagnants par chance : ce sont la
+mesure à l'essai et le direct qui tranchent (voir `PLAN-BOTS.md` : sur des marchés tirés au hasard, l'ancien choix
+« gagnant sur 3 périodes » créait presque autant de bots). Le bot en argent réel, lui, reste au comptant et sans
+levier.
 
 ## Le site du bot (tout à portée de main)
 
@@ -193,11 +213,13 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Cinq on
 
 - **Direct** : où en sont les bots en une phrase (et le bouton utile : les lancer, ou les arrêter), la valeur de tous
   les bots, le résultat depuis le départ (bots arrêtés compris), le nombre de bots et de positions, les trades
-  terminés et l'humeur du marché ; puis **la liste de tous les bots** (filtres par horizon et par état, tri par
-  résultat, 30 par page) ; puis le fil de ce qui vient de se passer.
-- **Stratégies** : le classement en direct des stratégies (tout le direct, 7 jours ou aujourd'hui), avec leur
-  fourchette et leur verdict (prouvée, à confirmer, recalée), puis les résultats par façon de sortir, par sens et par
-  unité de temps.
+  terminés et l'humeur du marché ; **la mesure à l'essai** (bots à l'essai, trades comptés, gain moyen par trade et sa
+  fourchette, test final des choix du labo, point de référence) ; puis **la liste de tous les bots** (filtres par
+  horizon et par état, tri par résultat, 30 par page) ; puis le fil de ce qui vient de se passer.
+- **Stratégies** : deux mesures au choix. « À l'essai » : toutes les combinaisons, sur 30 jours, 7 jours ou
+  aujourd'hui, avec la fourchette de chaque stratégie et son verdict (prouvée, à confirmer, recalée, ou le nombre de
+  jours qui manquent). « En direct » : seulement les trades des bots choisis. Puis les résultats par façon de sortir,
+  par sens et par unité de temps.
 - **Cryptos** : les cryptos suivies, leur variation et leur amplitude sur 24 h, leur état (des bots tournent, test en
   cours, rien de gagnant, en veille) et le résultat de leurs bots. **La page d'une crypto** : ses bots, son graphique
   dans chaque unité de temps (bougies, volume, supports et résistances, l'entrée, le stop et l'objectif des positions

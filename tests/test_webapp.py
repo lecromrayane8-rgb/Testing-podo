@@ -196,6 +196,13 @@ def test_the_direct_screen_always_says_where_the_bots_are():
     assert "action" not in testing and "3 crypto(s) testée(s), 12 en attente" in testing["text"]
     live = swarm_step({"ready": True, "totals": {"bots": 250, "coins": 60, "moving": 48, "positions": 31}}, True)
     assert live["title"] == "250 bots tournent en argent fictif" and "31 en position" in live["text"]
+    assert "garde sa place" in live["text"] and "à l'essai" not in live["text"]
+    measuring = swarm_step({"ready": True, "totals": {"bots": 250}, "trial": {"bots": 93600}}, True)
+    assert "93\u202f600 combinaisons sont mesurées à l'essai" in measuring["text"]
+    rows = [{"verdict": "recalee"}] * 150 + [{"verdict": None}] * 45
+    nothing = swarm_step({"ready": True, "totals": {"bots": 0}, "trial": {"ranking": {"strategie": rows}}}, True)
+    assert "Aucun bot" in nothing["title"] and "150 stratégies sur 195 sont recalées" in nothing["text"]
+    assert "pas une panne" in nothing["text"] and "action" not in nothing
     assert coin_symbol("sol") == "SOL/USDT" and coin_symbol("PEPE/USDT") == "PEPE/USDT"
     for bad in ("", "../.env", "BTC/EUR", "<script>"):
         with pytest.raises(ValueError):
@@ -235,7 +242,9 @@ def test_the_site_serves_its_page_and_only_obeys_its_own_page(server):
     s, base = server
     status, page, headers = request(base, "/")
     assert status == 200 and "Tous les bots" in page and "Les cryptos suivies" in page
-    assert "Les stratégies en direct" in page and 'href="#strategies"' in page
+    assert "<h1>Les stratégies</h1>" in page and 'href="#strategies"' in page and 'id="rank-source"' in page
+    assert "La mesure à l'essai" in page and 'id="trial-facts"' in page  # toutes les combinaisons, sans rien choisir
+    assert "gagnant sur 3 périodes" not in page and "trois périodes" not in page  # le test final ne choisit plus
     for gone in ("Radar des mouvements", "Mes essais", "Labos", "Mon trader", "Tableau de bord"):
         assert gone not in page  # retirés du site
     assert "default-src 'self'" in headers["Content-Security-Policy"]
@@ -350,6 +359,11 @@ def test_the_bots_are_listed_by_coin_and_each_has_its_page_and_chart(server, ran
     view = json.loads(request(base, "/api/bots")[1])
     assert view["ready"] and view["step"]["action"] == "flotte"  # à l'arrêt : le bouton les relance
     assert set(view["ranking"]) >= {"strategie", "sortie", "sens", "unite", "min_trades"}  # l'onglet Stratégies
+    trial = view["trial"]  # la mesure à l'essai : une combinaison sur une crypto qui bouge = un bot à l'essai
+    assert trial["bots"] == 780 and trial["coins"] == 1 and trial["n"] == 0 and trial["mean"] is None
+    assert set(trial["ranking"]) >= {"strategie", "sortie", "sens", "unite", "min_days"} and trial["since"]
+    assert view["holdout"] == {"n": 0, "coins": 0, "mean": None, "win": None}
+    assert view["reference"]["saved"] and view["reference"]["count"] is None  # première installation : rien avant
     assert all(b["exit"] and b["stop_mode"] in ("fixe", "suiveur", "securise") for b in view["bots"])
     assert view["totals"]["bots"] == 2 and {b["id"] for b in view["bots"]} == {short["id"], long_["id"]}
     assert view["coins"][0]["coin"] == "X" and view["coins"][0]["bots"] == 2
@@ -424,4 +438,8 @@ def test_the_bots_settings_stay_within_bounds():
                            "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID"}
     assert clean_value(fields["FLOTTE_LEVIER_SCALPING"], "10") == "10.0"
     assert clean_value(fields["FLOTTE_CRYPTOS"], "80") == "80"
+    assert clean_value(fields["FLOTTE_BOTS_PAR_CRYPTO"], "20") == "20"
+    with pytest.raises(ValueError):
+        clean_value(fields["FLOTTE_BOTS_PAR_CRYPTO"], "21")
+    assert "à l'essai" in fields["FLOTTE_BOTS_PAR_CRYPTO"].help
     assert fields["FLOTTE_CRYPTOS"].default == "60" and fields["FLOTTE_BOTS_PAR_CRYPTO"].default == "8"

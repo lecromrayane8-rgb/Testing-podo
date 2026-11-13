@@ -3,10 +3,90 @@ from __future__ import annotations
 
 import math
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from statistics import NormalDist
 
 Z_95 = 1.96
 CANDIDATE_MIN_TRADES = 30
+
+
+# --- Une fourchette honnête quand les trades se ressemblent -------------------------------------------------------
+
+def _beta_fraction(a: float, b: float, x: float) -> float:
+    """Fraction continue de la fonction bêta incomplète (méthode de Lentz)."""
+    tiny = 1e-300
+    c, d = 1.0, 1.0 - (a + b) * x / (a + 1.0)
+    d = 1.0 / (d if abs(d) > tiny else tiny)
+    h = d
+    for m in range(1, 400):
+        for num in (m * (b - m) * x / ((a + 2 * m - 1) * (a + 2 * m)),
+                    -(a + m) * (a + b + m) * x / ((a + 2 * m) * (a + 2 * m + 1))):
+            d = 1.0 + num * d
+            c = 1.0 + num / c
+            d = 1.0 / (d if abs(d) > tiny else tiny)
+            c = c if abs(c) > tiny else tiny
+            h *= d * c
+        if abs(d * c - 1.0) < 1e-14:
+            break
+    return h
+
+
+def _beta_inc(a: float, b: float, x: float) -> float:
+    """Fonction bêta incomplète régularisée I_x(a, b)."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    front = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) + a * math.log(x) + b * math.log1p(-x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return front * _beta_fraction(a, b, x) / a
+    return 1.0 - front * _beta_fraction(b, a, 1.0 - x) / b
+
+
+def student_tail(t: float, df: float) -> float:
+    """P(T > t) pour une loi de Student à `df` degrés de liberté (t >= 0)."""
+    return 0.5 * _beta_inc(df / 2.0, 0.5, df / (df + t * t))
+
+
+@lru_cache(maxsize=4096)
+def student_t(alpha: float, df: int) -> float:
+    """Le seuil t tel que P(T > t) = alpha. Avec peu de groupes (peu de jours), il est bien plus grand que le 1,96 de
+    la loi normale : c'est ce qui rend la fourchette prudente tant qu'on a peu de journées."""
+    if not 0.0 < alpha <= 0.5 or df < 1:
+        raise ValueError("alpha doit être entre 0 et 0,5, et df >= 1")
+    lo, hi = 0.0, 2.0
+    while student_tail(hi, df) > alpha:
+        lo, hi = hi, hi * 2.0
+        if hi > 1e15:
+            return math.inf
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        if student_tail(mid, df) > alpha:
+            lo = mid
+        else:
+            hi = mid
+        if hi - lo <= 1e-12 * max(1.0, hi):
+            break
+    return (lo + hi) / 2.0
+
+
+def clustered_bounds(groups, alpha: float = 0.025) -> tuple[float, float, float]:
+    """La moyenne par trade et sa fourchette quand les trades d'un même groupe (une journée) se ressemblent.
+
+    Quarante bots qui gagnent pendant la même chute du marché ne font pas quarante preuves : on compare donc les
+    groupes entre eux, au lieu de compter chaque trade à part. `groups` : (nombre de trades, somme des rendements)
+    de chaque groupe. Rend (moyenne, bas, haut) ; pas de fourchette avec moins de deux groupes."""
+    groups = [(int(n), float(total)) for n, total in groups if n > 0]
+    count = sum(n for n, _ in groups)
+    if not count:
+        return math.nan, math.nan, math.nan
+    mean = sum(total for _, total in groups) / count
+    g = len(groups)
+    if g < 2:
+        return mean, math.nan, math.nan
+    spread = sum((total - mean * n) ** 2 for n, total in groups)
+    half = student_t(alpha, g - 1) * math.sqrt(g / (g - 1) * spread) / count
+    return mean, mean - half, mean + half
 
 
 @dataclass(frozen=True)

@@ -32,7 +32,7 @@ suivante.
 
 Où ces demandes entrent dans le plan :
 
-- Le maximum de bots : l'étape 0 bis proposée plus bas (toutes les combinaisons tournent « à l'essai »).
+- Le maximum de bots : l'étape 0 bis, faite le 13/11 (toutes les combinaisons sont mesurées « à l'essai »).
 - Les derniers indicateurs : le flux d'ordres (étapes 4 et 5) et le contexte de marché (étape 6). Une nouvelle
   technique sur bougies peut s'ajouter à la bibliothèque à tout moment : elle est alors testée partout, comme les autres.
 - Jusqu'à la seconde : impossible avec des bougies d'une minute ; il faut le flux enregistré à l'étape 4.
@@ -88,58 +88,68 @@ Aucun code du bot n'a été modifié : seulement ce fichier, `CLAUDE.md` et les 
 On a fabriqué des cryptos dont le prix avance au hasard (aucune tendance, aucune mémoire : aucun avantage possible),
 puis on a fait travailler le vrai code : le labo choisit ses bots, et on regarde ce qu'ils font ensuite.
 
-| | 12 cryptos au hasard | Les 12 plus « agitées » sur 24 h parmi 80 |
+| Le labo d'avant l'étape 0 bis | 12 cryptos au hasard | Les 12 plus « agitées » sur 24 h parmi 80 |
 |---|---|---|
 | Combinaisons testées par crypto | 1560 | 1560 |
-| Déclarées « gagnantes sur 3 périodes » | 56 (3,6 %) | 69 (4,4 %) |
-| Bots créés par crypto | 6,5 | 7,0 |
-| Leur backtest, par trade | +0,96 % | +1,09 % |
-| Ensuite, en « direct » simulé | 2279 trades | 2587 trades |
-| Trades gagnants | 35 % | 31 % |
-| Résultat par trade, frais compris | −0,20 % (± 0,11) | −0,22 % (± 0,10) |
-| Résultat par trade, en % du capital du bot | −0,65 % | −0,50 % |
-| Bots qui finissent quand même positifs | 30 % | 29 % |
+| Déclarées « gagnantes sur 3 périodes » | 43 (2,7 %) | 55 (3,5 %) |
+| Bots créés par crypto | 5,8 | 6,3 |
+| Leur backtest, par trade | +0,89 % | +1,08 % |
+| Ensuite, en « direct » simulé | 2078 trades | 1968 trades |
+| Trades gagnants | 38 % | 37 % |
+| Résultat par trade, frais compris | −0,17 % (± 0,11) | −0,03 % (± 0,11) |
+| Résultat par trade, en % du capital du bot | −0,48 % | −0,08 % |
+| Bots qui finissent quand même positifs | 26 % | 47 % |
 
-Ce que ça veut dire : même sur du pur hasard, le labo crée 6 à 7 bots par crypto, leur backtest est beau, et ils
-perdent ensuite le prix des frais. **Un bot créé par le labo, ou un bot en gain, ne prouve donc rien pour l'instant.**
-Les chiffres réels de l'utilisateur (36 % de trades gagnants, total un peu négatif) ressemblent à ceux du hasard ;
-217 trades ne suffisent pas à dire s'il y a un petit avantage ou aucun (avec si peu de trades, la marge d'erreur est de
-l'ordre de ± 0,3 % par trade : plus grande que l'avantage qu'on cherche).
+Ce que ça veut dire : même sur du pur hasard, le labo créait environ 6 bots par crypto, leur backtest était beau
+(près de +1 % par trade), et ils ne gagnaient rien ensuite (entre zéro et le prix des frais, 0,14 % par trade). **Un
+bot créé par le labo, ou un bot en gain, ne prouve donc rien.** Les chiffres réels de l'utilisateur (36 % de trades
+gagnants, total un peu négatif) ressemblent à ceux du hasard ; 217 trades ne suffisent pas à dire s'il y a un petit
+avantage ou aucun (avec si peu de trades, la marge d'erreur est de l'ordre de ± 0,3 % par trade : plus grande que
+l'avantage qu'on cherche).
+
+Correction du 13/11/2026 : la première version de cette mesure (12/11) ajoutait aux bougies des mèches tirées au
+hasard. C'était une erreur de la mesure, pas du bot : ces mèches n'appartenaient pas au chemin du prix, donc un
+objectif (ordre limite) y gagnait un peu et un stop y perdait un peu. Elle annonçait 56 « gagnantes » (3,6 %), 6,5
+bots par crypto, puis −0,20 % par trade. Refaite avec des bougies tirées du seul chemin du prix (un prix toutes les
+10 secondes), elle donne le tableau ci-dessus : mêmes conclusions, chiffres un peu plus bas.
 
 Deuxième mesure, même méthode : on refait le test d'une crypto toutes les 3 heures pendant 48 heures, comme l'essaim.
 
-| Sur 12 cryptos au hasard, en 48 heures | |
+| Sur 12 cryptos au hasard, en 48 heures (labo d'avant l'étape 0 bis) | |
 |---|---|
-| Bots gardés d'un test au suivant | 80 % (1 sur 5 est remplacé toutes les 3 heures) |
-| Bots créés par crypto, pour 8 places | 26 |
-| Durée de vie d'un bot arrêté par un test | 6 heures (médiane) ; 41 % sont arrêtés dès le test suivant |
-| Bots arrêtés sans avoir fait un seul trade | 69 % |
+| Bots gardés d'un test au suivant | 82 % (1 sur 5 est remplacé toutes les 3 heures) |
+| Bots créés par crypto, pour 8 places | 24 |
+| Trades par bot pendant sa vie | 0,6 en moyenne |
+| Bots sans un seul trade | 69 % |
 | Bots ayant atteint 30 trades | aucun |
 
-Ce que ça veut dire : le classement d'une crypto bouge à chaque test, donc ses bots tournent sans arrêt. Presque
-aucun ne vit assez longtemps pour être jugé.
+Ce que ça veut dire : le classement d'une crypto bouge à chaque test, donc ses bots tournaient sans arrêt (un bot
+arrêté par un test avait vécu 6 heures, médiane mesurée le 12/11). Presque aucun ne vivait assez longtemps pour être
+jugé.
 
 Pour refaire ces mesures (quelques minutes chacune, sans connexion à une plateforme) : `python audit/hasard.py 80 12
 hasard.json` et `python audit/rotation.py rotation.json 101 102 103 104 105 106 107 108 109 110 111 112`. À relancer
-après chaque changement du labo : c'est le repère « aucun avantage ». Un labo réparé doit y afficher un résultat
-honnête, c'est-à-dire négatif.
+après chaque changement du labo ou du moteur : c'est le repère « aucun avantage ». Une mesure honnête doit y afficher
+le prix des frais (environ −0,14 % par trade), ni plus, ni moins.
 
 ### Ce qui peut fausser les résultats, par gravité
 
 **Grave : ça change la conclusion**
 
 - **G1. Le labo prend la chance pour un avantage.** 1560 essais par crypto, et « gagner sur 3 périodes » est un
-  critère que le hasard passe 3,6 % du temps (`swarm._eligible`) : voir le tableau. Rien ne tient compte du nombre
-  d'essais.
+  critère que le hasard passe 2,7 % du temps (`swarm._eligible`) : voir le tableau. Rien ne tient compte du nombre
+  d'essais. *Depuis l'étape 0 bis : le choix reste un pari, mais on le mesure honnêtement (mesure à l'essai, test final).*
 - **G2. Le « test final » sert à choisir.** `fleet.judge` annonce un test final « jamais regardé pour choisir », mais
   `swarm._eligible` exige qu'il soit gagnant. Il ne reste donc aucune donnée jamais vue : le backtest affiché sur la page
   d'un bot est toujours trop beau, et « comparer sur le test final » (étapes 1 et 6) ne voudrait rien dire.
+  *Corrigé à l'étape 0 bis.*
 - **G3. Trop peu d'historique en très court terme.** 2 jours en 1 min, 7 jours en 5 min (`swarm.TEST_DAYS`) : une seule
   humeur de marché.
 - **G4. Les bots changent trop vite pour être jugés.** Toutes les 3 heures, un bot qui n'est plus parmi les 8 mieux
   classés de sa crypto s'arrête (`Swarm.apply_test`), même s'il gagne encore sur son historique. Mesuré : un bot vit
   6 heures et 7 sur 10 s'arrêtent sans un seul trade (tableau ci-dessus). Chez l'utilisateur : 217 trades pour une
-  soixantaine de bots en place. Aucun n'atteindra les 30 trades de l'étape 3.
+  soixantaine de bots en place. Aucun n'atteindra les 30 trades de l'étape 3. *Corrigé à l'étape 0 bis pour les tests ;
+  reste l'arrêt d'un bot dont la crypto a quitté la liste depuis 6 heures (à décider à l'étape 3).*
 - **G5. Des contrats à terme simulés avec les prix du comptant.** La liste des cryptos et les bougies viennent du
   marché au comptant (`scanner.tradable`, `data.make_exchange`), alors que le moteur compte un levier, des ventes à
   découvert et un financement. Certaines cryptos très agitées n'ont pas de contrat à terme : leur vente à découvert
@@ -154,10 +164,11 @@ honnête, c'est-à-dire négatif.
   le vrai taux peut être dix fois plus haut ; l'effet est faible en scalping, réel sur les bots en 4 h.
 - **M3. L'heure du PC décide qu'une bougie est finie** (`CandleStore.closed`, `Swarm.cycle`). Si l'horloge de
   l'ordinateur avance de plus de 2 secondes, un bot peut décider sur une bougie pas terminée : le direct s'écarte alors
-  du backtest (surtout en 1 min).
+  du backtest (surtout en 1 min). *Corrigé à l'étape 0 bis.*
 - **M4. Des verdicts « prouvée » et « recalée » trop faciles.** Les trades sont comptés comme indépendants, alors que
   plusieurs bots tradent la même crypto et que les cryptos montent et baissent ensemble : 40 ventes à découvert gagnantes
   pendant une seule chute du marché comptent pour 40 preuves. Et « recalée » est définitif (la stratégie ne trade plus).
+  *Corrigé à l'étape 0 bis : les verdicts comparent les journées entre elles, et un verdict peut être levé.*
 - **M5. Des cryptos choisies sur leur mouvement des dernières 24 h**, alors que le backtest contient ce même mouvement.
   Mesuré : l'effet existe (4,4 % de fausses gagnantes au lieu de 3,6 %) mais il est petit.
 - **M6. Un risque très inégal d'un trade à l'autre.** Tout le capital × le levier à chaque trade : dans la simulation,
@@ -170,6 +181,7 @@ honnête, c'est-à-dire négatif.
   classement comme des trades vus en direct.
 - **F2.** Les probabilités des « agents » sont calculées sur le backtest qui a choisi le bot : elles sont trop belles.
 - **F3.** Un bot arrêté parce que sa stratégie est recalée affiche « le dernier test ne le garde plus » : texte trompeur.
+  *Corrigé à l'étape 0 bis.*
 - **F4.** La valeur d'une position ouverte ne compte pas encore les frais de sortie (environ 0,07 % de la position).
 - **F5.** Liquidation simplifiée : même marge de maintenance (0,5 %) pour toutes les cryptos, toute la mise perdue.
   C'est prudent, mais les petites cryptos ont en vrai des règles plus dures et des leviers plus bas.
@@ -202,30 +214,67 @@ honnête, c'est-à-dire négatif.
 | Repère « aucun avantage » (marché au hasard, même code) | 35 % de trades gagnants, −0,20 % par trade |
 
 Ces chiffres sont ceux rapportés par l'utilisateur : le détail par stratégie est sur son PC (`data\bots\essaim.json` et
-`essaim-etat.json`), illisible depuis une session cloud. L'étape 0 bis propose que le bot en garde une copie datée au
-premier lancement de la version suivante.
+`essaim-etat.json`), illisible depuis une session cloud. Depuis l'étape 0 bis, le bot en garde une copie au premier
+lancement de la nouvelle version (`data\bots\reference.json`), et l'écran Direct l'affiche.
 
 ---
 
-## Proposition issue de l'audit : étape 0 bis — réparer la mesure et tout tester (à approuver)
+## Étape 0 bis — Réparer la mesure et tout tester (faite le 13/11/2026)
 
-Pourquoi avant l'étape 1 : les étapes 1 et 6 se terminent par « comparer sur le test final », et l'étape 3 par « juger
-après 30 trades ». Aujourd'hui, le test final sert à choisir (G2) et presque aucun bot n'atteint 30 trades (G4).
+Approuvée par l'utilisateur le 12/11. Pourquoi avant l'étape 1 : les étapes 1 et 6 se terminent par « comparer sur le
+test final », et l'étape 3 par « juger après 30 trades ». Le test final servait à choisir (G2) et presque aucun bot
+n'atteignait 30 trades (G4).
 
-1. **Le test final ne sert plus à choisir** : le labo choisit sur l'étude et la validation ; le test final ne fait que
-   mesurer. Il redevient une vraie comparaison.
-2. **Tout tester, en argent fictif (le maximum de bots)** : le labo calcule déjà les 1560 combinaisons de chaque crypto
-   toutes les 3 heures, puis jette tout sauf les 8 choisies. On garde les trades de **toutes** : jusqu'à 60 × 1560 =
-   93 600 « bots à l'essai », jugés par stratégie, toutes cryptos réunies. Des milliers de trades par jour au lieu de
-   217 depuis le lancement, sans choix préalable : une mesure que le choix des « meilleurs » ne peut plus embellir. Les
-   bots en direct d'aujourd'hui (avec leur page et leur graphique) restent, et leur nombre maximum peut monter.
-3. **Un bot n'est plus arrêté parce que le classement a bougé** : seulement par ses garde-fous ou par le verdict de sa
-   stratégie.
-4. **Une bougie n'est « terminée » que quand la plateforme a ouvert la suivante** (plus l'horloge du PC).
-5. **Le point de référence est enregistré tout seul** au premier lancement (copie datée des chiffres du moment).
+### Ce qui a changé
 
-Ce que cette étape ne fait pas : elle ne rend aucun bot gagnant. Elle donne une mesure à laquelle on peut se fier,
-avant de toucher aux stops (étape 1) et au risque (étape 2).
+1. **Le test final ne sert plus à choisir.** Le labo choisit sur l'étude et la validation (les premiers 80 % de
+   l'historique). Le test final (les derniers 20 %) ne fait que mesurer : le site affiche « Test final des choix du
+   labo ». Un trade à cheval sur les deux ne compte ni d'un côté ni de l'autre.
+2. **Tout est mesuré, en argent fictif : les bots à l'essai.** À chaque test d'une crypto, les trades de toutes les
+   combinaisons sont comptés, pas seulement ceux des bots choisis : jusqu'à 60 × 1560 = 93 600 bots à l'essai. Un trade
+   compte une seule fois, et seulement s'il a été ouvert pendant que la crypto bougeait, comme un vrai bot. C'est
+   cette mesure qui juge les stratégies : sa fourchette compare les journées entre elles (mille trades le même jour
+   ne valent pas mille preuves), et il faut 7 jours avant tout verdict. Le maximum de bots en direct passe de 800 à
+   1600 (jusqu'à 20 par crypto dans Réglages).
+3. **Un bot garde sa place d'un test à l'autre.** Le test rafraîchit sa fiche et remplit les places libres. Un bot ne
+   s'arrête plus que par ses garde-fous (liquidation, moitié du capital, pertes nettes après 20 trades), si sa
+   stratégie est recalée, ou si sa crypto a quitté la liste depuis 6 heures.
+4. **Une bougie n'est « terminée » que lorsque la plateforme a ouvert la suivante**, ou que l'heure de la plateforme
+   (demandée toutes les 10 minutes) a dépassé sa fin. Jamais d'après la seule horloge du PC.
+5. **Le point de référence est enregistré tout seul** au premier lancement : `data\bots\reference.json`, jamais
+   réécrit, et affiché sur l'écran Direct.
+
+### Les mesures de contrôle, avant et après (marchés tirés au hasard : rien à gagner)
+
+| 12 cryptos au hasard | Avant | Après |
+|---|---|---|
+| Combinaisons qui peuvent devenir un bot | 43 (2,7 %) | 86 (5,5 %) |
+| Leur backtest (étude et validation), par trade | +0,89 % | +0,81 % |
+| Test final des combinaisons choisies, jamais regardé pour choisir | n'existait pas | −0,10 % (707 trades) |
+| Les bots choisis, ensuite en « direct » simulé | −0,17 % (± 0,11) | −0,13 % (± 0,09) |
+| Mesure à l'essai : toutes les combinaisons, 2 jours | n'existait pas | −0,14 % (340 035 trades) |
+| Bots gardés d'un test au suivant | 82 % | 100 % |
+| Bots créés par crypto en 48 heures, pour 8 places | 24 | 8 |
+| Trades par bot en 48 heures | 0,6 | 4,3 |
+| Bots sans un seul trade en 48 heures | 69 % | 30 % |
+
+Comment le lire. Sur un marché où il n'y a rien à gagner, une mesure honnête doit afficher le prix des frais, environ
+−0,14 % par trade. C'est ce que disent maintenant le test final (−0,10 %), le direct (−0,13 %) et la mesure à
+l'essai (−0,14 %, sur 340 000 trades). Seul le backtest qui sert à choisir reste beau (+0,81 %) : c'est normal, on
+choisit ce qui a gagné. Avant, rien sur le site ne permettait de voir cet écart.
+
+Ce que ça ne change pas : le labo choisit toujours des combinaisons qui ont eu de la chance (86 sur 1560 passent sur du
+pur hasard). La différence, c'est qu'on le voit, et qu'un verdict « prouvée » demande maintenant de gagner sur
+plusieurs journées, toutes cryptos réunies, sans choix préalable.
+
+### Ce qui reste des problèmes de l'audit
+
+- G3 (peu d'historique en très court terme), G5 (contrats à terme simulés sur les prix du comptant), M1 (glissement
+  fixe), M2 (financement fixe), M5, M6 (étape 2), F1, F2, F4 à F7 : inchangés.
+- Trouvé pendant l'étape : un bot sans position dont la crypto a quitté la liste depuis 6 heures laisse sa place. C'est
+  une autre source de rotation, voulue à l'origine. À trancher à l'étape 3 (garder ces bots endormis ?).
+- Les bots en 1 h et 4 h font peu de trades (1,3 et 0,2 en 48 heures) : ils n'atteindront 30 trades qu'après des
+  semaines ou des mois. Pour eux, c'est la mesure par stratégie, toutes cryptos réunies, qui parlera la première.
 
 ---
 
@@ -319,5 +368,5 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | Date | Étape | État | Commit de départ |
 |---|---|---|---|
 | 12/11/2026 | 0 — Audit | Faite : résumé, problèmes par gravité, point de référence | `7148d95` |
-| | 0 bis — Réparer la mesure et tout tester | Proposée, en attente d'accord | |
-| | 1 — Sécurisation des gains | En attente | |
+| 13/11/2026 | 0 bis — Réparer la mesure et tout tester | Faite : test final mis à part, bots à l'essai, places gardées, heure de la plateforme, point de référence | `bac35d5` |
+| | 1 — Sécurisation des gains | En attente d'accord | |

@@ -1,11 +1,15 @@
 """Le moteur des bots (fleet.Book) : comptes, stop, objectif, liquidation, vente à découvert, textes et graphique."""
+import math
+
 import numpy as np
+import pandas as pd
 import pytest
 
 from tests.conftest import HOUR_MS, T0
+from tradingbot.data import ohlcv_to_frame
 from tradingbot.execution import FUTURES
 from tradingbot.fleet import (
-    CAPITAL, LIQ_SAFETY, MAINTENANCE, SIDES, Book, Spec, chart_view, condition, entry_rule, exit_rule, judge,
+    CAPITAL, EXITS, LIQ_SAFETY, MAINTENANCE, SIDES, Book, Spec, chart_view, condition, entry_rule, exit_rule, judge,
     lookback_for, mirror, signals_for, simulate, spec_from, technique,
 )
 from tradingbot.lab import ALL_VARIANTS
@@ -138,6 +142,47 @@ def test_a_gap_through_the_liquidation_price_loses_the_whole_capital():
     assert book.s["pending"] is None  # un bot liquidé ne trade plus
 
 
+def fair_market(seed: int = 0, minutes: int = 20_000, sigma: float = 0.001, steps: int = 60) -> pd.DataFrame:
+    """Un marché où il n'y a rien à gagner : un prix qui avance au hasard chaque seconde, et ses bougies de 1 min. Les
+    plus hauts et les plus bas viennent du chemin du prix lui-même (aucune mèche ajoutée : elle avantagerait les
+    objectifs et pénaliserait les stops)."""
+    r = np.random.default_rng(seed)
+    path = 100 * np.exp(np.cumsum(r.normal(0, sigma / math.sqrt(steps), minutes * steps))).reshape(minutes, steps)
+    close = path[:, -1]
+    opens = np.r_[100.0, close[:-1]]
+    rows = np.c_[T0 + np.arange(minutes) * 60_000, opens, np.maximum(path.max(1), opens), np.minimum(path.min(1), opens),
+                 close, np.ones(minutes)]
+    return ohlcv_to_frame(rows.tolist())
+
+
+def test_on_a_market_with_nothing_to_win_the_engine_gives_back_the_costs_and_nothing_else():
+    """Le garde-fou contre un moteur trop optimiste : sur un prix tiré au hasard, aucune technique ne peut gagner, donc
+    le résultat moyen d'un trade doit être le prix des frais, ni plus ni moins. Un aller-retour au marché coûte
+    2 × (0,05 % de frais + 0,02 % de glissement) = 0,14 % ; un peu moins quand la sortie est un objectif (ordre
+    limite : 0,02 %, sans glissement). Des frais oubliés ou une exécution trop belle feraient remonter cette moyenne ;
+    un stop ou un objectif mal compté la ferait sortir de la fourchette."""
+    df = fair_market()
+    names = ("Cassure 20/10", "Repli RSI(2) < 10 sans filtre", "Bollinger rebond 20/2 sans filtre", "Supertrend 10/3",
+             "EMA 9/21", "MACD 12/26/9", "Stochastique 14/3", "Keltner 20/2", "Parabolic SAR", "Heikin-Ashi 2 bougies",
+             "Momentum 28", "Écart à la moyenne 20/2")
+    nets = {exit_: [] for exit_ in EXITS}
+    for name in names:
+        for side in SIDES:
+            signals = signals_for(df, technique(name), side)
+            for target, mode in EXITS:
+                book = simulate(df, Spec("scalping", "X/USDT", "1m", name, side, target, 5.0, mode), signals=signals)
+                assert book.s["dead"] != "liquidé"  # le stop passe avant la liquidation (mais les frais ruinent)
+                nets[(target, mode)] += [t["net"] for t in book.s["trades"] if t["reason"] != "fin du test"]
+    everything = [x for xs in nets.values() for x in xs]
+    assert len(everything) > 40_000 and all(len(xs) > 8_000 for xs in nets.values())
+    assert -0.00143 < np.mean(everything) < -0.00131  # le prix des frais, à 0,006 % près
+    by_rule = np.mean(nets[(0.0, "fixe")])  # sortie par la règle ou par le stop : toujours au marché
+    assert -0.00145 < by_rule < -0.00132
+    for exit_, xs in nets.items():  # aucune façon de sortir ne gagne ni ne perd plus que ses frais
+        assert -0.00146 < np.mean(xs) < -0.00128, exit_
+    assert 0.2 < np.mean(np.array(everything) > 0) < 0.45  # et bien moins d'un trade sur deux est gagnant
+
+
 def test_a_short_sees_the_chart_upside_down(random_walk):
     p = technique("Cassure 20/10")
     short = signals_for(random_walk, p, "short")
@@ -166,10 +211,34 @@ def test_judge_cuts_the_history_like_the_lab(random_walk):
     book = simulate(random_walk, s)
     start, end = int(random_walk["ts"].iloc[0]), int(random_walk["ts"].iloc[-1])
     r = judge(book, start, end)
-    assert r["study_n"] + r["valid_n"] + r["test_n"] == r["trades"] == len(book.s["trades"])
+    assert r["trades"] == len(book.s["trades"])
+    assert r["trades"] - (r["study_n"] + r["valid_n"] + r["test_n"]) in (0, 1)  # au plus un trade à cheval sur le test final
     assert r["sv_n"] == r["study_n"] + r["valid_n"] and r["key"] == s.key
     assert r["total_return"] == pytest.approx(book.s["cash"] / 1000.0 - 1)
     assert r["drawdown"] <= 0
+
+
+def test_the_final_test_is_kept_apart_from_what_chooses_a_bot():
+    """Étude 50 %, validation 30 %, test final 20 %. Un trade ouvert avant le test final et fermé pendant ne compte
+    ni d'un côté ni de l'autre : son résultat dépend des deux périodes."""
+    book = Book(spec("Cassure 20/10", "long", 2.0, 3.0))
+
+    def trade(entry, exit_, net, reason="stop"):
+        return {"entry_ts": entry, "exit_ts": exit_, "net": net, "gross": net + 0.0014, "reason": reason}
+
+    book.s["trades"] = [trade(100, 200, 0.01), trade(300, 400, -0.02), trade(550, 700, 0.03), trade(750, 790, 0.01),
+                        trade(790, 850, 0.50),  # à cheval : ouvert pendant la validation, fermé pendant le test final
+                        trade(800, 900, -0.04), trade(910, 990, 0.02), trade(995, 1000, -0.2, "liquidation")]
+    r = judge(book, 0, 1000)
+    assert (r["study_n"], r["valid_n"], r["test_n"]) == (2, 2, 3) and r["trades"] == 8
+    assert r["study_mean"] == pytest.approx(-0.005) and r["valid_mean"] == pytest.approx(0.02)
+    assert r["sv_mean"] == pytest.approx(0.0075)  # le +50 % à cheval n'embellit pas le choix
+    assert r["test_mean"] == pytest.approx((-0.04 + 0.02 - 0.2) / 3)  # ni la mesure
+    assert r["test_total"] == pytest.approx(-0.22) and r["test_wins"] == 1
+    assert r["test_sq"] == pytest.approx(0.04 ** 2 + 0.02 ** 2 + 0.2 ** 2)
+    assert not r["liquidated_early"]  # la liquidation a eu lieu pendant le test final : le choix ne la voit pas
+    book.s["trades"].insert(1, trade(210, 250, -0.2, "liquidation"))
+    assert judge(book, 0, 1000)["liquidated_early"]
 
 
 @pytest.mark.parametrize("name", LIBRARY)
