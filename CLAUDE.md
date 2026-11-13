@@ -466,3 +466,16 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `PLAN-BOTS.md` (dix familles, définitions fixées d'avance ; l'actualité reste des règles testées, étape 6). Il
   demande aussi d'économiser les tokens (sa limite d'utilisation a été atteinte par des vérifications en parallèle) :
   travailler seul, une relecture groupée au plus par étape.
+- 13/11/2026 (suite) : étape 1 bis faite, point de retour `38b843b` : douze techniques de lecture du graphique
+  (`patterns.py` : zone à combler et order block avec ou sans MM200, prise de liquidité, cassure de structure,
+  avalement, marteau, bougie intérieure, divergence RSI, Fibonacci, double creux), 51 techniques et 1530 combinaisons
+  par crypto, zones dessinées en rectangle sur le graphique, leçon 14 de l'École. Relecture de l'étape 1 : deux
+  défauts corrigés (comparaison avec/sans sur des journées différentes après un changement de réglage ; case oui/non
+  écrite « 0 » dans `.env` relue « oui » par la page) ; le relecteur du moteur n'a pas pu tourner (limite
+  d'utilisation), le moteur a été relu à la main. CHIFFRES RÉELS (mêmes 14 jours, mêmes 132 cryptos, 6,66 millions
+  de trades à l'essai) : les 12 lectures font −0,134 % par trade (de −0,153 à −0,115), les 39 autres −0,136 % : le
+  prix des frais pour toutes ; 0 stratégie nettement gagnante sur 247, 123 nettement perdantes ; test final des
+  choix du labo −0,181 %. Sur du pur hasard, chaque technique rend ses frais (−0,10 à −0,17 %). À faire approuver :
+  l'étape 2 (gestion du risque). Toujours à trancher par l'utilisateur : exclure les actions en jetons et les
+  monnaies stables récentes de l'univers. Pas fait, dit : épaule-tête-épaule, triangles, lignes de tendance ;
+  l'actualité et le multi-unités restent pour l'étape 6.

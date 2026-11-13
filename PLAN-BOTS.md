@@ -439,42 +439,113 @@ des cryptos suivies, il s'échange environ 4 000 USDT par minute, moins que la p
 l'utilisateur : écarter les actions en jetons (recommandé), et à l'étape 2 limiter la taille d'une position à une
 part du volume réellement échangé.
 
-## Étape 1 bis — La lecture du graphique (demandée le 13/11/2026)
+## Étape 1 bis — La lecture du graphique (faite le 13/11/2026)
 
 La demande : des bots « très très complets », qui ne regardent pas seulement des indicateurs mais lisent le graphique
 comme un trader (zones à combler, order blocks, sommets et creux, structure, chandeliers...), et qui tiennent compte de
 l'actualité. « Le plus de paramètres possible, le plus de tests, voir les stratégies qui en ressortent. »
 
-Inventaire du 13/11, vérifié dans le code :
+### Ce qui a changé
 
-| Lecture du graphique | Les bots s'en servent ? |
+Douze techniques de plus (51 au lieu de 39), donc 1530 combinaisons par crypto au lieu de 1170. Chacune a UNE
+définition, celle des manuels, fixée d'avance et jamais ajustée sur nos données (`tradingbot/patterns.py`) :
+
+| Technique | Ce que le bot attend pour acheter (à l'envers pour vendre à découvert) |
 |---|---|
-| Sommets et creux, supports et résistances, cassures | Oui (pivots, zones touchées 2 fois, plus haut de 20 ou 55 bougies) |
-| Tendance, moyennes, volume, VWAP, ATR, Heikin-Ashi | Oui |
-| Order blocks, zones à combler (fair value gaps) | Non |
-| Prises de liquidité, cassure de structure (BOS, CHoCH) | Non (seul « Rebond sur support » s'en approche) |
-| Chandeliers (avalement, marteau), figures (double creux) | Non |
-| Divergences, Fibonacci, lignes de tendance | Non |
-| Plusieurs unités de temps, tendance du Bitcoin | Non (étape 6) |
-| Carnet d'ordres, liquidations, open interest | Non (étapes 4 et 5) |
-| Chiffres ronds, sessions, actualité, peur et avidité | Affichés, jamais utilisés pour un ordre |
+| Zone à combler (FVG), avec ou sans MM200 | Trois bougies laissent un trou ; le prix y revient puis clôture au-dessus |
+| Order block, avec ou sans MM200 | Le prix revient sur la dernière bougie baissière d'avant une envolée, puis clôture au-dessus |
+| Prise de liquidité | Une mèche passe sous le dernier creux marquant, la bougie clôture au-dessus, en hausse |
+| Cassure de structure | Le prix clôture au-dessus du dernier sommet marquant ; sortie sous le dernier creux marquant |
+| Avalement | Une bougie verte recouvre la rouge d'avant, au plus bas des 10 dernières bougies |
+| Marteau | Longue mèche basse (2 fois le corps au moins), au plus bas des 10 dernières bougies |
+| Bougie intérieure | Une bougie contenue dans la précédente, puis une clôture au-dessus de celle-ci |
+| Divergence RSI | Le prix fait un creux plus bas, le RSI un creux plus haut |
+| Retracement de Fibonacci | Après une jambe de hausse, le prix en reperd entre 50 % et 61,8 % et clôture en hausse |
+| Double creux | Deux creux au même prix, puis une clôture au-dessus du sommet qui les sépare |
 
-Plan court :
+Un sommet ou un creux « marquant » est le plus haut ou le plus bas de 5 bougies de chaque côté ; le bot ne le connaît
+donc que 5 bougies plus tard, comme un trader. Une zone attend le prix 30 bougies, ne sert qu'une fois, et est
+abandonnée si le prix clôture de l'autre côté. Stop à 2 fois la taille moyenne d'une bougie, 48 bougies au plus.
 
-1. **Dix familles de techniques en plus**, chacune avec UNE définition précise, celle des manuels, fixée d'avance et
-   jamais ajustée sur nos données : zone à combler, order block, prise de liquidité, cassure de structure, avalement,
-   marteau, bougie intérieure, divergence du RSI, retracement de Fibonacci (50 à 61,8 %), double creux.
-2. **Les mêmes garanties que les 39 autres** : dans les deux sens (achat et vente à découvert), aucun regard vers le
-   futur (un sommet n'est connu que 5 bougies plus tard), mêmes signaux en direct qu'en backtest (test automatique
-   pour chaque technique), une phrase qui dit la règle en mots simples.
-3. **Mesurées comme les autres** : sur chaque crypto, dans 5 unités de temps, avec 3 sorties, sans et avec
-   sécurisation. Environ 300 combinaisons de plus par crypto.
-4. **L'actualité** : pas d'IA qui trade sur les titres (principe du projet : des règles testées). Ce qui se teste :
-   une pause autour des grandes annonces économiques et l'humeur du marché comme filtre. C'est l'étape 6.
+Sur le site : la page d'un bot de ces techniques montre ce qu'il regarde (la zone attendue en rectangle bleu, le dernier
+sommet et le dernier creux marquants en lignes), sa règle en mots dans les deux sens, sa fiche (ce que dit vraiment la
+recherche : presque rien, ces lectures viennent des traders) ; l'École a une quatorzième leçon, « Lire le graphique
+comme un trader ».
 
-Dit franchement : « le plus de paramètres possible » est ce qui fabrique de faux gagnants. Plus on teste de
-techniques, plus la chance en fait sortir une : la mesure à l'essai en tient compte (le seuil « prouvée » se durcit
-avec le nombre de stratégies), et c'est pour cela qu'on ajoute des techniques, pas des réglages par technique.
+### Les garanties, toutes testées (`tests/test_patterns.py`)
+
+- **Chaque définition** sur un petit graphique dessiné à la main, signal attendu calculé à la main.
+- **Aucun regard vers le futur** : les signaux d'une bougie ne changent pas quand on ajoute les bougies suivantes.
+- **Le direct voit ce que voit le backtest** : sur sa fenêtre de dernières bougies, mêmes signaux que sur tout
+  l'historique, pour chaque technique et dans les deux sens.
+- **La vente à découvert lit la même figure à l'envers.**
+- **Rien à gagner avant frais sur un marché sans avantage** : sur un prix tiré au hasard, les 12 lectures font
+  +0,008 % par trade avant frais (41 000 trades ; le reste vient du marché fabriqué, où un stop est servi à son prix
+  exact) et −0,128 % après frais.
+
+### Ce que disent les mesures (13/11/2026)
+
+**Sur du pur hasard** (`audit/hasard.py`, 24 cryptos fabriquées) : chacune des 51 techniques rend le prix des frais,
+entre −0,10 % et −0,17 % par trade ; aucune ne fait mieux que le coût le plus bas possible. Le labo y trouve 5,5 % de
+combinaisons « gagnantes sur l'étude et la validation » (comme avant) : c'est le niveau de la chance.
+
+**Sur de vraies bougies Binance** (`audit/vrai.py essai`, les mêmes 14 jours et les mêmes 132 cryptos que pour
+l'étape 1, pour comparer) :
+
+| Mesure à l'essai | Trades | Par trade | Fourchette à 95 % | Gagnants |
+|---|---|---|---|---|
+| Toutes les combinaisons | 6 655 119 | −0,136 % | de −0,152 % à −0,120 % | 33 % |
+| Les 39 techniques d'avant | 5 502 784 | −0,136 % | de −0,152 % à −0,121 % | 32 % |
+| **Les 12 lectures du graphique** | 1 152 335 | **−0,134 %** | de −0,153 % à −0,115 % | 38 % |
+
+| Lecture du graphique (toutes unités réunies) | Trades | Par trade | Fourchette à 95 % | Gagnants |
+|---|---|---|---|---|
+| Marteau | 58 186 | −0,119 % | de −0,143 % à −0,095 % | 39 % |
+| Order block | 88 752 | −0,128 % | de −0,148 % à −0,107 % | 37 % |
+| Prise de liquidité | 125 870 | −0,130 % | de −0,152 % à −0,109 % | 39 % |
+| Bougie intérieure | 98 258 | −0,132 % | de −0,164 % à −0,101 % | 40 % |
+| Zone à combler (FVG) | 193 389 | −0,133 % | de −0,151 % à −0,116 % | 39 % |
+| Order block + MM200 | 49 142 | −0,134 % | de −0,176 % à −0,092 % | 36 % |
+| Avalement | 122 389 | −0,134 % | de −0,150 % à −0,118 % | 38 % |
+| Divergence RSI | 40 192 | −0,135 % | de −0,159 % à −0,110 % | 39 % |
+| Retracement de Fibonacci | 82 249 | −0,136 % | de −0,157 % à −0,114 % | 36 % |
+| Double creux | 46 974 | −0,136 % | de −0,174 % à −0,098 % | 40 % |
+| Zone à combler (FVG) + MM200 | 127 449 | −0,139 % | de −0,166 % à −0,113 % | 38 % |
+| Cassure de structure | 119 485 | −0,145 % | de −0,195 % à −0,096 % | 39 % |
+
+- **Les lectures du graphique ne font pas mieux que les indicateurs : le prix des frais (−0,14 %), ni plus ni moins.**
+  Elles gagnent plus souvent (38 % des trades contre 32 %) mais de plus petits gains : la moyenne est la même.
+- Sur 255 stratégies (une technique dans une unité de temps), 247 ont au moins 200 trades : **aucune n'est nettement
+  gagnante, 123 sont nettement perdantes** (dont 34 des 57 stratégies de lecture). Aucune « prouvée ».
+- En bougies de 4 h, « Order block » (+1,15 %) et « Zone à combler + MM200 » (+1,08 %) sont dans les dix premières,
+  « Divergence RSI » (−2,32 %) et « Prise de liquidité » (−1,39 %) dans les dix dernières : 250 à 600 trades sur 14
+  jours, des fourchettes de plusieurs pour cent. C'est du bruit, pas un classement.
+- Le test final des choix du labo : −0,181 % par trade (8 776 trades, de −0,262 % à −0,100 %), contre −0,160 % avec 39
+  techniques : pas de différence qui compte. 7,7 % des combinaisons « peuvent devenir un bot », comme avant (7,9 %).
+- La sécurisation des gains fait toujours +0,008 % par trade de mieux (de +0,001 % à +0,014 %).
+
+Dit franchement : c'était le résultat le plus probable. Ces lectures sont connues de tous les traders, donc déjà dans
+les prix ; et avec 0,14 % de frais par aller-retour, il faut un avantage net que le graphique seul ne donne pas ici.
+Les ajouter n'était pas inutile : on sait maintenant, mesure à l'appui, qu'elles ne suffisent pas, et la mesure à
+l'essai continuera de les suivre sur ton PC (14 jours ne jugent pas les unités de 1 h et 4 h).
+
+### Ce qui n'est pas fait, et pourquoi
+
+- **Épaule-tête-épaule, triangles, drapeaux, lignes de tendance** : pas de définition sans ambiguïté ; à écrire si tu y
+  tiens, avec la même méthode.
+- **Plusieurs unités de temps à la fois, tendance du Bitcoin, sessions** : c'est l'étape 6 (filtres de contexte).
+- **L'actualité** : pas d'IA qui trade sur les titres (principe du projet : des règles testées). Ce qui se teste : une
+  pause autour des grandes annonces économiques et l'humeur du marché comme filtre. Étape 6 aussi.
+- **Plus de réglages par technique** (autres tailles de sommets, autres seuils) : chaque variante de plus est une
+  chance de plus de trouver un faux gagnant. À ajouter seulement pour une famille que la mesure aura distinguée.
+
+### Ce qu'il faut surveiller
+
+- Onglet Stratégies, mesure « À l'essai » : les nouvelles techniques y apparaissent une demi-heure à une heure après
+  le lancement ; un verdict demande 7 jours et 30 trades.
+- Le test de chaque crypto prend environ un tiers de temps en plus (51 techniques au lieu de 39).
+- Trouvé en route, à trancher : parmi les paires assez échangées de Binance, 15 sont des actions en jetons (NVDAB,
+  GOOGLB, SOXLB...) et 4 des monnaies stables récentes ; le filtre du bot ne les reconnaît pas.
 
 ## Étape 2 — Gestion du risque
 
@@ -555,4 +626,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 13/11/2026 | 0 bis — Réparer la mesure et tout tester | Faite : test final mis à part, bots à l'essai, places gardées, heure de la plateforme, point de référence | `bac35d5` |
 | 13/11/2026 | 0, suite — bots endormis, valeur d'une position, jour d'un trade rattrapé | Faite | `3b234da` |
 | 13/11/2026 | 1 — Sécurisation des gains | Faite : moteur, réglages, labo avec et sans, site, mesures sur de vraies bougies | `3b234da` |
-| | 1 bis — La lecture du graphique | Demandée le 13/11, à faire | |
+| 13/11/2026 | 1 bis — La lecture du graphique | Faite : 12 techniques (51 en tout), garanties testées, mesures sur du hasard et sur de vraies bougies ; deux défauts de l'étape 1 corrigés après relecture | `38b843b` |
