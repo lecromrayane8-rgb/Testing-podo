@@ -888,8 +888,8 @@ JS = r"""
     $('#rank-head').textContent = {all: 'Par trade', week: 'Par trade, 7 jours', today: 'Par trade, aujourd\'hui'}[rankBy];
     const proven = every.filter(x => x.verdict === 'prouvee').length, failed = every.filter(x => x.verdict === 'recalee').length;
     const verdicts = proven + ' prouvée' + (proven > 1 ? 's' : '') + ' · ' + failed + ' recalée' + (failed > 1 ? 's' : '') + '.';
-    $('#rank-intro').textContent = !every.length ? (essai ? 'La mesure se remplit à chaque test d\'une crypto (toutes les 3 heures) : les premiers '
-        + 'trades arrivent quelques heures après le lancement.' : 'Le classement se remplit à chaque trade fini d\'un bot.') :
+    $('#rank-intro').textContent = !every.length ? (essai ? 'La mesure se remplit à chaque test d\'une crypto : les premiers trades arrivent '
+        + 'une demi-heure à une heure après le lancement, puis toutes les 3 heures.' : 'Le classement se remplit à chaque trade fini d\'un bot.') :
       essai ? thousands(trial.bots) + ' bots à l\'essai · ' + thousands(trial.n) + ' trades comptés en ' + trial.days + (trial.days > 1 ? ' jours' : ' jour')
         + ' · ' + every.length + ' stratégies · ' + verdicts :
       every.length + ' stratégies ont déjà fini des trades en direct · ' + verdicts;

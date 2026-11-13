@@ -62,7 +62,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   en `sortie`), univers toutes les 10 min (`_refresh_universe` : `scanner.liquid_markets` trié par amplitude ; sous
   `min_move` ou hors liste → `veille`, plus d'entrée ; `_stretch` note les périodes où la crypto bouge : `stretches`,
   `moving_since`, close à la dernière fois vue après 30 min sans nouvelles), re-test de chaque crypto agitée toutes
-  les 3 h (`_schedule_tests` → `Retester.submit(symbol, banned, verdicts, keep, trial)` : un fil télécharge
+  les 3 h, et 30 min après son premier test (`FIRST_RETEST_S` : la mesure à l'essai démarre vite ;
+  `_schedule_tests` → `Retester.submit(symbol, banned, verdicts, keep, trial)` : un fil télécharge
   `TEST_DAYS` sans la bougie en cours, un `ProcessPoolExecutor(1)` calcule, repli dans le fil ; une crypto qui ne
   bouge plus reçoit une heure après, `CLOSE_DELAY_S`, un dernier test `final` qui clôt sa mesure à l'essai), bougies
   par (crypto, unité) via `CandleStore` (tout une fois, puis les 5 dernières ; `closed` : une bougie n'est terminée
@@ -369,7 +370,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
 - 11 et 12/11/2026 : l'utilisateur envoie un plan en 8 étapes (`PLAN-BOTS.md`) et ses règles permanentes, et demande en
   plus le maximum de bots, les derniers indicateurs et tous les horizons jusqu'à la seconde. Chiffres réels rapportés :
   environ 217 trades, 36 % de gagnants, −0,3 % au total, une soixantaine de bots sur 35 cryptos. Étape 0 (audit) faite
-  sans toucher au code. Mesuré avec le vrai code sur des marchés tirés au hasard : le labo y déclare 3,6 % de
+  sans toucher au code. Mesuré avec le vrai code sur des marchés tirés au hasard (première mesure, corrigée le 13/11 :
+  voir l'entrée suivante) : le labo y déclare 3,6 % de
   combinaisons « gagnantes sur 3 périodes » (56 par crypto), crée 6,5 bots par crypto au backtest de +0,96 % par trade,
   qui font ensuite −0,20 % par trade avec 35 % de gagnants ; d'un test au suivant 1 bot sur 5 est remplacé, un bot vit
   6 h et 7 sur 10 s'arrêtent sans un trade. Donc un bot du labo, ou un bot en gain, ne prouve rien pour l'instant.

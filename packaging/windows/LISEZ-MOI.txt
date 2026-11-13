@@ -39,8 +39,8 @@ TES BOTS (argent fictif, en continu)
 5. La mesure à l'essai : à chaque test d'une crypto, les trades de TOUTES les combinaisons sont
    comptés, pas seulement ceux des bots choisis : jusqu'à 93 600 « bots à l'essai » (60 cryptos × 1560
    combinaisons). Rien n'est choisi d'avance, donc la chance ne peut pas embellir cette mesure. C'est
-   elle qui juge les stratégies. Compte quelques heures avant les premiers trades comptés, et 7 jours
-   avant les premiers verdicts.
+   elle qui juge les stratégies. Compte une demi-heure à une heure avant les premiers trades comptés,
+   et 7 jours avant les premiers verdicts.
 La première fois, compte quelques minutes avant les premiers bots (le temps de tester les cryptos).
 Choisir parmi des centaines de combinaisons fait toujours sortir des gagnants par chance : ce sont la
 mesure à l'essai et le direct qui tranchent. Aucun gain n'est garanti.

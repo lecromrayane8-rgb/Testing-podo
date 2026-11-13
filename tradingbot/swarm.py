@@ -94,6 +94,7 @@ LIBRARY = (
 )
 UNIVERSE_EVERY_S = 600
 RETEST_S = 3 * 3600
+FIRST_RETEST_S = 1800  # le deuxième test d'une crypto vient vite : c'est lui qui compte ses premiers trades à l'essai
 BAN_S = 24 * 3600
 UNFOLLOWED_S = 6 * 3600  # une crypto sortie de la liste depuis 6 h : ses bots sans position laissent leur place
 RETEST_TIMEOUT_S = 900  # un test dure quelques secondes : au-delà, le processus de calcul est remplacé
@@ -1336,9 +1337,12 @@ class Swarm:
                 info.update(status="test impossible", error=result["error"])
                 info["next_test"] = now_ms + 600_000  # nouvel essai dans 10 minutes
             return []
+        first = result.get("trial") is not None and not info.get("trial_done")
         self._merge_trial(info, result.get("trial"))
         if result.get("final"):
             return []
+        if first:  # la mesure à l'essai de cette crypto commence : ses premiers trades seront comptés dans 30 minutes
+            info["next_test"] = min(int(info.get("next_test") or now_ms + RETEST_S * 1000), now_ms + FIRST_RETEST_S * 1000)
         verdicts = self.state.get("verdicts") or {}  # un verdict tombé pendant le test passe avant son résultat
         chosen = [r for r in result.get("chosen") or []
                   if verdicts.get(strategy_key(r["technique"], r["timeframe"])) != "recalee"]

@@ -275,6 +275,13 @@ plusieurs journées, toutes cryptos réunies, sans choix préalable.
   une autre source de rotation, voulue à l'origine. À trancher à l'étape 3 (garder ces bots endormis ?).
 - Les bots en 1 h et 4 h font peu de trades (1,3 et 0,2 en 48 heures) : ils n'atteindront 30 trades qu'après des
   semaines ou des mois. Pour eux, c'est la mesure par stratégie, toutes cryptos réunies, qui parlera la première.
+- À surveiller à partir du 7e jour : si aucune stratégie n'a d'avantage, elles seront recalées une à une et leurs
+  bots s'arrêteront. L'écran Direct le dit alors (« Aucun bot en ce moment : les stratégies perdent à l'essai »). Ce
+  serait une information, pas une panne : la mesure à l'essai continue, et des bots renaissent dès qu'une stratégie ne
+  perd plus nettement.
+- Nouveau garde-fou automatique (`tests/test_fleet.py`) : sur un marché fabriqué où il n'y a rien à gagner, le moteur
+  doit rendre exactement les frais (−0,138 % par trade mesuré pour 0,14 % de frais). Tout changement du moteur
+  (étapes 1 et 2) qui embellirait l'exécution ou oublierait des frais le ferait échouer.
 
 ---
 

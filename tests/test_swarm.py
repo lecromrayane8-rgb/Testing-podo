@@ -631,9 +631,12 @@ def test_the_swarm_measures_a_coin_while_it_moves_and_closes_its_measure_when_it
                 "trial": {"done": done, "open": opened, "counted": n, "final": final,
                           "stats": {"strategie:EMA 9/21|1h": rec, "unite:1h": json.loads(json.dumps(rec))}}}
 
+    assert info["next_test"] == t0 + 3 * 3_600_000
     tester.results.put(result(3, {"1h": 123}, opened=7))
     swarm.cycle(t0 + 5000)
     assert info["trial_done"] == {"1h": 123} and info["trial_open"] == 7
+    assert info["next_test"] == t0 + 5000 + 1_800_000  # son deuxième test vient vite : il comptera ses premiers trades
+    info["next_test"] = t0 + 3 * 3_600_000  # (la suite du scénario garde le rythme habituel)
     trial = swarm.summary()["trial"]
     assert trial["n"] == 3 and trial["bots"] == 1560 and trial["coins"] == 1 and trial["positions"] == 7
     assert trial["mean"] == pytest.approx(0.002) and trial["lo"] is None  # un seul jour : pas encore de fourchette
