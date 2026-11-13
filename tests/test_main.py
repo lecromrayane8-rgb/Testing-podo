@@ -547,3 +547,37 @@ def test_the_bots_command_runs_the_swarm_in_paper_money_once_at_a_time(tmp_path,
     swarm.release()
     monkeypatch.setenv("FLOTTE_LEVIER_COURT", "50")
     assert main.main(["flotte"]) == 1  # réglage hors bornes : refusé avec une explication
+
+
+def test_the_trend_command_shows_the_rule_and_its_robustness_gate(tmp_path, monkeypatch, capsys):
+    from tests.test_trend import DailyExchange as TrendExchange, days, walk
+    from tradingbot import trend
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    frames = {"BTC/USDT": days(walk(1, 700, drift=0.002), start=trend.EARLY_MS),
+              "ETH/USDT": days(walk(2, 700), start=trend.EARLY_MS)}
+    exchange = TrendExchange(frames, n=700)
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: exchange)
+    assert main.main(["tendance"]) == 0
+    out = capsys.readouterr().out
+    assert "Bitcoin à" in out and "Ether à" in out and "Compte fictif créé le" in out and "acheter et garder" in out
+    folder = tmp_path / "data" / "tendance"
+    assert (folder / "compte.json").exists() and (folder / "binance_BTC-USDT_1d.csv").exists()
+    assert not (folder / "robustesse.json").exists()  # la commande ne juge pas : c'est la porte « robustesse » qui le fait
+    assert main.main(["robustesse", "--tendance"]) == 0
+    out = capsys.readouterr().out
+    assert "BTC moy. 50 j" in out and "ETH moy. 200 j" in out and "VERDICT : " in out and "chaque SORTIE" in out
+    saved = json.loads((folder / "robustesse.json").read_text(encoding="utf-8"))
+    assert len(saved["rows"]) == 6 and saved["verdict"].startswith("VERDICT : ")
+    assert not (tmp_path / "data" / "robustesse.json").exists()  # le test de la stratégie du bot réel n'est pas remplacé
+
+
+def test_the_trend_command_fails_cleanly_without_network(tmp_path, monkeypatch, capsys):
+    from tests.test_trend import DailyExchange as TrendExchange
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    exchange = TrendExchange({}, n=0)
+    exchange.down = True
+    monkeypatch.setattr(main, "make_exchange", lambda exchange_id: exchange)
+    assert main.main(["tendance"]) == 1 and "pas assez de bougies" in capsys.readouterr().out
+    assert main.main(["robustesse", "--tendance"]) == 1

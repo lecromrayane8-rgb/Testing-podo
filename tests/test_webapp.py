@@ -300,6 +300,9 @@ def test_the_site_serves_its_page_and_only_obeys_its_own_page(server):
     assert "'Endormis'" in page and "seuil de sécurisation" in page and "zone du risque" in page
     assert "zone-up" in page and "rectangle : " in page  # la zone qu'une lecture du graphique attend, en rectangle
     assert "la mesure « avec » est repartie de zéro" in page  # la comparaison dit depuis quand elle compare
+    # le bot de tendance : son onglet, son test de robustesse, et ses mises en garde
+    assert 'href="#tendance"' in page and "<h1>Le bot de tendance</h1>" in page and 'id="trend-robust-rows"' in page
+    assert "Jamais de levier sur cette règle" in page and "Le passé ne garantit rien" in page
     assert "gagnant sur 3 périodes" not in page and "trois périodes" not in page  # le test final ne choisit plus
     for gone in ("Radar des mouvements", "Mes essais", "Labos", "Mon trader", "Tableau de bord"):
         assert gone not in page  # retirés du site
@@ -322,6 +325,48 @@ def test_the_site_serves_its_page_and_only_obeys_its_own_page(server):
     assert request(base, "/api/journal?tache=abc")[0] == 400
     assert request(base, "/api/tableau/bots")[0] == 404
     assert already_running(s.port) and not already_running(1)
+
+
+def test_the_trend_bot_is_served_to_the_page_only_and_stays_in_paper_money(server):
+    import numpy as np
+    from tests.test_trend import DailyExchange, days, walk
+    from tradingbot import trend
+    s, base = server
+    frames = {"BTC/USDT": days(np.linspace(100, 900, 420), start=trend.EARLY_MS),
+              "ETH/USDT": days(walk(3, 420), start=trend.EARLY_MS)}
+    exchange = DailyExchange(frames, n=420)
+    s.trend_feed.make_exchange = lambda exchange_id: exchange
+    for path in ("/api/tendance", "/api/tendance-graphique?c=BTC"):
+        assert request(base, path)[0] == 403  # elles téléchargent : seulement pour la page du site
+    status, body, _ = request(base, "/api/tendance", headers=PAGE)
+    data = json.loads(body)
+    assert status == 200 and [c["name"] for c in data["coins"]] == ["Bitcoin", "Ether"]
+    assert data["coins"][0]["level"] == 3 and data["coins"][0]["history"]["rule"]["total"] > 1
+    assert not data["coins"][0]["account"]["started"]  # créé à l'instant : il ouvre à la prochaine ouverture du jour
+    assert len(data["robustness"]["rows"]) == 6 and "Argent fictif seulement" in data["robustness"]["verdict"]
+    status, body, _ = request(base, "/api/tendance-graphique?c=btc", headers=PAGE)
+    chart = json.loads(body)
+    assert status == 200 and len(chart["candles"]) == 420 and len(chart["lines"]) == 3
+    assert chart["orders"][0]["side"] == "achat"
+    assert request(base, "/api/tendance-graphique?c=SOL", headers=PAGE)[0] == 400  # seulement le Bitcoin et l'Ether
+    assert request(base, "/api/tendance-graphique?c=../.env", headers=PAGE)[0] == 400
+    folder = s.data_dir() / "tendance"
+    assert (folder / "compte.json").exists() and (folder / "binance_BTC-USDT_1d.csv").exists()
+    exchange.calls.clear()
+    request(base, "/api/tendance", headers=PAGE)  # la page est gardée 10 secondes : la plateforme n'est pas redemandée
+    assert exchange.calls == []
+    assert {f.name for f in folder.iterdir()} == {"compte.json", "binance_BTC-USDT_1d.csv", "binance_ETH-USDT_1d.csv"}
+
+
+def test_the_trend_account_is_dated_from_the_first_launch_of_the_site(tmp_path, fake_bot):
+    s = site(tmp_path, fake_bot)
+    s._watch_fleet = lambda: None  # pas de bots dans ce test
+    s.start_background()
+    path = s.data_dir() / "tendance" / "compte.json"
+    created = json.loads(path.read_text(encoding="utf-8"))
+    assert created["capital"] == 1000.0 and created["since"]
+    s.start_background()  # un autre lancement ne déplace pas le départ du compte
+    assert json.loads(path.read_text(encoding="utf-8")) == created
 
 
 def fake_handler(s, path, client="192.168.1.20", headers=None):

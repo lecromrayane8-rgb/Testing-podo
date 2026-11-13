@@ -1,4 +1,4 @@
-"""Point d'entrée : python main.py {site,flotte,trader,backtest,robustesse,labo,labo-portefeuille,tournoi,portefeuille,prix,telegram,check,run,tableau,reset-guard} --help
+"""Point d'entrée : python main.py {site,flotte,tendance,trader,backtest,robustesse,labo,labo-portefeuille,tournoi,portefeuille,prix,telegram,check,run,tableau,reset-guard} --help
 
 Sans argument (double-clic sur la version Windows), le site du bot s'ouvre dans le navigateur.
 """
@@ -52,6 +52,7 @@ from tradingbot.trader import (
     choose_playbook, replay as replay_trader, run as run_trader, settings_from_env as trader_settings,
     summary as trader_summary,
 )
+from tradingbot import trend
 from tradingbot.webapp import PORT, serve
 
 log = logging.getLogger("tradingbot")
@@ -148,7 +149,37 @@ def cmd_backtest(s: Settings, args: argparse.Namespace) -> None:
         print(f"Note Obsidian : {note}")
 
 
+def cmd_trend(s: Settings, args: argparse.Namespace) -> None:
+    """Le bot de tendance, en argent fictif : où en est la règle, son compte, son histoire année par année."""
+    folder = s.data_dir / trend.FOLDER
+    data = trend.view(trend.Feed(make_exchange, s.exchange, folder), folder)
+    print(trend.report(data))
+    if not any(c["ready"] for c in data["coins"]):
+        raise ValueError("Aucun historique reçu pour la règle de tendance : vérifie ta connexion internet.")
+
+
+def trend_robustness(s: Settings) -> None:
+    """La porte du projet appliquée à la règle de tendance : chaque sortie du marché, contre « acheter et garder »."""
+    folder = s.data_dir / trend.FOLDER
+    feed = trend.Feed(make_exchange, s.exchange, folder)
+    frames = trend.closed_frames({symbol: feed.get(symbol) for symbol in trend.SYMBOLS})
+    if not frames:
+        raise ValueError("Aucun historique reçu pour la règle de tendance : vérifie ta connexion internet.")
+    rows = trend.robustness_rows(frames)
+    verdict = "VERDICT : " + trend.verdict(rows)
+    first = min(int(df["ts"].iloc[0]) for df in frames.values())
+    print(f"\n=== Robustesse de la règle de tendance sur {s.exchange}, bougies d'un jour depuis le "
+          f"{datetime.fromtimestamp(first / 1000, timezone.utc):%d/%m/%Y} ===")
+    print(trend.robustness_report(rows))
+    print()
+    print(verdict)
+    trend.save_robustness(folder, rows, verdict)
+
+
 def cmd_robustness(s: Settings, args: argparse.Namespace) -> None:
+    if args.tendance:
+        trend_robustness(s)
+        return
     symbols = [x.strip() for x in args.symbols.split(",") if x.strip()]
     timeframes = [x.strip() for x in args.timeframes.split(",") if x.strip()]
     markets = [(symbol, tf) for symbol in symbols for tf in timeframes]
@@ -781,6 +812,9 @@ def main(argv: list[str] | None = None) -> int:
     rb.add_argument("--timeframes", default="15m,1h,4h,1d")
     rb.add_argument("--days", type=int, default=730)
     rb.add_argument("--periods", type=int, default=4, help="nombre de sous-périodes pour juger la régularité")
+    rb.add_argument("--tendance", action="store_true",
+                    help="tester la règle du bot de tendance (Bitcoin et Ether, moyennes 50, 100 et 200 jours)")
+    sub.add_parser("tendance", help="le bot de tendance en argent fictif : où en est la règle, son compte, son histoire")
     lb = sub.add_parser("labo", help="comparer plusieurs stratégies sur plusieurs marchés, validées hors échantillon")
     lb.add_argument("--symbols", default=LAB_SYMBOLS)
     lb.add_argument("--timeframes", default="15m,1h,4h,1d")
@@ -865,6 +899,7 @@ def main(argv: list[str] | None = None) -> int:
         "portefeuille": cmd_portfolio,
         "trader": cmd_trader,
         "flotte": cmd_fleet,
+        "tendance": cmd_trend,
     }
     try:
         commands[args.command](settings, args)

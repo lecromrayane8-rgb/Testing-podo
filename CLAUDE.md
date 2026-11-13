@@ -44,13 +44,14 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
 - Le site, qui lance tout seul les bots en argent fictif : `python main.py site`, puis http://127.0.0.1:8765
   (`site --ipad` l'ouvre au Wi-Fi avec un code). Sous Windows, sans Python : « Ouvrir le bot.bat » du ZIP `windows-dev`.
 - Les bots seuls, dans la console : `python main.py flotte` (`--une-fois` : un seul tour).
+- Le bot de tendance, dans la console : `python main.py tendance` ; son test : `python main.py robustesse --tendance`.
 - Installation : `pip install -r requirements.txt` (ccxt, numpy, pandas, pytest).
 - Ce que les bots écrivent : `data/bots/` (`essaim.json` le résumé du site, `essaim-etat.json` la mémoire,
   `essaim/<id>.json` un compte par bot) ; journal `data/bot.log` ; réglages dans `.env` (copie de `.env.example`).
 
 ## Architecture
 
-- `main.py` : ligne de commande (`site`, `flotte`, `trader`, `backtest`, `robustesse`, `labo`, `labo-portefeuille`,
+- `main.py` : ligne de commande (`site`, `flotte`, `tendance`, `trader`, `backtest`, `robustesse`, `labo`, `labo-portefeuille`,
   `tournoi`, `portefeuille`, `prix`, `telegram`, `check`, `run`, `tableau`, `reset-guard`). Sans argument (double-clic
   sur l'exécutable Windows), `site`. `NothingRetained` : un labo qui ne retient rien n'est pas une panne (code 0).
 - `tradingbot/swarm.py` : l'essaim de bots en argent fictif (commande `flotte`, lanceur 19, lancé tout seul par le site).
@@ -138,6 +139,24 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   validation),
   `condition`/`entry_rule`/`exit_rule` (règles en mots, dans les deux sens), `overlays`, `chart_view` (lignes de la
   technique, vrais trades, trades de la règle sur les bougies affichées, position), `fleet_running` (`HEARTBEAT_S`).
+- `tradingbot/trend.py` (13/11/2026) : le bot de tendance, en argent fictif, à part de l'essaim. La règle, fixée
+  d'avance : Bitcoin et Ether (`SYMBOLS`) en bougies d'un jour ; à chaque clôture, `levels` compte les moyennes
+  (`AVERAGES` = 50, 100, 200 jours ; `average` = chaque moyenne sur ses seules n clôtures, donc identique quelle que
+  soit la longueur de l'historique) sous le prix ; le compte tient un tiers de sa valeur en crypto par moyenne
+  dépassée. `replay(df, start_ts, capital, ex, averages)` : UNE SEULE LOGIQUE pour le backtest et le direct : ce que
+  la clôture de la veille a décidé s'exécute à l'ouverture du jour (`_trade` : ordre au marché, `SPOT` = 0,10 % de
+  frais et 0,05 % de glissement, jamais d'emprunt), ordres seulement quand la part change ; `Run` (valeur jour par
+  jour, « acheter et garder », ordres). Le compte fictif = `replay` depuis `account_since` (`data/tendance/
+  compte.json`, écrit une fois au premier lancement du site, jamais changé ; le compte ouvre à l'ouverture du jour
+  suivant). La bougie du jour en cours (la dernière) ne décide rien : elle donne le prix du moment (`thresholds` = le
+  prix à dépasser ce soir). `Feed` : bougies finies gardées dans `data/tendance/<plateforme>_BTC-USDT_1d.csv` (relues
+  au chiffre près), seuls les derniers jours redemandés, un jour est fini quand la plateforme en ouvre un autre
+  (jamais l'horloge du PC). `coin_view`/`view` (fiche légère, `/api/tendance`), `chart_view` (730 bougies, les trois
+  moyennes, les ordres ; `/api/tendance-graphique`), `report` (console), `growth`, `worst`, `by_year`. La porte :
+  `exits` (chaque sortie du marché d'un rejeu à UNE moyenne, jugée en cryptos contre « garder »), `as_backtest`
+  (gain d'une sortie en logarithme : une moyenne simple annonce +1,1 % par sortie sur un marché sans avantage, le
+  logarithme rend les frais), `robustness_rows` → `robustness.evaluate` (mêmes seuils que `robustesse`), `verdict`.
+  Tests : `tests/test_trend.py`.
 - `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
   Refait le 06/11/2026 au soir autour de l'essaim (onglet Stratégies ajouté le 07/11, à deux mesures depuis le
   13/11 : « À l'essai » = `trial.ranking`, 30 jours, 7 jours, aujourd'hui, fourchette par journées, verdicts ou
@@ -147,7 +166,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   les bots »), Cryptos (liste ;
   `#crypto/SOL` = `/api/crypto` + `/api/crypto-graphique` : bots, graphique par unité, lecture, actualité, `best` du
   dernier test), page d'un bot (`#bot/<id>` = `/api/bot` + `/api/bot-graphique` : position au chiffre près, agents,
-  direct contre backtest, trades expliqués, fiche `knowledge.ENTRIES`), Actualité, Prix ; sous « Plus » : École,
+  direct contre backtest, trades expliqués, fiche `knowledge.ENTRIES`), Tendance (`renderTrend` : une fiche par crypto bâtie
+  une fois puis mise à jour, `Site.trend_view` gardée 10 s, `trend_chart`), Actualité ; sous « Plus » : Prix, École,
   Réglages, Journal. Onglet Stratégies : d'abord « Sécurisation des gains : avec ou sans ? » (`renderSecure`,
   `summary["secure"]`). Bots endormis : statut `endormi`, filtre « Endormis », tuile des bots sans eux. `zoomChart` :
   bougies, volume, lignes, zones, marques (entrée, stop, objectif, liquidation, seuil de sécurisation en pointillés),
@@ -303,13 +323,14 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   au-dessus et du Bitcoin, comptes acheteurs/vendeurs et intérêt ouvert des archives des contrats à terme), puis
   « condition vraie » contre « fausse » jour par jour (`paired_bounds`, seuil durci), avec deux témoins (pile ou
   face, et la bougie d'entrée connue après coup) : `trades`, `donnees`, `mesure` (`--dossier`, `--unites`) ;
-  conditions depuis le 14/11 : flux, flux net (55 %), activité, pic de volume (×2), unité au-dessus, Bitcoin, foule,
+  conditions depuis le 13/11 : flux, flux net (55 %), activité, pic de volume (×2), unité au-dessus, Bitcoin, foule,
   argent engagé, carnet d'ordres à 1 % et à 0,2 % du prix (archives `bookDepth`, une photo toutes les 30 s), les
   trois d'accord ; `matrice` : technique × unité × sens × condition, cherchée sur une période et confirmée sur une
   autre (`--decouverte`, `--confirmation`). `long.py` : le long terme, en bougies d'un jour depuis 2020 (univers
   reconstitué jour par jour, paires retirées de la cote comprises ; chaque trade aussi mesuré contre le panier du
   marché ; première période puis seconde), le portefeuille momentum, et les règles simples en argent composé (filtre
-  de tendance sur le Bitcoin et l'Ether depuis 2017, panier filtré, portefeuilles de la semaine). `secondes.py` : le
+  de tendance sur le Bitcoin et l'Ether depuis 2017, rejoué par le moteur du bot : `trend_rules` appelle
+  `trend.replay` ; panier filtré, portefeuilles de la semaine). `secondes.py` : le
   très court terme, en bougies de 15 secondes fabriquées à partir de chaque transaction (`aggTrades`), résultat
   avant et après frais.
   `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
@@ -324,7 +345,9 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
 - Code, commentaires, textes du site et messages en français ; noms de tests en anglais, qui disent le comportement
   (`test_a_trailing_stop_follows_the_best_price_and_never_goes_back`). Les tests de l'argent sont dans
   `tests/test_fleet.py` (moteur : stop, objectif, levier, frais, financement, liquidation) et `tests/test_swarm.py`
-  (parité direct/backtest, reprise, re-tests, classement) ; les lectures du graphique dans `tests/test_patterns.py`
+  (parité direct/backtest, reprise, re-tests, classement) ; le bot de tendance dans `tests/test_trend.py` (la règle,
+  l'ordre au lendemain, les frais au centime, aucun ordre passé ne change quand on ajoute des jours, la relève des
+  bougies, le garde-fou « marché sans avantage ») ; les lectures du graphique dans `tests/test_patterns.py`
   (chaque figure sur un graphique dessiné à la main, puis les garanties communes).
 - Les réglages d'une technique sont fixés d'avance, jamais ajustés sur les données. Les frais et le glissement des bots
   sont dans `execution.FUTURES`, comptés dans `fleet.Book` (`_open`, `_fill`, `_secure`, `_close`) et nulle part
@@ -524,7 +547,7 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   donne cet historique en gros (et des données qui passent par la conversation coûtent des tokens, pas celles que la
   machine télécharge). Proposé, EN ATTENTE D'ACCORD : mesurer le carnet d'ordres sur l'historique avant de
   construire l'enregistreur.
-- 14/11/2026 : l'utilisateur trouve que je le freine ; il croit au court terme (beaucoup de trades, levier) et demande
+- 13/11/2026 (soir ; noté par erreur « 14/11 » jusqu'ici) : l'utilisateur trouve que je le freine ; il croit au court terme (beaucoup de trades, levier) et demande
   des tests sur les trois horizons, avec des combinaisons liées au volume (« je te laisse faire »). Fait, hors des
   bots, point de retour `4517daa` : 15,8 millions de trades réels. 15 secondes (`audit/secondes.py`) : +0,003 % avant
   frais, −0,131 % après, 0 technique sur 98. 1 min à 4 h (`contexte.py matrice`, deux fois 14 jours et deux fois 60
@@ -535,7 +558,22 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   est une loterie (×1,15 à ×18,6, −90 % en route). CE QUI TIENT : Bitcoin et Ether gardés, et mieux encore la règle
   « au-dessus de sa moyenne 50, 100 et 200 jours, un tiers chacune » : Bitcoin ×15,5 (pire baisse −50 %) contre
   ×6,2 (−77 %) de 2018 à 2026, mieux que garder sur les trois périodes dont 2018-2019 jamais vue ; levier ×2 → ×37
-  mais −80 %, ×5 → liquidé. Proposé, EN ATTENTE D'ACCORD : un bot de tendance simple (cette règle, argent fictif sur
-  le site, porte `robustesse`). Leçons : sur une période qui baisse, les ventes à découvert « gagnent » sans
+  mais −80 %, ×5 → liquidé. Leçons : sur une période qui baisse, les ventes à découvert « gagnent » sans
   mérite (comparer au marché) ; une moyenne par semaine cache la casse d'un portefeuille très agité (toujours
   regarder l'argent composé et la pire baisse).
+- 13/11/2026 (nuit) : l'utilisateur demande pourquoi le court terme « marche chez les autres » et vise 2 000 € par
+  mois ; répondu franchement (on ne voit que les gagnants, 9 clients sur 10 perdent d'après l'AMF ; à +20 % par an,
+  2 000 € par mois demandent environ 120 000 € placés). Il dit « on passe aux étapes d'après, tests en direct » →
+  BOT DE TENDANCE FAIT, point de retour `95db6b4` : `tradingbot/trend.py`, onglet « Tendance » du site (« Prix » passe
+  sous « Plus »), commandes `tendance` et `robustesse --tendance`, `audit/long.py` branché sur le même moteur. Avec
+  le moteur du bot, sur les vraies bougies (05/03/2018 → 13/11/2026, frais compris) : Bitcoin ×15,8 (pire baisse
+  −50 %) contre ×6,0 gardé (−77 %) ; Ether ×15,7 (−56 %) contre ×2,3 (−90 %) ; la règle gagne moins quand tout monte
+  (2020 : +215 % contre +302 %) et perd bien moins quand tout baisse (2022 : −26 % contre −64 %) ; à 0,50 % par
+  ordre, Bitcoin ×10,5. LA PORTE DIT NON : les six lignes (2 cryptos × 3 moyennes, 28 à 89 sorties) sont positives
+  mais « positif, peut-être de la chance » : l'avantage tient à quelques grandes chutes évitées. Donc argent fictif
+  seulement. Le 13/11 la règle est dehors sur les deux cryptos (prix sous les trois moyennes). Deux erreurs de ma
+  part corrigées et dites : « 13 ordres par an » était faux (37 ordres par an, chacun sur un tiers du compte ; les
+  frais étaient bien comptés) ; et le gain d'une sortie se compte en logarithme, pas en moyenne simple (leçon :
+  toujours passer une nouvelle mesure sur un marché sans avantage avant de la croire). Pas fait, dit : alerte
+  Telegram quand le bot de tendance change de position, leçon de l'École sur la tendance, lanceur Windows dédié.
+  À faire approuver : la suite (étape 2 du plan, ou ces compléments).

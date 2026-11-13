@@ -151,6 +151,11 @@ select { font: inherit; padding: 6px 10px; border-radius: 8px; border: 1px solid
 .pill { display: inline-flex; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); font-size: 13px;
   color: var(--text-primary); white-space: nowrap; }
 .kpis.swarm-kpis .tile-value { font-size: 22px; }
+.kpis.trend-kpis { grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); }
+.kpis.trend-kpis .tile-value { font-size: 22px; }
+table.fit th { white-space: normal; vertical-align: bottom; }  /* un tableau qui doit tenir sur un téléphone */
+@media (max-width: 900px) { table.fit .mid { display: none; } }
+@media (max-width: 600px) { table.fit th, table.fit td { padding: 8px 8px; } }
 .kpis.swarm-kpis .tile-hero .tile-value { font-size: 30px; }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover td { background: var(--surface-2, rgba(127, 127, 127, 0.08)); }
@@ -208,12 +213,13 @@ BODY = """
     <a href="#direct" data-view="direct">Direct</a>
     <a href="#cryptos" data-view="cryptos">Cryptos</a>
     <a href="#strategies" data-view="strategies"><span class="long">Stratégies</span><span class="short">Strat.</span></a>
+    <a href="#tendance" data-view="tendance"><span class="long">Tendance</span><span class="short">Tend.</span></a>
     <a href="#actualite" data-view="actualite"><span class="long">Actualité</span><span class="short">Infos</span></a>
-    <a href="#prix" data-view="prix">Prix</a>
     <button type="button" class="more" id="more-toggle" aria-expanded="false" aria-controls="more-tabs">Plus</button>
   </nav>
   <nav class="tabs tabs-more" id="more-tabs" aria-label="Autres pages" hidden>
     <a href="#ecole" data-view="ecole">École</a>
+    <a href="#prix" data-view="prix">Prix</a>
     <a href="#reglages" data-view="reglages">Réglages</a>
     <a href="#journal" data-view="journal">Journal</a>
   </nav>
@@ -310,6 +316,42 @@ BODY = """
       <div id="school-list" class="cards"></div>
     </div>
     <article id="lesson" class="lesson" hidden></article>
+  </div>
+  <div id="view-tendance" class="view" hidden>
+    <h1>Le bot de tendance</h1>
+    <p class="meta">Une seule règle, simple, en argent fictif : tenir du Bitcoin et de l'Ether seulement quand leur prix
+      est au-dessus de sa moyenne des 50, 100 et 200 derniers jours, un tiers du compte par moyenne dépassée. Le bot
+      décide une fois par jour, quand la journée se termine sur la plateforme, et passe son ordre à l'ouverture
+      suivante. Pas de levier, pas de vente à découvert. Rien ne part sur une plateforme.</p>
+    <p class="status-line" id="trend-status" aria-live="polite">Chargement de l'historique depuis 2017 (quelques
+      secondes la première fois)…</p>
+    <div id="trend-coins"></div>
+    <section id="trend-robust" hidden>
+      <h2>Le test de robustesse : la règle fait-elle mieux que garder ?</h2>
+      <p class="status-line" id="trend-verdict"></p>
+      <div class="table-wrap"><table class="fit"><thead><tr><th>Sortie jugée</th><th class="n">Paris</th>
+        <th class="n opt mid">Gagnés</th><th class="n">Par sortie</th><th class="n opt">Fourchette à 95 %</th>
+        <th class="n opt mid">Périodes gagnantes</th><th class="n opt">Contre garder</th><th>Verdict</th></tr></thead>
+        <tbody id="trend-robust-rows"></tbody></table></div>
+      <p class="note" id="trend-robust-note"></p>
+    </section>
+    <section>
+      <h2>À savoir avant d'y croire</h2>
+      <ul class="note">
+        <li>Le passé ne garantit rien. La règle a surtout évité une grande partie des chutes de 2018 et de 2022 : deux
+          ou trois grandes chutes ne font pas une preuve, et c'est ce que dit le test ci-dessus.</li>
+        <li>Quand le marché monte fort, la règle gagne moins que « acheter et garder » : elle sort sur les creux et
+          revient un peu plus haut. Son intérêt est de moins perdre quand tout baisse.</li>
+        <li>Au moins trois sorties sur quatre sont perdantes, de peu le plus souvent : le prix repart, le bot rachète
+          un peu plus cher. C'est le prix de la protection, et il faut l'accepter pour suivre la règle.</li>
+        <li>Les frais comptent : à 0,50 % par ordre au lieu de 0,15 %, le résultat du Bitcoin depuis 2018 passe
+          d'environ ×16 à ×10,5 (mesure du 13/11/2026).</li>
+        <li>Le compte fictif suppose que l'ordre passe à l'ouverture du jour, même si le site était fermé. En argent
+          réel, il faudrait un bot allumé à cette heure-là.</li>
+        <li>Jamais de levier sur cette règle : à ×2, la pire baisse mesurée passe de −50 % à −80 % ; à ×5, le compte
+          est liquidé.</li>
+      </ul>
+    </section>
   </div>
   <div id="view-actualite" class="view" hidden>
     <h1>Actualité</h1>
@@ -625,6 +667,8 @@ JS = r"""
     return out;
   }
   function dayLabel(ms) { return new Date(ms).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit'}); }
+  function yearDay(ms) { return new Date(ms).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: '2-digit'}); }
+  function fullDay(ms) { return new Date(ms).toLocaleDateString('fr-FR', {day: '2-digit', month: '2-digit', year: 'numeric'}); }
   function monthLabel(ms) { return new Date(ms).toLocaleDateString('fr-FR', {month: 'short', year: '2-digit'}); }
   function tickPrice(v, step) {
     const d = Math.max(0, Math.min(8, -Math.floor(Math.log10(step || 1))));
@@ -699,8 +743,8 @@ JS = r"""
   }
 
   // --- navigation ---
-  const VIEWS = ['direct', 'cryptos', 'crypto', 'bot', 'strategies', 'actualite', 'prix', 'ecole', 'reglages', 'journal'];
-  const MORE_VIEWS = ['ecole', 'reglages', 'journal'];
+  const VIEWS = ['direct', 'cryptos', 'crypto', 'bot', 'strategies', 'tendance', 'actualite', 'prix', 'ecole', 'reglages', 'journal'];
+  const MORE_VIEWS = ['ecole', 'prix', 'reglages', 'journal'];
   const moreToggle = $('#more-toggle'), moreTabs = $('#more-tabs');
   function setMore(open) { moreTabs.hidden = !open; moreToggle.setAttribute('aria-expanded', String(open)); }
   moreToggle.addEventListener('click', () => setMore(moreTabs.hidden));
@@ -1506,7 +1550,7 @@ JS = r"""
       }
       const gap = n > 1 ? times[1] - times[0] : 86400000, intraday = gap < 86400000, minutes = gap < 3600000;
       const fmt = ms => { const d = new Date(ms), hh = String(d.getHours()).padStart(2, '0') + 'h', mm = String(d.getMinutes()).padStart(2, '0');
-        if (!intraday) return dayLabel(ms); if (small) return minutes ? hh + mm : dayLabel(ms) + ' ' + hh; return dayLabel(ms) + ' ' + hh + (minutes ? mm : ''); };
+        if (!intraday) return o.daily ? yearDay(ms) : dayLabel(ms); if (small) return minutes ? hh + mm : dayLabel(ms) + ' ' + hh; return dayLabel(ms) + ' ' + hh + (minutes ? mm : ''); };
       const nx = small ? (intraday && !minutes ? 2 : 3) : 5;  // « 05/11 16h » est long : deux dates sur téléphone
       for (let k = 0; k < nx; k++) {
         const i = a + Math.round((m - 1) * (k + 0.5) / nx);
@@ -1531,7 +1575,7 @@ JS = r"""
         geo.hline.setAttribute('y1', y); geo.hline.setAttribute('y2', y); geo.hline.style.visibility = 'visible';
         geo.ptag.setAttribute('y', y - 4); geo.ptag.textContent = precise(v); geo.ptag.setAttribute('visibility', 'visible');
       } else { geo.hline.style.visibility = 'hidden'; geo.ptag.setAttribute('visibility', 'hidden'); }
-      const rows = [el('div', {class: 'tip-date', text: new Date(k[0]).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}),
+      const rows = [el('div', {class: 'tip-date', text: o.daily ? fullDay(k[0]) : new Date(k[0]).toLocaleString('fr-FR', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'})}),
         el('div', {class: 'tip-row', text: 'Ouverture ' + precise(k[1]) + ' · clôture ' + precise(k[4])}),
         el('div', {class: 'tip-row', text: 'Plus haut ' + precise(k[2]) + ' · plus bas ' + precise(k[3])}),
         el('div', {class: 'tip-row', text: 'Sur la bougie : ' + pct(k[4] / k[1] - 1) + ' · volume ' + Math.round(k[5] || 0).toLocaleString('fr-FR')})];
@@ -1818,6 +1862,140 @@ JS = r"""
     box.append(el('p', {class: 'note', text: f.study_text}));
   }
 
+  // --- le bot de tendance : une fiche par crypto, bâtie une fois puis mise à jour (le zoom du graphique reste) ---
+  let trendData = null, trendReady = false;
+  const trendCharts = {};
+  const TREND_PLACE = ['dehors', 'dedans pour un tiers', 'dedans pour deux tiers', 'dedans en entier'];
+  function trendPlace(level) { return TREND_PLACE[Math.max(0, Math.min(3, level))]; }
+  function clock(ms) { return new Date(ms).toLocaleTimeString('fr-FR', {hour: '2-digit', minute: '2-digit'}); }
+  function multiple(v) { return '×' + v.toLocaleString('fr-FR', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+  function headRow(...cells) {
+    return el('thead', {}, el('tr', {}, ...cells.map(c => el('th', {class: c[1] || null, text: c[0]}))));
+  }
+  async function refreshTrend() {
+    try { trendData = await getJSON('/api/tendance'); }
+    catch (e) { $('#trend-status').textContent = e.message + ' Nouvel essai dans quelques secondes…'; return; }
+    trendReady = trendData.coins.some(c => c.ready);
+    renderTrend();
+  }
+  async function refreshTrendCharts() {
+    for (const c of (trendData || {coins: []}).coins) {
+      if (!c.ready) continue;
+      try { trendCharts[c.coin] = await getJSON('/api/tendance-graphique?c=' + encodeURIComponent(c.coin)); }
+      catch (e) { trendCharts[c.coin] = {error: e.message}; }
+    }
+    drawTrendCharts();
+  }
+  function trendCard(c) {
+    const id = 'trend-' + c.coin, part = (tag, name, klass) => el(tag, {id: id + '-' + name, class: klass || null});
+    return [part('div', 'head', 'section-head'), part('p', 'state', 'status-line'),
+      el('div', {class: 'table-wrap'}, el('table', {class: 'fit'}, headRow(['Moyenne'], ['À dépasser ce soir', 'n'], ['Le prix est', 'opt'],
+        ['Écart du prix', 'n']), part('tbody', 'avgs'))),
+      part('p', 'tonight', 'note'),
+      el('h3', {class: 'group-title', text: 'Son compte fictif'}), part('div', 'kpis', 'kpis trend-kpis'), part('div', 'orders'),
+      el('h3', {class: 'group-title', text: 'Son graphique, en bougies d\'un jour'}), part('div', 'chart'), part('div', 'legend', 'legend'),
+      el('h3', {class: 'group-title', text: 'Ce que la règle aurait fait, année par année'}), part('p', 'history', 'status-line'),
+      el('div', {class: 'table-wrap'}, el('table', {class: 'fit'}, headRow(['Année'], ['La règle', 'n'], ['Garder', 'n'],
+        ['Pire baisse de la règle', 'n'], ['Pire baisse en gardant', 'n']), part('tbody', 'years')))];
+  }
+  function renderTrend() {
+    const d = trendData;
+    if (!d) return;
+    const late = d.coins.filter(c => c.error).map(c => c.name + ' : ' + c.error);
+    $('#trend-status').textContent = typo('Prix publics de ' + d.exchange + ' · ' + thousands(d.capital) + ' USDT fictifs par crypto · frais comptés : '
+      + pct(d.cost).replace('+', '') + ' par ordre' + (late.length ? ' · dernière relève en échec (' + late.join(' ; ') + ') : ce qui suit date de la relève d\'avant' : ''));
+    for (const c of d.coins) {
+      let card = $('#trend-' + c.coin);
+      if (!card) { card = el('section', {id: 'trend-' + c.coin}); $('#trend-coins').append(card); }
+      if (!c.ready) {
+        card.dataset.ready = '';
+        card.replaceChildren(el('h2', {text: c.name}), el('p', {class: 'muted', text: typo(c.error && !c.days
+          ? 'Pas encore d\'historique : la plateforme ne répond pas (' + c.error + '). Nouvel essai dans quelques secondes.'
+          : 'Pas assez de bougies d\'un jour pour la règle : ' + c.days + ' sur ' + c.needed + '.')}));
+        continue;
+      }
+      if (!card.dataset.ready) { card.dataset.ready = '1'; card.replaceChildren(...trendCard(c)); }
+      fillTrend(c);
+    }
+    renderTrendRobust(d.robustness);
+    drawTrendCharts();
+  }
+  function fillTrend(c) {
+    const id = '#trend-' + c.coin + '-', acc = c.account, h = c.history, place = trendPlace(c.level);
+    $(id + 'head').replaceChildren(el('h2', {text: c.name}), chip(c.level > 0 ? 'ok' : 'idle', place.charAt(0).toUpperCase() + place.slice(1)));
+    $(id + 'state').textContent = typo('Prix : ' + precise(c.price) + ' USDT · ' + place + (c.since ? ' depuis le ' + fullDay(c.since) : '')
+      + ' · prochaine décision à ' + clock(c.next_open) + (c.live ? '' : ' · prix en retard : la plateforme ne répond pas'));
+    $(id + 'avgs').replaceChildren(...c.averages.map(a => el('tr', {}, el('td', {text: a.days + ' jours'}),
+      el('td', {class: 'n', text: precise(a.threshold)}),
+      el('td', {class: 'opt ' + (a.above ? 'up' : 'down'), text: a.above ? 'au-dessus' : 'en dessous'}),
+      el('td', {class: 'n ' + cls(a.gap), text: pct(a.gap, 1)}))));
+    $(id + 'tonight').textContent = typo(c.tonight === c.level
+      ? 'Si la journée finissait à ce prix, rien ne changerait : le bot resterait ' + place + '.'
+      : 'Si la journée finissait à ce prix, le bot ' + (c.tonight > c.level ? 'achèterait' : 'vendrait') + ' à l\'ouverture suivante, pour être '
+        + trendPlace(c.tonight) + '.');
+    $(id + 'kpis').replaceChildren(...(!acc.started
+      ? [tile('Compte fictif', usdt(acc.capital), 'créé le ' + fullDay(acc.since) + ' : il ouvre à ' + clock(c.next_open) + ', à la prochaine ouverture du jour')]
+      : [tile('Compte fictif', usdt(acc.value), pct(acc.value / acc.capital - 1) + ' depuis le ' + fullDay(acc.start) + ' · ' + trendPlace(acc.level)),
+        tile('Acheter et garder', usdt(acc.hold), pct(acc.hold / acc.capital - 1) + ' depuis le même jour'),
+        tile('Écart', usdt(acc.value - acc.hold, true), 'la règle moins « acheter et garder »'),
+        tile('Pire baisse', pct(acc.worst, 1), 'en gardant : ' + pct(acc.hold_worst, 1)),
+        tile('Ordres passés', String(acc.orders.length), 'frais et glissement payés : ' + usdt(acc.costs))]));
+    $(id + 'orders').replaceChildren(acc.orders.length ? el('div', {class: 'table-wrap'}, el('table', {class: 'fit'},
+      headRow(['Jour'], ['Ordre'], ['Prix', 'n'], ['Montant', 'n opt'], ['Frais', 'n opt']),
+      el('tbody', {}, ...acc.orders.map(o => el('tr', {}, el('td', {text: fullDay(o.ts)}),
+        el('td', {class: o.side === 'achat' ? 'up' : 'down'}, (o.side === 'achat' ? '▲ achète ' : '▼ vend ') + Math.abs(o.to - o.from) + ' tiers',
+          el('span', {class: 'opt', text: ' (de ' + o.from + ' à ' + o.to + ')'})),
+        el('td', {class: 'n', text: precise(o.price)}), el('td', {class: 'n opt', text: usdt(o.amount)}),
+        el('td', {class: 'n opt', text: usdt(o.cost)}))))))
+      : el('p', {class: 'note', text: typo(acc.started ? 'Aucun ordre depuis l\'ouverture du compte : la règle n\'a pas changé d\'avis.'
+        : 'Le compte ne doit rien à un prix déjà passé : son premier ordre, s\'il y en a un, partira à l\'ouverture du jour.')}));
+    $(id + 'history').textContent = typo('Depuis le ' + fullDay(h.from) + ' (' + dec(h.years) + ' ans), frais compris : la règle ' + multiple(h.rule.total)
+      + ', pire baisse ' + pct(h.rule.worst, 0) + ' ; acheter et garder ' + multiple(h.hold.total) + ', pire baisse ' + pct(h.hold.worst, 0) + '. Environ '
+      + Math.round(h.orders_per_year) + ' ordres par an, en crypto ' + Math.round(100 * h.inside) + ' % du temps en moyenne. Le passé ne garantit rien.');
+    $(id + 'years').replaceChildren(...h.by_year.map(y => el('tr', {},
+      el('td', {}, String(y.year), y.days < 360 ? el('span', {class: 'opt', text: ' (incomplète)'}) : null),
+      el('td', {class: 'n ' + cls(y.rule), text: pct(y.rule, 0)}), el('td', {class: 'n ' + cls(y.hold), text: pct(y.hold, 0)}),
+      el('td', {class: 'n', text: pct(y.rule_worst, 0)}), el('td', {class: 'n', text: pct(y.hold_worst, 0)}))));
+  }
+  function drawTrendCharts() {
+    for (const c of (trendData || {coins: []}).coins) {
+      const host = $('#trend-' + c.coin + '-chart'), d = trendCharts[c.coin];
+      if (!host) continue;
+      if (!d || d.error) {
+        host._chart = null;
+        host.replaceChildren(el('p', {class: 'muted', text: d ? d.error + ' Nouvel essai dans quelques minutes…' : 'Chargement du graphique…'}));
+        continue;
+      }
+      zoomChart(host, {key: 'tendance-' + c.coin, candles: d.candles, lines: d.lines, zones: [], marks: [], bands: [], daily: true,
+        markers: d.orders.map(o => ({ts: o.ts, up: o.side === 'achat', fill: o.side === 'achat' ? 'var(--up)' : 'var(--down)', stroke: 'var(--surface-1)'})),
+        label: 'Graphique de ' + c.name + ' en bougies d\'un jour, avec ses trois moyennes et les ordres de la règle'});
+      $('#trend-' + c.coin + '-legend').replaceChildren(...chartLegend({lines: d.lines}, false, false),
+        el('span', {text: '▲ vert : achat d\'un tiers · ▼ rouge : vente d\'un tiers'}));
+    }
+  }
+  function renderTrendRobust(r) {
+    const box = $('#trend-robust');
+    box.hidden = !r || !r.rows.length;
+    if (box.hidden) return;
+    $('#trend-verdict').textContent = typo(r.verdict || '');
+    const periods = x => { const judged = (x.period_means || []).filter(v => v !== null && v !== undefined);
+      return judged.length ? judged.filter(v => v > 0).length + ' sur ' + judged.length : '—'; };
+    $('#trend-robust-rows').replaceChildren(...r.rows.map(x => el('tr', {},
+      el('td', {}, x.market.split(' moy. ')[0] + ' · ', el('span', {class: 'opt', text: 'moyenne '}), (x.market.split(' moy. ')[1] || '').replace(/ j$/, ' jours')),
+      el('td', {class: 'n', text: String(x.nb_trades)}),
+      el('td', {class: 'n opt mid', text: x.win_rate === null || x.win_rate === undefined ? '—' : Math.round(100 * x.win_rate) + ' %'}),
+      el('td', {class: 'n ' + cls(x.expectancy_pct), text: signed(x.expectancy_pct, 2)}),
+      el('td', {class: 'n opt', text: x.ci_low === null || x.ci_low === undefined ? '—' : signed(x.ci_low, 1) + ' à ' + signed(x.ci_high, 1)}),
+      el('td', {class: 'n opt mid', text: periods(x)}), el('td', {class: 'n opt', text: bigPct(x.total_return)}),
+      el('td', {class: 'wrap ' + (x.verdict === 'robuste' ? 'up' : x.verdict === 'perd de l\'argent' ? 'down' : ''),
+        text: x.verdict === 'trop peu de trades' ? 'trop peu de paris (30 au moins)' : x.verdict}))));
+    $('#trend-robust-note').textContent = typo('Ce qui est jugé : chaque sortie du marché, comme un pari (vendre pour racheter moins cher), frais des '
+      + 'deux ordres compris. Être acheteur d\'une crypto qui a monté gagne de toute façon : la règle n\'a un avantage que si ses sorties font mieux '
+      + 'que garder. Par sortie : ce qu\'une sortie rapporte en moyenne, en cryptos, comptée comme le compte les enchaîne (doubler puis diviser par '
+      + 'deux fait zéro). Contre garder : la règle face à « acheter et garder » sur toute la période de la ligne. « robuste » : la fourchette reste '
+      + 'au-dessus de zéro avec un seuil durci par le nombre de lignes, et les sorties gagnent dans 3 périodes sur ' + r.periods + '.');
+  }
+
   let resizeTimer = null, lastWidth = window.innerWidth;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
@@ -1830,7 +2008,8 @@ JS = r"""
   });
 
   // --- rythme : chaque source seulement quand sa page est affichée ---
-  const last = {state: 0, journal: 0, prices: 0, news: 0, swarm: 0, coin: 0, coinChart: 0, bot: 0, botChart: 0};
+  const last = {state: 0, journal: 0, prices: 0, news: 0, swarm: 0, coin: 0, coinChart: 0, bot: 0, botChart: 0, trend: 0,
+    trendChart: 0};
   const busy = {};
   async function every(name, ms, fn) {
     const now = Date.now();
@@ -1845,6 +2024,10 @@ JS = r"""
     if (view === 'journal') every('journal', 1500, refreshJournal);
     if (view === 'prix') every('prices', pricesReady ? 10000 : 2000, refreshPrices);
     if (view === 'actualite') every('news', newsReady ? 60000 : 2000, refreshNews);
+    if (view === 'tendance') {  // une règle à la journée : la fiche toutes les 30 s, le graphique toutes les 5 min
+      every('trend', trendReady ? 30000 : 3000, refreshTrend);
+      if (trendReady) every('trendChart', 300000, refreshTrendCharts);
+    }
     if (view === 'direct' || view === 'cryptos' || view === 'strategies') every('swarm', 5000, refreshSwarm);
     if (view === 'crypto') {
       every('coin', 5000, refreshCoin);

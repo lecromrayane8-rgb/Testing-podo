@@ -252,11 +252,19 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Cinq on
 - **Le graphique zoomable** : molette, boutons + et −, pincement sur tablette, glisser ou ◀ ▶ pour remonter le temps,
   « Maintenant » pour revenir au présent, double-clic pour la vue de départ, flèches du clavier ; le prix exact sous
   le curseur et le détail de chaque bougie (ouverture, plus haut, plus bas, clôture, volume, valeur des lignes).
+- **Tendance** (`tradingbot/trend.py`) : le bot de tendance, en argent fictif. Une seule règle, fixée d'avance :
+  tenir du Bitcoin et de l'Ether seulement quand leur prix est au-dessus de sa moyenne des 50, 100 et 200 derniers
+  jours, un tiers du compte par moyenne dépassée ; décision une fois par jour à la clôture, ordre à l'ouverture
+  suivante, frais du comptant (0,15 % par ordre), jamais de levier. Pour chaque crypto : où en est la règle (dedans
+  ou dehors, depuis quand, le prix à dépasser ce soir pour chaque moyenne), **son compte fictif face à « acheter et
+  garder »** depuis le premier lancement, son graphique avec les trois moyennes et les ordres, ce que la règle aurait
+  fait année par année depuis 2018, puis **le test de robustesse** (chaque sortie du marché jugée contre « garder »).
+  Verdict du 13/11/2026 sur les vraies bougies : la règle a fait mieux que garder (Bitcoin ×15,8 contre ×6,0, pire
+  baisse −50 % contre −77 %), mais aucune ligne n'est « robuste » : argent fictif seulement.
 - **Actualité** (`tradingbot/news.py`) : les derniers titres de CoinDesk, Cointelegraph et Decrypt, les cryptos citées
   et ce que leur prix a fait depuis la publication ; l'indice peur et avidité, son année, et ce qui a suivi ses
   extrêmes (une observation, pas une règle). Les bots ne tradent jamais sur les titres.
-- **Prix** : les prix publics de plusieurs plateformes côte à côte.
-- Sous « Plus » : **École** (quatorze leçons courtes pour débutant, dont « Lire le graphique comme un trader »,
+- Sous « Plus » : **Prix** (les prix publics de plusieurs plateformes côte à côte), **École** (quatorze leçons courtes pour débutant, dont « Lire le graphique comme un trader »,
   `tradingbot/school.py`, avec simulateurs, mini-quiz
   et exemples tirés des vrais trades des bots), **Réglages** (cryptos suivies, bots par crypto, mouvement minimum,
   leviers, capital fictif, plateforme des données, Telegram ; les bots redémarrent tout seuls quand on les change) et
@@ -667,6 +675,8 @@ tail -f data/bot.log
 | `python main.py site [--port 8765] [--sans-navigateur] [--ipad]` | ouvrir le site du bot (le programme Windows sans argument fait de même) |
 | `python main.py backtest [--days N] [--capital X] [--csv fichier]` | tester la stratégie sur l'historique |
 | `python main.py robustesse [--symbols A,B] [--timeframes 15m,1h,1d] [--days N]` | tester plusieurs marchés et périodes, avec verdict statistique |
+| `python main.py robustesse --tendance` | le même test pour la règle du bot de tendance : chaque sortie du marché, contre « acheter et garder » |
+| `python main.py tendance` | le bot de tendance en argent fictif, dans la console : où en est la règle, son compte, son histoire année par année |
 | `python main.py labo [--symbols A,B] [--timeframes 1h,1d] [--csv-dir dossier] [--scanner N] [--memecoins] [--combinaisons] [--ordres-limites] [--futures] [--resultats fichier]` | comparer les stratégies, validées hors échantillon |
 | `python main.py tournoi [--labo fichier] [--unite 1m] [--avec-marches-du-labo] [--top N] [--symbols A,B] [--sans-memecoins] [--capital X] [--sans-navigateur]` | faire s'affronter en argent fictif les stratégies retenues par un labo |
 | `python main.py flotte [--coeurs N] [--secondes 5] [--une-fois]` | l'essaim de bots en argent fictif, sans fin : les cryptos qui bougent le plus, retestées en continu (`--coeurs` : processus de calcul des re-tests, 0 = dans le direct) |

@@ -612,7 +612,7 @@ C'est l'intérêt de vérifier ailleurs : sur une seule période, la seconde pis
   lui : à mesurer en direct, pas sur des bougies) ; des **horizons de plusieurs jours** (le seul effet appuyé par
   la recherche, le momentum : le labo portefeuille du bot existe déjà) ; le calendrier des annonces (étape 6).
 
-## Le grand test sur trois horizons (14/11/2026)
+## Le grand test sur trois horizons (13/11/2026)
 
 La demande : « fais en sorte que les tests soient surtout long terme, moyen terme et très très court terme, avec des
 techniques et des combinaisons de 1 ou 2 indicateurs liés au volume… je te laisse faire ». Avec l'idée qu'une
@@ -669,7 +669,8 @@ En argent composé (ce que devient 1 placé au début), avec la pire baisse en r
 - **Le Bitcoin et l'Ether, simplement gardés, ont fait mieux que tout le reste.** Et une règle toute simple a fait
   mieux encore, avec des baisses moins profondes : ne les tenir que quand leur clôture est au-dessus de leur moyenne
   des 50, 100 et 200 derniers jours (un tiers par moyenne, pour ne pas choisir un réglage après coup). Une décision
-  par jour, 13 ordres par an :
+  par jour, environ 37 ordres par an, chacun sur un tiers du compte (j'avais écrit « 13 ordres par an » : c'était le
+  nombre de fois où le compte entier change de main, pas le nombre d'ordres ; les frais étaient bien comptés) :
 
 | | 2018-03 à 2019 | 2020 à 2023 | 2024 à 2026-11 | Tout |
 |---|---|---|---|---|
@@ -688,13 +689,61 @@ En argent composé (ce que devient 1 placé au début), avec la pire baisse en r
 Dit franchement : c'est le passé d'un seul actif, et −50 % en route reste très dur à vivre. Rien ne garantit la suite.
 Mais c'est la seule chose, de tout ce qui a été mesuré depuis le début, qui tient sur plusieurs périodes séparées.
 
-### Proposition (en attente d'accord) : un bot de tendance, simple
+## Le bot de tendance (13/11/2026, fait)
 
-1. Une seule règle, celle du tableau : Bitcoin (et Ether) en bougies d'un jour, au comptant, sans levier par défaut.
-2. En argent fictif sur le site : dedans ou dehors, depuis quand, et la comparaison avec « acheter et garder ».
-3. La porte officielle du projet avant tout argent réel : `python main.py robustesse`, puis des semaines en argent
-   fictif et en testnet.
-4. Les bots actuels restent comme laboratoire : ils mesurent honnêtement, ils ne sont pas un revenu.
+Accord du 13/11 (« on passe aux étapes d'après, pour faire des tests en direct »). Point de retour : `95db6b4`.
+Les bots actuels restent comme laboratoire : ils mesurent honnêtement, ils ne sont pas un revenu.
+
+### Ce qui a été fait
+
+1. **Le moteur** (`tradingbot/trend.py`) : la règle des trois moyennes sur le Bitcoin et l'Ether, en bougies d'un
+   jour, au comptant. Décidée à la clôture, exécutée à l'ouverture du jour suivant, 0,10 % de frais et 0,05 % de
+   glissement par ordre. Jamais de levier ni de vente à découvert. Une seule logique : le compte fictif du site est
+   le rejeu de la règle depuis sa date de création ; chaque jour ajoute une bougie, donc le direct est le backtest
+   qui continue.
+2. **Les tests de l'argent** (`tests/test_trend.py`) : la règle, l'ordre au lendemain, les frais au centime, les
+   parts d'un tiers, jamais d'emprunt, aucun ordre passé ne change quand on ajoute des jours, la bougie du jour ne
+   décide rien, et le garde-fou « marché sans avantage ».
+3. **Le site** : onglet « Tendance » (dedans ou dehors, depuis quand, le prix à dépasser ce soir, le compte fictif
+   contre « acheter et garder », le graphique, l'histoire année par année, le test de robustesse). « Prix » passe
+   sous « Plus ».
+4. **La porte** : `python main.py robustesse --tendance`, avec les mêmes seuils que `robustesse`.
+5. **L'outil de mesure** (`audit/long.py`) rejoue la règle avec le moteur du bot : il n'en existe qu'une version.
+
+### Les chiffres du moteur du bot (vraies bougies, du 05/03/2018 au 13/11/2026, frais compris)
+
+| | La règle | Acheter et garder |
+|---|---|---|
+| Bitcoin | ×15,8 (pire baisse −50 %) | ×6,0 (pire baisse −77 %) |
+| Ether | ×15,7 (pire baisse −56 %) | ×2,3 (pire baisse −90 %) |
+
+Bitcoin, année par année (la règle / garder) : 2018 −35 % / −68 % · 2019 +91 % / +94 % · 2020 +215 % / +302 % ·
+2021 +50 % / +60 % · 2022 −26 % / −64 % · 2023 +105 % / +156 % · 2024 +74 % / +121 % · 2025 −3 % / −6 % · 2026
++6 % / −21 %. La règle gagne moins quand tout monte, et perd beaucoup moins quand tout baisse. Avec des frais de
+0,50 % par ordre au lieu de 0,15 % : Bitcoin ×10,5 au lieu de ×15,8.
+
+### Le test de robustesse dit non
+
+Ce qui est jugé : chaque sortie du marché, comme un pari (vendre pour racheter moins cher), contre « garder ». Six
+lignes (2 cryptos × 3 moyennes), de 28 à 89 sorties chacune. Toutes sont positives en moyenne (+0,1 % à +4,6 % par
+sortie), mais une sortie sur quatre seulement est gagnante et toutes les fourchettes contiennent zéro : « positif,
+peut-être de la chance ». L'avantage vient de quelques grandes chutes évitées (2018, 2022, 2026). Conclusion : la
+règle est la meilleure chose mesurée jusqu'ici, et elle n'est pas prouvée. Argent fictif seulement.
+
+### Ce que j'ai corrigé en route
+
+- « 13 ordres par an » était faux : 37 ordres par an (voir plus haut).
+- Compter le gain moyen d'une sortie en moyenne simple fait croire à un avantage qui n'existe pas (+1,1 % par sortie
+  sur un marché tiré au hasard). Le test compte les sorties comme le compte les enchaîne : sur le même marché au
+  hasard, il rend exactement les frais (−0,30 %).
+- Le grand test était daté du 14/11 : c'était le 13/11.
+
+### À surveiller
+
+- Le 13/11/2026, la règle est dehors sur les deux cryptos (prix sous les trois moyennes) : le compte fictif attend,
+  il ne se passera rien tant que le prix ne repasse pas au-dessus d'une moyenne. C'est la règle, pas une panne.
+- Le compte fictif suppose que l'ordre passe à l'ouverture du jour (1 h du matin en hiver), même site fermé.
+- Pas fait : alerte Telegram quand le bot change de position, leçon de l'École sur la tendance, lanceur Windows.
 
 ## Étape 2 — Gestion du risque
 
@@ -786,4 +835,5 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 13/11/2026 | 1 — Sécurisation des gains | Faite : moteur, réglages, labo avec et sans, site, mesures sur de vraies bougies | `3b234da` |
 | 13/11/2026 | 1 bis — La lecture du graphique | Faite : 12 techniques (51 en tout), garanties testées, mesures sur du hasard et sur de vraies bougies ; deux défauts de l'étape 1 corrigés après relecture | `38b843b` |
 | 13/11/2026 | 1 ter — Le contexte autour du signal | Mesure faite (sept conditions, 5,36 millions de trades, deux pistes revérifiées sur d'autres périodes) : aucun avantage, rien à brancher ; actions en jetons écartées | `8308621` |
-| 14/11/2026 | Le grand test sur trois horizons (15 secondes à 1 jour, techniques seules et combinées au volume, au flux et au carnet d'ordres) | Fait : 15,8 millions de trades, aucune combinaison confirmée ; seule tient une règle de tendance simple sur le Bitcoin et l'Ether. Bot de tendance proposé, en attente d'accord | `4517daa` |
+| 13/11/2026 | Le grand test sur trois horizons (15 secondes à 1 jour, techniques seules et combinées au volume, au flux et au carnet d'ordres) | Fait : 15,8 millions de trades, aucune combinaison confirmée ; seule tient une règle de tendance simple sur le Bitcoin et l'Ether | `4517daa` |
+| 13/11/2026 | Le bot de tendance (argent fictif) | Fait : moteur et tests de l'argent, onglet « Tendance », porte `robustesse --tendance` (verdict : pas robuste, argent fictif seulement), outil de mesure sur le même moteur | `95db6b4` |

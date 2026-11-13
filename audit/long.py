@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -31,7 +32,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import vrai  # noqa: E402
-from tradingbot import portfolio  # noqa: E402
+from tradingbot import portfolio, trend  # noqa: E402
 from tradingbot.fleet import EXITS, SECURE_PART, SECURE_R, SIDES, Spec, signals_for, simulate, technique  # noqa: E402
 from tradingbot.risk import clustered_bounds  # noqa: E402
 from tradingbot.scanner import LEVERAGED_SUFFIXES, STABLE_OR_PEGGED, tokenized_stock  # noqa: E402
@@ -151,38 +152,51 @@ def growth(returns) -> dict:
     return {"total": float(values[-1]), "worst": float((values / peak - 1).min())}
 
 
+def trend_rules(majors: dict[str, pd.DataFrame], cut: int) -> list[dict]:
+    """Le filtre de tendance sur le Bitcoin et l'Ether, rejoué par le moteur du bot (`tradingbot.trend.replay` : la
+    même fonction que le compte fictif du site, pas une formule à part). Toutes les règles partent du même jour."""
+    y2020 = int(pd.Timestamp("2020-01-01", tz="UTC").timestamp() * 1000)
+    spans = (("avant 2020", 0, y2020), ("de 2020 à la coupure", y2020, cut), ("depuis la coupure", cut, 2 ** 62),
+             ("tout", 0, 2 ** 62))
+    dear = replace(trend.SPOT, fee_rate=0.004, slippage=0.001)  # une plateforme chère : 0,50 % par ordre
+    out = []
+    for symbol, df in majors.items():
+        first = int(df["ts"].iloc[max(trend.AVERAGES)])
+        rules = [("acheté et gardé", None, trend.SPOT),
+                 *[(f"au-dessus de sa moyenne {n} jours", (n,), trend.SPOT) for n in trend.AVERAGES],
+                 ("les trois moyennes, un tiers chacune", trend.AVERAGES, trend.SPOT),
+                 ("les trois moyennes, à 0,50 % par ordre", trend.AVERAGES, dear)]
+        for name, averages, ex in rules:
+            run = trend.replay(df, start_ts=first, ex=ex, averages=averages or trend.AVERAGES)
+            values = run.hold if averages is None else run.value
+            cells = {}
+            for label, lo, hi in spans:
+                inside = np.flatnonzero((run.ts >= lo) & (run.ts < hi))
+                base = run.capital if inside[0] == 0 else values[inside[0] - 1]
+                cells[label] = {k: v for k, v in trend.growth(values[inside], base).items() if k != "yearly"}
+            orders = 0.0 if averages is None else len(run.orders) / (len(run) / 365)
+            print(f"  {symbol.split('/')[0]} {name:<38} " + " · ".join(
+                f"{label} ×{g['total']:.2f} ({g['worst']:.0%})" for label, g in cells.items()) + f" · {orders:.0f} ordres par an")
+            out.append({"symbol": symbol, "rule": name, "orders_per_year": orders, **cells})
+    return out
+
+
 def simple_rules(frames: dict, opens: pd.DataFrame, closes: pd.DataFrame, member: pd.DataFrame, cut: int,
-                 majors: dict[str, pd.Series]) -> dict:
+                 majors: dict[str, pd.DataFrame]) -> dict:
     """Ce qu'un débutant peut vraiment tenir, comparé franchement à « acheter et garder », en argent composé (ce que
     devient 1 placé au début) et avec la pire baisse en route. Seuils ronds, fixés d'avance : 50, 100 et 200 jours.
     1. Le filtre de tendance sur le Bitcoin et l'Ether : ne tenir que si la clôture est au-dessus de sa moyenne des N
-       derniers jours (décidé à la clôture, appliqué le lendemain, 0,15 % par achat ou vente).
+       derniers jours (décidé à la clôture, ordre à l'ouverture du lendemain, 0,15 % par ordre).
     2. Le même filtre sur toutes les cryptos suivies : chaque jour, à parts égales, celles qui sont au-dessus de leur
        moyenne, contre le panier de toutes.
     3. Les portefeuilles de la semaine : les 3 qui ont le plus monté, les 3 qui ont le plus baissé."""
     out = {"trend": [], "basket": [], "weekly": []}
     parts = (("avant la coupure", lambda ts: ts < cut), ("après", lambda ts: ts >= cut))
-    y2020 = int(pd.Timestamp("2020-01-01", tz="UTC").timestamp() * 1000)
-    spans = (("avant 2020", 0, y2020), ("de 2020 à la coupure", y2020, cut), ("depuis la coupure", cut, 2 ** 62),
-             ("tout", 0, 2 ** 62))
     print("\nLES RÈGLES SIMPLES, EN ARGENT COMPOSÉ (ce que devient 1 placé au début ; entre parenthèses : la pire baisse)")
     print("1. Bitcoin et Ether depuis 2017 : ne tenir que si la clôture est au-dessus de sa moyenne des N jours (décidé à "
-          "la clôture, appliqué le lendemain, 0,15 % par ordre). « Les trois moyennes » : un tiers par moyenne, pour ne "
-          "pas choisir un réglage après coup.")
-    for symbol, close in majors.items():
-        day = close.pct_change().shift(-1)  # la variation du lendemain
-        valid = (close.index >= close.index[200]) & day.notna().to_numpy()  # les mêmes jours pour toutes les règles
-        signals = {n: (close > close.rolling(n).mean()).astype(float) for n in (50, 100, 200)}
-        rules = {"acheté et gardé": pd.Series(1.0, close.index),
-                 **{f"au-dessus de sa moyenne {n} jours": held for n, held in signals.items()},
-                 "les trois moyennes à parts égales": sum(signals.values()) / 3}
-        for name, held in rules.items():
-            earned = held * day - SPOT_COST * held.diff().abs().fillna(0.0)
-            cells = {label: growth(earned[valid & (close.index >= lo) & (close.index < hi)]) for label, lo, hi in spans}
-            orders = float(held[valid].diff().abs().sum() / (valid.sum() / 365))
-            print(f"  {symbol.split('/')[0]} {name:<34} " + " · ".join(
-                f"{label} ×{g['total']:.2f} ({g['worst']:.0%})" for label, g in cells.items()) + f" · {orders:.0f} ordres par an")
-            out["trend"].append({"symbol": symbol, "rule": name, "orders_per_year": orders, **cells})
+          "la clôture, ordre à l'ouverture du lendemain, 0,15 % par ordre). « Les trois moyennes » : un tiers du compte "
+          "par moyenne dépassée, pour ne pas choisir un réglage après coup. C'est la règle du bot de tendance.")
+    out["trend"] = trend_rules(majors, cut)
     print("2. Toutes les cryptos suivies, à parts égales, revues chaque jour (0,15 % sur ce qui change) :")
     close = pd.DataFrame({s: f.set_index("ts")["close"] for s, f in frames.items()}).sort_index()
     tomorrow = close.pct_change(fill_method=None).shift(-1)
@@ -323,7 +337,7 @@ def main() -> None:
     print(portfolio.overall_verdict(results, len(followed)))
     report["portfolio"] = [r.__dict__ for r in results]
     early = int(pd.Timestamp(EARLY, tz="UTC").timestamp() * 1000)  # les deux grandes cryptos, depuis leur cotation
-    majors = {s: vrai.candles(ex, s, "1d", early, end, cache).set_index("ts")["close"] for s in ("BTC/USDT", "ETH/USDT")}
+    majors = {s: vrai.candles(ex, s, "1d", early, end, cache) for s in trend.SYMBOLS}
     report["simple"] = simple_rules(frames, opens, closes, member, cut, majors)
     if args.sortie:
         Path(args.sortie).write_text(json.dumps(report, ensure_ascii=False, indent=1, default=float), encoding="utf-8")

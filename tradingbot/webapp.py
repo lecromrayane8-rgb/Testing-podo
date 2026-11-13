@@ -41,6 +41,7 @@ from urllib.parse import parse_qs, urlparse
 
 import ccxt
 
+from . import trend
 from .broker import atomic_write
 from .config import ConfigError, Settings, parse_dotenv
 from .data import load_or_fetch, ohlcv_to_frame, timeframe_to_ms
@@ -646,10 +647,19 @@ class Site:
         self.lock = threading.Lock()
         self.code = self._code() if lan_address else None
         self.fleet_stopped = False  # arrêtés à la main : le site ne les relance plus tout seul
+        # Le bot de tendance : ses bougies d'un jour, sa page (refaite toutes les 10 s au plus), son test de robustesse.
+        self.trend_feed = trend.Feed(make_exchange, self.exchange_id, data_dir / trend.FOLDER)
+        self.trend_cache: dict = {}
+        self.trend_page: tuple[float, dict | None] = (-math.inf, None)
+        self.trend_lock = threading.Lock()
         self.fleet_files: dict[str, dict] = {}  # dernière lecture réussie (un fichier remplacé à l'instant reste lisible)
 
     def start_background(self) -> None:
         """Ce qui tourne tant que le site est ouvert : les bots, relancés tout seuls s'ils s'arrêtent."""
+        try:  # le compte fictif du bot de tendance est daté du premier lancement, même si son onglet reste fermé
+            trend.account_since(self.data_dir() / trend.FOLDER)
+        except OSError as exc:
+            log.warning("Compte du bot de tendance : %s", short_error(exc))
         threading.Thread(target=self._watch_fleet, name="bots", daemon=True).start()
 
     def _watch_fleet(self) -> None:
@@ -754,6 +764,23 @@ class Site:
         detail["technique_card"] = {k: card[k] for k in ("title", "measures", "reading", "research")} if card else None
         detail["live"] = brief.get("live") if brief else None  # le verdict de sa stratégie en direct
         return detail
+
+    # --- le bot de tendance ---
+    def trend_view(self) -> dict:
+        """La page « Tendance » : où en est la règle, le compte fictif, l'histoire, le test de robustesse. Argent
+        fictif : la page se calcule à partir des seules bougies publiques, aucun ordre n'existe nulle part."""
+        with self.trend_lock:
+            at, page = self.trend_page
+            if page is None or time.monotonic() - at >= 10:
+                page = trend.view(self.trend_feed, self.data_dir() / trend.FOLDER, cache=self.trend_cache)
+                self.trend_page = (time.monotonic(), page)
+            return page
+
+    def trend_chart(self, raw) -> dict:
+        symbol = coin_symbol(raw)
+        if symbol not in trend.SYMBOLS:
+            raise ValueError("Le bot de tendance ne suit que le Bitcoin et l'Ether.")
+        return trend.chart_view(symbol, self.trend_feed.get(symbol))
 
     def coin_chart(self, raw, timeframe: str) -> dict:
         """Le graphique d'une crypto : ses bougies, ses supports et résistances, et ce qu'y font ses bots."""
@@ -1085,7 +1112,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
         if not self.allowed(action=False):
             return
-        page_only = url.path in ("/api/crypto-graphique", "/api/bot-graphique", "/api/actualite")
+        page_only = url.path in ("/api/crypto-graphique", "/api/bot-graphique", "/api/actualite", "/api/tendance",
+                                 "/api/tendance-graphique")
         if page_only and self.headers.get(HEADER) != HEADER_VALUE:  # elles téléchargent : seulement pour la page
             self.fail(403, "Demande refusée : elle doit venir de la page du site.")
             return
@@ -1117,6 +1145,10 @@ class Handler(BaseHTTPRequestHandler):
             self.json(school(self.site.data_dir()))
         elif url.path == "/api/actualite":
             self.json(self.site.news_view())
+        elif url.path == "/api/tendance":
+            self.json(self.site.trend_view())
+        elif url.path == "/api/tendance-graphique":
+            self.json(self.site.trend_chart(arg("c")))
         elif url.path == "/api/prix":
             data, error, updated = self.site.prices_poller.get()
             self.json({"board": data, "error": error, "updated": iso(updated)})
