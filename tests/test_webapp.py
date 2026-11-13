@@ -13,7 +13,7 @@ import pytest
 
 from tradingbot import webapp
 from tradingbot.fleet import LOCK_FILE
-from tradingbot.swarm import DETAIL_DIR
+from tradingbot.swarm import DETAIL_DIR, settings_from_env
 from tradingbot.webapp import (
     ACTIONS, FIELDS, HEADER, HEADER_VALUE, Handler, Poller, Site, TaskManager, already_running, bind, clean_value,
     coin_symbol, finite_json, steps_for, swarm_step, update_env,
@@ -166,6 +166,26 @@ def test_saved_settings_are_used_by_the_next_commands_and_secrets_never_shown(tm
     assert s.settings().telegram_token == token and "FLOTTE_CAPITAL" not in (tmp_path / ".env").read_text("utf-8")
 
 
+def test_the_securing_switch_is_saved_only_when_it_changes(tmp_path, fake_bot):
+    """La liste « oui / non » envoie toujours son choix : inchangé, rien n'est écrit et les bots ne redémarrent pas."""
+    s = site(tmp_path, fake_bot, "MODE=paper\n")
+    assert s.save_settings({"FLOTTE_SECURISATION": "oui"}) == {"saved": [], "restarted": False}  # déjà le défaut
+    assert "FLOTTE_SECURISATION" not in (tmp_path / ".env").read_text(encoding="utf-8")
+    assert s.save_settings({"FLOTTE_SECURISATION": "Non"})["saved"] == ["FLOTTE_SECURISATION"]
+    assert "FLOTTE_SECURISATION=non" in (tmp_path / ".env").read_text(encoding="utf-8")
+    assert s.save_settings({"FLOTTE_SECURISATION": "non"})["saved"] == []
+    saved = s.save_settings({"FLOTTE_SECURISATION_SEUIL": "1,5", "FLOTTE_SECURISATION_PART": "30"})
+    assert saved["saved"] == ["FLOTTE_SECURISATION_PART", "FLOTTE_SECURISATION_SEUIL"]
+    for bad in ({"FLOTTE_SECURISATION": "peut-être"}, {"FLOTTE_SECURISATION_PART": "95"}):
+        with pytest.raises(ValueError):
+            s.save_settings(bad)
+    form = {f["key"]: f for f in s.settings_form(local=True)["fields"]}
+    assert form["FLOTTE_SECURISATION"]["kind"] == "switch" and form["FLOTTE_SECURISATION"]["value"] == "non"
+    assert "prix d'entrée" in form["FLOTTE_SECURISATION"]["help"] and "R" in form["FLOTTE_SECURISATION_SEUIL"]["help"]
+    s.save_settings({f["key"]: f.get("value", "") for f in s.settings_form(local=True)["fields"]})  # tout le formulaire
+    assert "FLOTTE_SECURISATION=non" in (tmp_path / ".env").read_text(encoding="utf-8")
+
+
 def test_changing_the_bots_settings_restarts_them(tmp_path, fake_bot):
     s = site(tmp_path, fake_bot)
     s.tasks.env["FAKE_SLEEP"] = "60"
@@ -203,6 +223,13 @@ def test_the_direct_screen_always_says_where_the_bots_are():
     nothing = swarm_step({"ready": True, "totals": {"bots": 0}, "trial": {"ranking": {"strategie": rows}}}, True)
     assert "Aucun bot" in nothing["title"] and "150 stratégies sur 195 sont recalées" in nothing["text"]
     assert "pas une panne" in nothing["text"] and "action" not in nothing
+    # Les bots endormis (leur crypto a quitté la liste) ne « tournent » pas : ils sont dits à part.
+    some = swarm_step({"ready": True, "totals": {"bots": 250, "asleep": 40, "coins": 60}}, True)
+    assert some["title"] == "210 bots tournent en argent fictif" and "40 bots dorment" in some["text"]
+    one = swarm_step({"ready": True, "totals": {"bots": 2, "asleep": 1}}, True)
+    assert one["title"] == "1 bot tourne en argent fictif" and "1 bot dort en attendant le retour de sa crypto" in one["text"]
+    asleep = swarm_step({"ready": True, "totals": {"bots": 8, "asleep": 8}, "tester": {"done": 1, "queue": 0}}, True)
+    assert "teste les cryptos" in asleep["title"] and "8 bots dorment" in asleep["text"]
     assert coin_symbol("sol") == "SOL/USDT" and coin_symbol("PEPE/USDT") == "PEPE/USDT"
     for bad in ("", "../.env", "BTC/EUR", "<script>"):
         with pytest.raises(ValueError):
@@ -244,6 +271,9 @@ def test_the_site_serves_its_page_and_only_obeys_its_own_page(server):
     assert status == 200 and "Tous les bots" in page and "Les cryptos suivies" in page
     assert "<h1>Les stratégies</h1>" in page and 'href="#strategies"' in page and 'id="rank-source"' in page
     assert "La mesure à l'essai" in page and 'id="trial-facts"' in page  # toutes les combinaisons, sans rien choisir
+    # étape 1 : la sécurisation des gains comparée avec et sans, les bots endormis, les zones du graphique
+    assert "Sécurisation des gains : avec ou sans ?" in page and 'id="secure-rows"' in page
+    assert "'Endormis'" in page and "seuil de sécurisation" in page and "zone du risque" in page
     assert "gagnant sur 3 périodes" not in page and "trois périodes" not in page  # le test final ne choisit plus
     for gone in ("Radar des mouvements", "Mes essais", "Labos", "Mon trader", "Tableau de bord"):
         assert gone not in page  # retirés du site
@@ -363,6 +393,10 @@ def test_the_bots_are_listed_by_coin_and_each_has_its_page_and_chart(server, ran
     assert trial["bots"] == 780 and trial["coins"] == 1 and trial["n"] == 0 and trial["mean"] is None
     assert set(trial["ranking"]) >= {"strategie", "sortie", "sens", "unite", "min_days"} and trial["since"]
     assert view["holdout"] == {"n": 0, "coins": 0, "mean": None, "win": None}
+    secure = view["secure"]  # la sécurisation des gains : le réglage, et la comparaison avec / sans (vide au départ)
+    assert (secure["on"], secure["r"], secure["part"]) == (True, 1.0, 0.5) and secure["final"]["coins"] == 0
+    assert secure["trial"]["total"]["diff"] is None and [u["key"] for u in secure["trial"]["units"]][0] == "1m"
+    assert view["totals"]["asleep"] == 0 and all(b["secure_r"] == 1.0 and b["secure_part"] == 0.5 for b in view["bots"])
     assert view["reference"]["saved"] and view["reference"]["count"] is None  # première installation : rien avant
     assert all(b["exit"] and b["stop_mode"] in ("fixe", "suiveur", "securise") for b in view["bots"])
     assert view["totals"]["bots"] == 2 and {b["id"] for b in view["bots"]} == {short["id"], long_["id"]}
@@ -434,8 +468,22 @@ def test_the_site_keeps_the_bots_running_unless_stopped_by_hand(tmp_path, fake_b
 def test_the_bots_settings_stay_within_bounds():
     fields = {f.key: f for f in FIELDS}
     assert set(fields) == {"FLOTTE_CAPITAL", "FLOTTE_CRYPTOS", "FLOTTE_BOTS_PAR_CRYPTO", "FLOTTE_MOUVEMENT_MIN",
-                           "FLOTTE_LEVIER_SCALPING", "FLOTTE_LEVIER_COURT", "FLOTTE_LEVIER_LONG", "EXCHANGE",
-                           "TELEGRAM_TOKEN", "TELEGRAM_CHAT_ID"}
+                           "FLOTTE_LEVIER_SCALPING", "FLOTTE_LEVIER_COURT", "FLOTTE_LEVIER_LONG", "FLOTTE_SECURISATION",
+                           "FLOTTE_SECURISATION_SEUIL", "FLOTTE_SECURISATION_PART", "EXCHANGE", "TELEGRAM_TOKEN",
+                           "TELEGRAM_CHAT_ID"}
+    assert all(f.help for f in FIELDS)  # une phrase d'explication sous chaque réglage
+    # La sécurisation des gains : désactivable, seuil et part bornés.
+    switch, level, part = (fields[k] for k in ("FLOTTE_SECURISATION", "FLOTTE_SECURISATION_SEUIL",
+                                                 "FLOTTE_SECURISATION_PART"))
+    assert (switch.kind, switch.default, level.default, part.default) == ("switch", "oui", "1", "50")
+    assert [clean_value(switch, x) for x in ("Oui", "non", "NON ", "1", "0")] == ["oui", "non", "non", "oui", "non"]
+    assert clean_value(level, "1,5") == "1.5" and clean_value(part, "0") == "0.0" and clean_value(part, "90") == "90.0"
+    for field, bad in ((switch, "peut-être"), (level, "0.2"), (level, "4"), (part, "95"), (part, "-5")):
+        with pytest.raises(ValueError):
+            clean_value(field, bad)
+    assert settings_from_env({"FLOTTE_SECURISATION": clean_value(switch, "non"),
+                              "FLOTTE_SECURISATION_SEUIL": clean_value(level, "1,5"),
+                              "FLOTTE_SECURISATION_PART": clean_value(part, "30")}).security(True) == (1.5, pytest.approx(0.3))
     assert clean_value(fields["FLOTTE_LEVIER_SCALPING"], "10") == "10.0"
     assert clean_value(fields["FLOTTE_CRYPTOS"], "80") == "80"
     assert clean_value(fields["FLOTTE_BOTS_PAR_CRYPTO"], "20") == "20"

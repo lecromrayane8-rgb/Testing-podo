@@ -100,6 +100,11 @@ def study(job):
         measured = [v for k, v in trial["stats"].items() if k.startswith("unite:")]
         out.update(holdout=result["holdout"], holdout_eligible=result["holdout_eligible"],
                    trial={k: sum(v[k] for v in measured) for k in ("n", "total", "wins")})
+        if "secure" in result:  # depuis l'étape 1 : chaque combinaison est mesurée sans et avec la sécurisation des gains
+            safe = [v for k, v in trial["stats"].items() if k.startswith("avec:unite:")]
+            out.update(trial_safe={k: sum(v[k] for v in safe) for k in ("n", "total", "wins")},
+                       final_plain=result["secure"]["all"]["sans"], final_safe=result["secure"]["all"]["avec"],
+                       variant=result["secure"]["live"])
     return out
 
 
@@ -152,6 +157,13 @@ def main():
             n, mean, win = pooled(rows, "trial")
             print(f"la mesure à l'essai sur les {TRIAL_DAYS_AFTER} jours suivants (toutes les combinaisons, sans choix) : {n} "
                   f"trades, {win:.0%} gagnants, {mean:+.3%} par trade")
+        if MEASURES and "trial_safe" in rows[0]:
+            print(f"(les bots et les choix ci-dessus : variante « {rows[0]['variant']} » sécurisation des gains)")
+            for title, plain, safe in (("à l'essai", "trial", "trial_safe"),
+                                       ("sur le test final de toutes les combinaisons", "final_plain", "final_safe")):
+                (n0, m0, w0), (n1, m1, w1) = pooled(rows, plain), pooled(rows, safe)
+                print(f"sécurisation des gains, {title} : sans {m0:+.3%} par trade ({w0:.0%} gagnants, {n0} trades), "
+                      f"avec {m1:+.3%} ({w1:.0%} gagnants, {n1} trades), écart {m1 - m0:+.3%}")
     print(f"\n{time.time() - started:.0f} s")
 
 

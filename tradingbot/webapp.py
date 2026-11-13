@@ -45,12 +45,14 @@ from .broker import atomic_write
 from .config import ConfigError, Settings, parse_dotenv
 from .data import load_or_fetch, ohlcv_to_frame, timeframe_to_ms
 from .explain import read_chart
-from .fleet import FLEET_DIR, LOCK_FILE, chart_view, fleet_running, load_json as load_fleet_json
+from .fleet import (
+    FLEET_DIR, LOCK_FILE, MAX_SECURE_PART, chart_view, fleet_running, load_json as load_fleet_json,
+)
 from .knowledge import ENTRIES as KNOWLEDGE
 from .news import NewsSource, reaction
 from .prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, board_to_dict, connect, short_error, snapshot
 from .school import school
-from .swarm import DETAIL_DIR, MAX_BOTS_PER_COIN, MAX_COINS, SWARM_FILE, bot_detail
+from .swarm import DETAIL_DIR, MAX_BOTS_PER_COIN, MAX_COINS, SECURE_R_BOUNDS, SWARM_FILE, bot_detail
 
 log = logging.getLogger(__name__)
 
@@ -436,7 +438,7 @@ class Field:
     key: str
     title: str
     help: str
-    kind: str  # money, fee, exchange, secret, chat, path, profile, number, count
+    kind: str  # money, fee, exchange, secret, chat, path, profile, number, count, switch (oui ou non)
     default: str = ""  # ce que le bot utilise quand la ligne est vide
     bounds: tuple[float, float] = (0.0, 0.0)  # number et count : valeurs permises
 
@@ -456,6 +458,16 @@ FIELDS = (
           (1, 20)),
     Field("FLOTTE_LEVIER_COURT", "Levier du court terme (15 min et 1 h)", "De 1 à 20.", "number", "3", (1, 20)),
     Field("FLOTTE_LEVIER_LONG", "Levier du long terme (4 h)", "De 1 à 20.", "number", "1", (1, 20)),
+    Field("FLOTTE_SECURISATION", "Sécurisation des gains", "Quand un trade a assez avancé, le bot encaisse une part "
+          "de la position et passe le stop du reste au prix d'entrée : ce trade ne peut presque plus perdre, mais il "
+          "rapporte moins s'il s'envole. Les deux façons restent mesurées et comparées (onglet Stratégies).",
+          "switch", "oui"),
+    Field("FLOTTE_SECURISATION_SEUIL", "Sécurisation : à partir de quel gain (en R)", "De 0,5 à 3. 1 = dès que le "
+          "trade a gagné autant que ce qu'il risquait (R : la distance entre l'entrée et le stop de départ).",
+          "number", "1", SECURE_R_BOUNDS),
+    Field("FLOTTE_SECURISATION_PART", "Sécurisation : part encaissée (%)", f"De 0 à {100 * MAX_SECURE_PART:g}. 50 = "
+          "la moitié de la position est vendue au seuil ; 0 = rien n'est vendu, seul le stop passe au prix d'entrée.",
+          "number", "50", (0, 100 * MAX_SECURE_PART)),
     Field("EXCHANGE", "Plateforme des données", "Où le bot lit les prix : binance, okx, kraken, coinbase, bybit...",
           "exchange", "binance"),
     Field("TELEGRAM_TOKEN", "Telegram : token du bot", "Donné par @BotFather quand tu crées ton bot (/newbot).",
@@ -490,6 +502,13 @@ def clean_value(field: Field, raw: str) -> str:
         if not low <= number <= high:
             raise ValueError(f"{field.title} : entre {low:g} et {high:g}")
         return str(int(number)) if field.kind == "count" else repr(number)
+    if field.kind == "switch":
+        answer = value.lower()
+        if answer in ("oui", "o", "1", "true", "on", "yes"):
+            return "oui"
+        if answer in ("non", "n", "0", "false", "off", "no"):
+            return "non"
+        raise ValueError(f"{field.title} : oui ou non (reçu « {value} »)")
     if field.kind == "exchange":
         value = value.lower()
         if value not in ccxt.exchanges:
@@ -565,7 +584,11 @@ def swarm_step(data: dict, running: bool) -> dict:
                             "toutes les autres à l'essai, en argent fictif. Aucun argent réel."}
         return {"title": "Tes bots sont à l'arrêt", "action": "flotte",
                 "text": "Relance-les : ils reprennent exactement où ils en étaient (positions, capital, trades)."}
-    if not totals.get("bots"):
+    asleep = int(totals.get("asleep") or 0)
+    awake = int(totals.get("bots") or 0) - asleep
+    sleeping = (f" {asleep} bot{'s' if asleep > 1 else ''} dor{'ment' if asleep > 1 else 't'} en attendant le retour de "
+                f"{'leur' if asleep > 1 else 'sa'} crypto dans la liste.") if asleep else ""
+    if not awake:
         rows = ((data.get("trial") or {}).get("ranking") or {}).get("strategie") or []
         failed = sum(1 for r in rows if r.get("verdict") == "recalee")
         if failed and failed >= len(rows) / 2:  # ce n'est pas une panne : il faut le dire
@@ -577,14 +600,14 @@ def swarm_step(data: dict, running: bool) -> dict:
         return {"title": "Le labo en direct teste les cryptos",
                 "text": f"{tester.get('done', 0)} crypto(s) testée(s), {tester.get('queue', 0)} en attente. Chaque test "
                         "essaie des centaines de combinaisons sur l'historique récent ; un bot naît dès qu'une "
-                        "combinaison gagne, frais compris, sur l'étude et la validation. Compte quelques minutes."}
+                        f"combinaison gagne, frais compris, sur l'étude et la validation. Compte quelques minutes.{sleeping}"}
     trial = (data.get("trial") or {}).get("bots") or 0
     measured = f" {trial:,} combinaisons sont mesurées à l'essai.".replace(",", "\u202f") if trial else ""
-    return {"title": f"{totals['bots']} bots tournent en argent fictif",
+    return {"title": f"{awake} bot{'s' if awake > 1 else ''} tourne{'nt' if awake > 1 else ''} en argent fictif",
             "text": f"Sur {totals.get('coins', 0)} cryptos suivies, dont {totals.get('moving', 0)} assez agitées. "
                     f"{totals.get('positions', 0)} en position. Chaque crypto est retestée toutes les 3 heures : un bot "
-                    f"garde sa place, les places libres en reçoivent de nouveaux.{measured} Rien ne part jamais sur une "
-                    "plateforme."}
+                    f"garde sa place, les places libres en reçoivent de nouveaux.{measured}{sleeping} Rien ne part jamais "
+                    "sur une plateforme."}
 
 
 class Site:
@@ -924,13 +947,17 @@ class Site:
 
     def save_settings(self, changes: dict) -> dict:
         cleaned = {}
+        current = parse_dotenv(self.env_path)
         for key, raw in changes.items():
             field = FIELD_KEYS.get(key)
             if field is None:
                 raise ValueError(f"Ce réglage ne se change pas depuis le site : {key}")
-            if not str(raw).strip() and field.kind in ("secret", "money", "fee", "exchange", "number", "count"):
+            if not str(raw).strip() and field.kind in ("secret", "money", "fee", "exchange", "number", "count", "switch"):
                 continue  # vide : on garde la valeur actuelle (le token enregistré, ou la valeur par défaut)
-            cleaned[key] = clean_value(field, raw)
+            value = clean_value(field, raw)
+            if field.kind == "switch" and value == (current.get(key) or field.default).strip().lower():
+                continue  # une liste envoie toujours son choix : inchangé, on n'écrit rien (et les bots ne redémarrent pas)
+            cleaned[key] = value
         if not self.env_path.exists() and (self.root / ".env.example").exists():
             atomic_write(self.env_path, (self.root / ".env.example").read_text(encoding="utf-8"))
         if cleaned:

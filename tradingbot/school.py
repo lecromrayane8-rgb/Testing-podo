@@ -185,15 +185,26 @@ LESSONS = (
                   "stop touché leur coûte plusieurs pourcents. Le bot en argent réel, lui, reste à 1 %."},
          {"text": "Le stop peut aussi bouger, mais seulement dans le bon sens. Le stop suiveur monte avec le prix "
                   "(à la même distance du plus haut atteint) : il laisse courir un gain et en garde une partie quand "
-                  "le prix se retourne. Le stop sécurisé passe au prix d'entrée dès que le trade a gagné autant qu'il "
-                  "risquait : le trade ne peut presque plus perdre. En échange, ils coupent parfois un trade qui "
-                  "serait reparti : tes bots testent ces façons de sortir sur chaque crypto et gardent celle qui "
-                  "marche."},
+                  "le prix se retourne. En échange, il coupe parfois un trade qui serait reparti : tes bots testent "
+                  "cette façon de sortir sur chaque crypto, à côté des autres."},
+         {"text": "Sécuriser ses gains, c'est autre chose : quand le trade a gagné autant qu'il risquait (on dit "
+                  "+1R, R étant la distance entre l'entrée et le stop), le bot vend la moitié de la position et passe "
+                  "le stop du reste au prix d'entrée, frais compris. Ce trade ne peut alors presque plus perdre. "
+                  "Le prix à payer : s'il s'envole, il ne rapporte plus que sur la moitié restante. Sécuriser donne "
+                  "donc plus de petits gains et moins de gros : des résultats plus réguliers, pas un avantage en "
+                  "soi. Le seuil et la part se règlent (onglet Réglages), et le labo mesure les deux façons, avec "
+                  "et sans, pour que tu voies laquelle fait mieux (onglet Stratégies)."},
+         {"example": "Achat à 100 $, stop à 98 $ (R = 2 $). Le prix dépasse 102 $ : la moitié est vendue à 102 $, "
+                     "et le stop du reste monte vers 100,12 $ (le prix d'entrée plus les frais). Si le prix retombe, "
+                     "le trade finit à environ +1 % au lieu de −2 % ; s'il monte à 110 $, il rapporte +6 % au lieu "
+                     "de +10 %."},
      ],
      "remember": ["Un stop à chaque trade, décidé avant d'entrer.",
                   "Taille = capital × risque ÷ distance du stop.",
                   "1 % de risque par trade : une série de pertes ne te ruine pas.",
-                  "Un stop ne bouge que pour protéger : il monte (à l'achat), il ne recule jamais."],
+                  "Un stop ne bouge que pour protéger : il monte (à l'achat), il ne recule jamais.",
+                  "Sécuriser à +1R : la moitié encaissée, le stop du reste au prix d'entrée. Plus régulier, pas "
+                  "plus rentable en soi."],
      "quiz": [
          {"q": "Achat à 100 $, stop à 98 $. Le prix monte à 106 $. Avec un stop suiveur à 2 $ du plus haut, où est "
                "le stop ?",

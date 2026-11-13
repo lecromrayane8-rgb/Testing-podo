@@ -287,7 +287,32 @@ plusieurs journées, toutes cryptos réunies, sans choix préalable.
 
 ---
 
-## Étape 1 — Sécurisation des gains
+## Étape 0, suite — Ce qui restait d'important (fait le 13/11/2026)
+
+Demandé par l'utilisateur le 13/11 avec l'accord pour l'étape 1 (« modifie s'il y a des trucs encore à modifier sur
+l'objectif 0 »). Trois corrections, choisies parce qu'elles changent ce qu'on peut conclure :
+
+1. **Un bot dont la crypto quitte la liste s'endort au lieu d'être arrêté** (le reste de G4). Avant, un bot sans
+   position était arrêté 6 heures après la sortie de sa crypto de la liste : dans la simulation, 155 arrêts sur 158
+   venaient de là, après 1 trade. Maintenant il garde son compte et son historique, ne demande plus rien à la
+   plateforme, ne prend la place de personne, et reprend à son retour (sans rejouer son sommeil ni entrer sur un vieux
+   signal). Arrêt définitif après 30 jours sans retour. Sans cela, aucun bot n'atteindrait les 30 trades de l'étape 3.
+2. **La valeur d'une position ouverte compte les frais de sa sortie** (F4) : une position ne paraît plus un peu plus
+   belle qu'elle n'est (environ 0,07 % de la position, multiplié par le levier).
+3. **Un trade rattrapé après une coupure compte pour son vrai jour** dans le classement en direct (F1) : il ne gonfle
+   plus « aujourd'hui ».
+
+Laissé pour plus tard, et pourquoi : G3 (plus d'historique en 1 et 5 min : triplerait le calcul, à décider quand les
+mesures tourneront), G5, M1 et M2 (vrais contrats à terme, glissement et financement réels : il faut les données de
+l'étape 4), M6 (étape 2), F2, F5 à F7 (étape 3).
+
+Trouvé en route, à trancher par l'utilisateur : voir « Ce que montrent les vraies données » plus bas.
+
+---
+
+## Étape 1 — Sécurisation des gains (faite le 13/11/2026)
+
+La demande :
 
 - Break-even : quand le prix a avancé de 1R (R = distance entre l'entrée et le stop initial), le stop passe au prix
   d'entrée plus les frais aller-retour.
@@ -298,8 +323,40 @@ plusieurs journées, toutes cryptos réunies, sans choix préalable.
 
 Terminé quand : le labo compare avec et sans sécurisation sur le test final, et montre le résultat.
 
-Existant : le stop sécurisé (`stop_mode = "securise"`) fait déjà la première moitié, comme l'une des quatre sorties
-testées. Il reste la fermeture partielle (nouveau dans le moteur), les réglages, le graphique et le journal.
+### Ce qui a changé
+
+1. **Le moteur** (`fleet.Book`, le même pour le direct et le backtest). Au seuil (+1R par défaut), un ordre limite
+   encaisse la part réglée (50 %) ; à la clôture de la bougie, le stop du reste passe au prix d'entrée, frais d'un
+   aller-retour compris, et compte dès la bougie suivante. Le reste suit la règle de sortie du bot. Une position
+   reste UN trade : son résultat réunit les deux sorties (sinon on compterait deux trades, et « 30 trades » ne
+   voudrait plus rien dire).
+2. **La prudence d'abord.** Dans une bougie qui touche à la fois le stop et le seuil, on ne sait pas lequel est venu
+   en premier : le moteur compte le pire (le stop sur toute la position), comme il le fait déjà pour l'objectif.
+3. **Un réglage commun à tous les bots**, pas une sortie de plus : `FLOTTE_SECURISATION` (oui/non),
+   `FLOTTE_SECURISATION_SEUIL` (en R), `FLOTTE_SECURISATION_PART` (en %). L'ancienne quatrième sortie « objectif 2R +
+   stop sécurisé » disparaît de la grille (c'était la moitié de ce réglage) : 39 techniques × 2 sens × 3 sorties ×
+   5 unités = 1170 combinaisons. Les bots créés avant gardent leur sortie.
+4. **Le labo calcule tout deux fois**, sans et avec, sur les mêmes bougies, même si tu désactives la sécurisation
+   pour tes bots. Les deux sont comptés dans la mesure à l'essai et comparés sur le test final. L'écart est jugé sur
+   les mêmes journées (à l'essai) ou les mêmes cryptos (test final) : c'est ce qui permet de voir une petite
+   différence au milieu de journées très différentes les unes des autres.
+5. **Le site** : onglet Stratégies, tableau « Sécurisation des gains : avec ou sans ? » ; Réglages (trois lignes, une
+   phrase d'explication chacune) ; page d'un bot : zone du risque, zone visée, seuil en pointillés, « nouveau stop »,
+   un rond à chaque sécurisation, et la ligne « Sécurisation des gains » de la position ; écran Direct : une ligne par
+   sécurisation dans « Ce qui vient de se passer » (et dans le journal `data\bot.log`).
+
+### Ce qu'il faut savoir avant de lire les chiffres
+
+- **Sécuriser ne crée pas d'avantage.** Sur un marché fabriqué où il n'y a rien à gagner, le moteur rend toujours
+  exactement les frais : −0,137 % par trade sans, −0,135 % avec (test automatique, 78 000 trades). Avant frais, les
+  deux valent zéro.
+- **Le petit mieux de « avec » sur ce marché vient des frais** : la part encaissée sort par un ordre limite (0,02 %)
+  au lieu d'une sortie au marché (0,07 % avec le glissement). Soit environ +0,003 % par trade, sans rapport avec un
+  avantage.
+- **Ce que la sécurisation change vraiment, c'est la forme des résultats** : plus de trades gagnants (31,5 % au lieu
+  de 27,9 % sur ce marché), des résultats plus réguliers (dispersion 0,295 % au lieu de 0,326 %), des gros gains
+  moins gros. Sur un vrai marché, elle peut donc aider les techniques qui rendent souvent leurs gains, et pénaliser
+  celles qui vivent de quelques grands mouvements. C'est la mesure qui le dit, technique par technique.
 
 ## Étape 2 — Gestion du risque
 

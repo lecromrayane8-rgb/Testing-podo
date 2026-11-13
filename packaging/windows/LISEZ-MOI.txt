@@ -19,9 +19,10 @@ TES BOTS (argent fictif, en continu)
 2. Le labo en direct : chaque crypto est testée dès qu'elle entre dans la liste, puis toutes les 3
    heures : 39 techniques (RSI, Bollinger, cassures, moyennes mobiles, MACD, momentum, Supertrend,
    supports et résistances, impulsions, EMA 9/21, VWAP, stochastique, Keltner, ADX, Parabolic SAR,
-   Ichimoku, Heikin-Ashi...), à l'achat et à la vente à découvert, avec quatre façons de sortir (par
-   la règle, objectif 2R, stop suiveur, objectif 2R + stop sécurisé), en bougies de 1 min à 4 h : 1560
-   combinaisons par crypto, sur l'historique récent, frais compris. Une combinaison peut devenir un bot
+   Ichimoku, Heikin-Ashi...), à l'achat et à la vente à découvert, avec trois façons de sortir (par
+   la règle, objectif 2R, stop suiveur), en bougies de 1 min à 4 h : 1170 combinaisons par crypto,
+   chacune calculée deux fois (sans et avec la sécurisation des gains), sur l'historique récent, frais
+   compris. Une combinaison peut devenir un bot
    si elle gagne sur l'étude et la validation (les premiers 80 % de cet historique). Les derniers 20 %,
    le « test final », ne servent jamais à choisir : ils mesurent ce que vaut le choix. Au plus 8 bots
    par crypto : jusqu'à 480 bots (réglable jusqu'à 20 par crypto).
@@ -30,15 +31,20 @@ TES BOTS (argent fictif, en continu)
    stop touché peut coûter plusieurs pourcents de son capital, et un bot peut être liquidé. Un bot garde
    sa place d'un test à l'autre : il n'est arrêté que s'il est liquidé, à moitié ruiné ou nettement
    perdant après 20 trades (sa combinaison est alors mise de côté 24 heures), ou si sa stratégie est
-   recalée.
-   Le stop suiveur monte avec le prix (à la même distance du plus haut atteint) ; le stop sécurisé passe
-   au prix d'entrée dès que le trade a gagné autant qu'il risquait. Ils ne reculent jamais.
+   recalée. Quand sa crypto quitte la liste, il n'est plus arrêté : il s'endort avec son compte et son
+   historique, et reprend sa place à son retour (arrêté seulement après 30 jours sans retour).
+   La sécurisation des gains : quand un trade a gagné autant qu'il risquait (on dit +1R), le bot vend
+   la moitié de la position et passe le stop du reste au prix d'entrée, frais compris : ce trade ne
+   peut presque plus perdre, mais il rapporte moins s'il s'envole. Réglable et désactivable (Réglages) ;
+   le labo mesure toujours les deux façons, avec et sans. Le stop suiveur, lui, monte avec le prix (à
+   la même distance du plus haut atteint). Un stop déplacé ne recule jamais.
 4. Les agents d'analyse : pour chaque bot, dans quelles conditions sa stratégie a gagné ou perdu
    (tendance de fond, volatilité, RSI, volume, heure), ses chances de gain estimées maintenant, et
    pourquoi chaque trade a gagné ou perdu. Ce sont des mesures : un bot n'entre que sur sa règle.
 5. La mesure à l'essai : à chaque test d'une crypto, les trades de TOUTES les combinaisons sont
-   comptés, pas seulement ceux des bots choisis : jusqu'à 93 600 « bots à l'essai » (60 cryptos × 1560
-   combinaisons). Rien n'est choisi d'avance, donc la chance ne peut pas embellir cette mesure. C'est
+   comptés, pas seulement ceux des bots choisis : jusqu'à 70 200 « bots à l'essai » (60 cryptos × 1170
+   combinaisons), chacun mesuré sans et avec la sécurisation. Rien n'est choisi d'avance, donc la
+   chance ne peut pas embellir cette mesure. C'est
    elle qui juge les stratégies. Compte une demi-heure à une heure avant les premiers trades comptés,
    et 7 jours avant les premiers verdicts.
 La première fois, compte quelques minutes avant les premiers bots (le temps de tester les cryptos).
@@ -49,9 +55,13 @@ LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordina
 - Direct : la valeur de tous tes bots, leur résultat, l'humeur du marché ; « La mesure à l'essai »
   (nombre de bots à l'essai, trades comptés, gain moyen par trade, test final des choix du labo, et le
   point de référence : tes chiffres d'avant cette mesure, gardés une fois pour toutes) ; puis la liste
-  de TOUS les bots (filtres scalping, court terme, long terme, en position, en veille ; tri par
-  résultat), et le fil de ce qui vient de se passer. Touche un bot pour sa page.
-- Stratégies : deux mesures au choix. « À l'essai » : toutes les combinaisons, sur 30 jours, 7 jours ou
+  de TOUS les bots (filtres scalping, court terme, long terme, en position, en veille, endormis ; tri
+  par résultat), et le fil de ce qui vient de se passer. Touche un bot pour sa page : son graphique
+  montre la zone du risque (jusqu'au stop), la zone visée (jusqu'à l'objectif) et le seuil de
+  sécurisation en pointillés.
+- Stratégies : en haut, « Sécurisation des gains : avec ou sans ? » compare le gain moyen par trade
+  sans et avec, sur le test final et à l'essai, avec l'écart et sa fourchette. Puis deux mesures au
+  choix. « À l'essai » : toutes les combinaisons, sur 30 jours, 7 jours ou
   aujourd'hui. Une stratégie = une technique dans une unité de temps, toutes cryptos réunies. Sa
   fourchette compare les journées entre elles (mille trades le même jour ne valent pas mille preuves).
   Après 7 jours, une stratégie nettement gagnante est « prouvée » et passe en priorité ; une nettement

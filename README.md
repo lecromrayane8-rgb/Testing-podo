@@ -146,9 +146,10 @@ Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au dir
    trade et gèrent ceux en cours.
 2. **Le labo en direct** : chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures, sur
    l'historique récent (2 jours en 1 min, 7 en 5 min, 20 en 15 min, 60 en 1 h, 240 en 4 h) : 39 techniques × 2 sens ×
-   4 façons de sortir (par la règle, objectif 2R, stop suiveur, objectif 2R + stop sécurisé) × 5 unités = 1560
-   combinaisons, avec les frais des contrats à terme (0,05 % par ordre au marché,
-   0,02 % pour un objectif posé d'avance, glissement, financement toutes les 8 h compté comme un coût). L'historique est
+   3 façons de sortir (par la règle, objectif 2R, stop suiveur) × 5 unités = 1170 combinaisons, chacune simulée deux
+   fois (sans et avec la sécurisation des gains, voir le point 6), avec les frais des contrats à terme (0,05 % par
+   ordre au marché, 0,02 % pour un ordre limite posé d'avance, glissement, financement toutes les 8 h compté comme un
+   coût). L'historique est
    coupé comme au labo : étude (50 %), validation (30 %), test final (20 %). Une combinaison peut devenir un bot si
    elle gagne sur l'étude et sur la validation (frais compris), avec assez de trades et sans liquidation. **Le test
    final n'est jamais regardé pour choisir** : il mesure ce que vaut le choix, et le site l'affiche. Au plus
@@ -166,21 +167,30 @@ Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au dir
 4. **Les arrêts** : un bot garde sa place d'un test à l'autre (un classement qui bouge ne l'arrête plus) ; le test ne
    fait que rafraîchir sa fiche et remplir les places libres. Un bot liquidé, qui a perdu la moitié de son capital ou
    que le gardien juge nettement perdant après 20 trades est arrêté, et sa combinaison mise de côté 24 h ; un bot dont
-   la stratégie est recalée finit son trade puis s'arrête ; un bot sans position dont la crypto a quitté la liste
-   depuis 6 heures laisse sa place. Ses résultats restent comptés dans le bilan. Jamais un réglage changé après une
-   perte.
+   la stratégie est recalée finit son trade puis s'arrête. Ses résultats restent comptés dans le bilan. Jamais un
+   réglage changé après une perte. **Un bot dont la crypto quitte la liste n'est plus arrêté : il s'endort** (après
+   6 heures, s'il n'a pas de position). Il garde son compte et son historique, ne demande plus ni bougies ni prix, ne
+   prend la place de personne, et reprend sa place quand sa crypto revient (sans rejouer son sommeil, ni entrer sur un
+   signal donné pendant qu'il dormait). Il n'est arrêté pour de bon qu'après 30 jours sans retour. Sans cela, presque
+   aucun bot ne vivait assez longtemps pour être jugé.
 5. **Les agents d'analyse** : sur les trades du backtest de chaque bot, dans quelles conditions sa stratégie gagne ou
    perd (tendance de fond, volatilité, RSI, volume, heure de la journée), sa probabilité de gain dans les conditions
    du moment (tirée vers sa moyenne quand les cas sont peu nombreux), et après chaque trade réel, pourquoi il a gagné
    ou perdu. Des mesures, jamais des ordres : un bot n'entre que sur le signal de sa règle.
-6. **Les stops qui bougent** : le stop suiveur monte (ou descend, à la vente) à chaque clôture pour rester à la
-   distance du départ du meilleur prix atteint ; le stop sécurisé passe au prix d'entrée, frais compris, dès que le
-   trade a gagné une fois sa distance de stop. Décidés à la clôture, ils comptent dès la bougie suivante, en backtest
-   comme en direct ; ils ne reculent jamais. Ce sont des façons de sortir testées comme les autres : une crypto ne les
-   garde que si elles y gagnent.
+6. **La sécurisation des gains et les stops qui bougent** : quand un trade a gagné autant qu'il risquait (+1R, R étant
+   la distance entre l'entrée et le stop de départ ; `FLOTTE_SECURISATION_SEUIL`), le bot encaisse la moitié de la
+   position (`FLOTTE_SECURISATION_PART`, un ordre limite) et passe le stop du reste au prix d'entrée, frais d'un
+   aller-retour compris ; le reste suit la règle de sortie du bot. C'est un réglage commun à tous les bots,
+   désactivable (`FLOTTE_SECURISATION=non`). Le trade reste un seul trade : son résultat réunit les deux sorties. Le
+   stop suiveur, lui, monte (ou descend, à la vente) à chaque clôture pour rester à la distance du départ du meilleur
+   prix atteint. Un stop déplacé est décidé à la clôture et compte dès la bougie suivante, en backtest comme en
+   direct ; il ne recule jamais. Dans une bougie qui touche à la fois le stop et le seuil, le moteur compte le pire :
+   le stop. **Le labo mesure toujours les deux façons, avec et sans sécurisation**, et le site les compare (onglet
+   Stratégies) : sécuriser donne plus de petits gains et moins de gros, sans créer d'avantage tout seul.
 7. **La mesure à l'essai** (onglet Stratégies, et un encadré sur l'écran Direct) : à chaque test d'une crypto, les
-   trades de **toutes** les combinaisons sont comptés, pas seulement ceux des bots choisis : jusqu'à 60 × 1560 = 93 600
-   « bots à l'essai ». Un trade compte une seule fois, à sa fermeture, et seulement s'il a été ouvert pendant que la
+   trades de **toutes** les combinaisons sont comptés, pas seulement ceux des bots choisis : jusqu'à 60 × 1170 = 70 200
+   « bots à l'essai », chacun mesuré sans et avec la sécurisation des gains (c'est la variante que tes bots utilisent
+   qui juge les stratégies). Un trade compte une seule fois, à sa fermeture, et seulement s'il a été ouvert pendant que la
    crypto bougeait, comme un vrai bot ; quand une crypto s'arrête de bouger, ce qui est encore ouvert est compté à sa
    valeur du moment, frais de sortie compris. Rien n'est choisi d'avance : la chance ne peut pas embellir cette
    mesure. C'est elle qui juge les stratégies (une technique dans une unité de temps, toutes cryptos réunies), sur les
@@ -214,9 +224,13 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Cinq on
 - **Direct** : où en sont les bots en une phrase (et le bouton utile : les lancer, ou les arrêter), la valeur de tous
   les bots, le résultat depuis le départ (bots arrêtés compris), le nombre de bots et de positions, les trades
   terminés et l'humeur du marché ; **la mesure à l'essai** (bots à l'essai, trades comptés, gain moyen par trade et sa
-  fourchette, test final des choix du labo, point de référence) ; puis **la liste de tous les bots** (filtres par
-  horizon et par état, tri par résultat, 30 par page) ; puis le fil de ce qui vient de se passer.
-- **Stratégies** : deux mesures au choix. « À l'essai » : toutes les combinaisons, sur 30 jours, 7 jours ou
+  fourchette, test final des choix du labo, sécurisation des gains, point de référence) ; puis **la liste de tous les
+  bots** (filtres par horizon et par état, dont « Endormis » ; tri par résultat, 30 par page) ; puis le fil de ce qui
+  vient de se passer (entrées, sécurisations, sorties, sommeils et réveils).
+- **Stratégies** : d'abord **« Sécurisation des gains : avec ou sans ? »** : le gain moyen par trade sans et avec,
+  sur le test final (que le labo ne regarde jamais pour choisir) et à l'essai sur 30 jours, l'écart entre les deux et
+  sa fourchette (elle compare les cryptos ou les journées entre elles), par unité de temps et par façon de sortir.
+  Puis deux mesures au choix. « À l'essai » : toutes les combinaisons, sur 30 jours, 7 jours ou
   aujourd'hui, avec la fourchette de chaque stratégie et son verdict (prouvée, à confirmer, recalée, ou le nombre de
   jours qui manquent). « En direct » : seulement les trades des bots choisis. Puis les résultats par façon de sortir,
   par sens et par unité de temps.
@@ -226,8 +240,10 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Cinq on
   ouvertes, les trades des bots), la lecture d'un trader (tendance, RSI, taille des bougies, supports, résistances),
   son actualité et ce que le labo en direct y a testé (les combinaisons les mieux classées, gagnantes ou non).
 - **La page d'un bot** : sa règle en mots simples, sa position (prix d'entrée, stop, objectif, liquidation et levier,
-  au chiffre près), son graphique (lignes de sa technique, ses vrais trades en triangles pleins, ce que sa règle aurait
-  fait sur ces bougies en triangles vides), les agents d'analyse, son direct face à son backtest, la courbe de son
+  au chiffre près ; sa sécurisation : le seuil, puis ce qui a été encaissé et ce qui reste ouvert), son graphique
+  (lignes de sa technique, la zone du risque jusqu'au stop et la zone visée jusqu'à l'objectif, le seuil de
+  sécurisation en pointillés puis le nouveau stop, ses vrais trades en triangles pleins, ce que sa règle aurait fait
+  sur ces bougies en triangles vides, un rond à chaque sécurisation), les agents d'analyse, son direct face à son backtest, la courbe de son
   capital, chaque trade expliqué (diagnostic, analyse, leçon) et la fiche de sa technique (ce qu'elle mesure, ce qu'en
   dit la recherche).
 - **Le graphique zoomable** : molette, boutons + et −, pincement sur tablette, glisser ou ◀ ▶ pour remonter le temps,

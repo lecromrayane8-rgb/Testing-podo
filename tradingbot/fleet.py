@@ -7,7 +7,10 @@ Un bot, c'est une crypto, une technique, une unité de temps, un sens et un obje
 - l'objectif (take-profit) : sans objectif, le bot sort par sa règle ; avec, il encaisse aussi dès que le prix a
   parcouru 2 fois la distance de son stop ;
 - tout son capital à chaque trade, avec le levier de son horizon. Pour un trade dont le stop est loin, le levier est
-  réduit : le stop passe toujours avant le prix de liquidation.
+  réduit : le stop passe toujours avant le prix de liquidation ;
+- la sécurisation des gains (réglage commun à tous les bots) : quand le prix a avancé d'un seuil compté en distances
+  de stop (1R par défaut), un ordre limite encaisse une part de la position (la moitié par défaut) et, à la clôture
+  de la bougie, le stop du reste passe au prix d'entrée, frais compris. Le reste suit la règle de sortie du bot.
 
 `Book` : le compte d'un bot, bougie par bougie, avec les frais des contrats à terme et le financement ; le backtest
 (`simulate`) et le direct appellent les mêmes méthodes dans le même ordre (tests de parité). `judge` coupe l'historique
@@ -23,7 +26,7 @@ import json
 import logging
 import math
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -54,8 +57,14 @@ TARGETS = (0.0, TARGET_R)
 # compris). Décidée à la clôture de chaque bougie, elle compte dès la suivante : identique en backtest et en direct.
 STOP_MODES = ("fixe", "suiveur", "securise")
 STOP_LABELS = {"fixe": "stop fixe", "suiveur": "stop suiveur", "securise": "stop sécurisé"}
-# Les façons de sortir testées pour chaque technique et chaque sens : (objectif, gestion du stop).
-EXITS = ((0.0, "fixe"), (TARGET_R, "fixe"), (0.0, "suiveur"), (TARGET_R, "securise"))
+# Les façons de sortir testées pour chaque technique et chaque sens : (objectif, gestion du stop). L'ancienne
+# quatrième sortie (objectif 2R + stop sécurisé) est devenue un réglage commun à toutes : la sécurisation des gains.
+# Le moteur comprend toujours `securise`, pour les bots créés avant.
+EXITS = ((0.0, "fixe"), (TARGET_R, "fixe"), (0.0, "suiveur"))
+# La sécurisation des gains : au seuil (en distances de stop), une part de la position est encaissée et le stop du
+# reste passe au prix d'entrée, frais compris. Valeurs par défaut des réglages ; 0 = pas de sécurisation.
+SECURE_R, SECURE_PART = 1.0, 0.5
+MAX_SECURE_PART = 0.9  # au-delà, ce ne serait plus une sécurisation mais un objectif
 MIN_BARS = 300  # bougies au-delà de la chauffe pour juger une combinaison
 MIN_PART_TRADES = 3  # trades minimum dans l'étude et dans la validation
 MIN_TEST_TRADES = 5
@@ -125,12 +134,20 @@ class Spec:
     target_r: float = 0.0  # objectif à target_r fois la distance du stop ; 0 = sortie par la règle seulement
     leverage: float = 1.0  # levier maximum
     stop_mode: str = "fixe"  # fixe, suiveur ou securise (STOP_MODES)
+    # La sécurisation des gains, réglage commun à tous les bots (comme le levier, elle ne fait pas partie du nom du
+    # bot) : le seuil, en distances de stop (0 = aucune), et la part de la position encaissée à ce seuil.
+    secure_r: float = 0.0
+    secure_part: float = 0.0
 
     def __post_init__(self):
         if self.side not in SIDES:
             raise ValueError(f"Sens inconnu : {self.side!r}")
         if self.stop_mode not in STOP_MODES:
             raise ValueError(f"Gestion du stop inconnue : {self.stop_mode!r}")
+        if not (math.isfinite(self.secure_r) and self.secure_r >= 0):
+            raise ValueError(f"Seuil de sécurisation impossible : {self.secure_r!r}")
+        if not 0 <= self.secure_part <= MAX_SECURE_PART:
+            raise ValueError(f"Part encaissée à la sécurisation impossible : {self.secure_part!r}")
 
     @property
     def params(self) -> StrategyParams:
@@ -152,7 +169,13 @@ class Spec:
 
 def spec_from(d: dict) -> Spec:
     return Spec(**{k: d[k] for k in ("section", "symbol", "timeframe", "technique", "side", "target_r", "leverage")},
-                stop_mode=d.get("stop_mode") or "fixe")
+                stop_mode=d.get("stop_mode") or "fixe", secure_r=float(d.get("secure_r") or 0.0),
+                secure_part=float(d.get("secure_part") or 0.0))
+
+
+def with_security(spec: Spec, secure_r: float, secure_part: float) -> Spec:
+    """Le même bot, avec ces réglages de sécurisation (0 : sans)."""
+    return replace(spec, secure_r=float(secure_r), secure_part=float(secure_part) if secure_r > 0 else 0.0)
 
 
 # --- Les règles en mots ----------------------------------------------------------------------------------------------
@@ -316,7 +339,17 @@ def exit_rule(spec: Spec) -> str:
              "securise": " Son stop est sécurisé : dès que le trade a gagné une fois la distance de son stop, le stop "
                          "passe au prix d'entrée, frais compris, et le trade ne peut presque plus perdre."}[spec.stop_mode]
     return (f"Il sort à son stop (à {decimal(p.stop_atr_mult)} fois la taille moyenne d'une bougie de son prix "
-            f"d'entrée){target}, ou quand {exit_condition(p, spec.side)}{timer}.{moves}")
+            f"d'entrée){target}, ou quand {exit_condition(p, spec.side)}{timer}.{moves}{secure_rule(spec)}")
+
+
+def secure_rule(spec: Spec) -> str:
+    """La sécurisation des gains du bot, en une phrase (vide s'il n'en a pas)."""
+    if not spec.secure_r:
+        return ""
+    threshold = f"{decimal(spec.secure_r, 0 if spec.secure_r == int(spec.secure_r) else 1)} fois la distance de son stop"
+    cashed = f"il encaisse {pct(spec.secure_part, 0, False)} de sa position et " if spec.secure_part else ""
+    return (f" Sécurisation des gains : dès que le prix a avancé de {threshold}, {cashed}son stop passe au prix "
+            "d'entrée, frais compris, à la clôture de la bougie.")
 
 
 def reason_label(reason: str, side: str) -> str:
@@ -377,14 +410,25 @@ class Book:
 
     @staticmethod
     def move(pos: dict, price: float) -> float:
-        """Le gain (ou la perte) de la position si elle était fermée à ce prix, avant frais."""
-        return (1 if pos["side"] == "long" else -1) * pos["qty"] * (price - pos["price"])
+        """Le gain (ou la perte) de ce qui reste de la position si c'était fermé à ce prix, avant frais. `qty`,
+        `notional`, `margin` et `fee` restent ceux de l'entrée ; `left` est la part encore ouverte (1 tant que la
+        sécurisation n'a rien encaissé)."""
+        return (1 if pos["side"] == "long" else -1) * pos["qty"] * pos.get("left", 1.0) * (price - pos["price"])
 
     def equity(self, mark: float | None = None) -> float:
         pos = self.s["position"]
         if pos is None or not mark:
             return self.s["cash"]
         return self.s["cash"] + self.move(pos, mark)
+
+    def value(self, mark: float | None = None) -> float:
+        """Ce que vaudrait le compte si la position était fermée maintenant, au marché : `equity` moins les frais et
+        le glissement de cette sortie. C'est ce que le site affiche (une position ouverte ne paraît pas plus belle
+        qu'elle n'est) ; le suivi de la pire baisse garde `equity`, comme le backtest."""
+        pos = self.s["position"]
+        if pos is None or not mark:
+            return self.s["cash"]
+        return self.equity(mark) - pos["qty"] * pos.get("left", 1.0) * mark * (self.ex.fee_rate + self.ex.slippage)
 
     def leverage_for(self, risk: float) -> float:
         """Le levier de l'équipe, réduit pour un stop lointain : le stop passe toujours avant la liquidation."""
@@ -435,12 +479,20 @@ class Book:
                "notional": notional, "margin": margin, "leverage": leverage, "fee": fee, "stop": stop, "stop0": stop,
                "distance": distance, "target": target, "liquidation": liquidation, "risk": risk,
                "high": mark, "low": mark, "bars": 0}
+        if self.spec.secure_r > 0:
+            # Le seuil de sécurisation, compté comme l'objectif depuis le prix d'entrée obtenu. S'il n'est pas
+            # strictement avant l'objectif, il ne sert à rien : l'objectif ferme tout.
+            level = price + self.spec.secure_r * distance if long else price - self.spec.secure_r * distance
+            before_target = target is None or ((level < target) if long else (level > target))
+            if level > 0 and before_target:
+                pos["secure"], pos["part"] = level, float(self.spec.secure_part)
         if at:
             pos["entry_at"] = at
         s["position"] = pos
         return {"kind": "entry", **pos}
 
-    # 2. Pendant la bougie : stop d'abord (le pire), puis objectif. `o` None : un prix suivi en direct, sans saut.
+    # 2. Pendant la bougie : stop d'abord (le pire), puis sécurisation, puis objectif. `o` None : un prix suivi en
+    # direct, sans saut.
     def range_bar(self, ts: int, o: float | None, h: float, low: float, at: str | None = None) -> list[dict]:
         pos = self.s["position"]
         if pos is None:
@@ -452,15 +504,53 @@ class Book:
             mark = stop if o is None else (min(o, stop) if long else max(o, stop))
             if (mark <= liq) if long else (mark >= liq):
                 return [self._liquidate(ts, at)]
-            reason = "stop" if not pos.get("moved") else \
-                "stop suiveur" if self.spec.stop_mode == "suiveur" else "stop sécurisé"
+            kind = pos.get("stop_kind") or ("suiveur" if self.spec.stop_mode == "suiveur" else "securise")
+            reason = "stop" if not pos.get("moved") else "stop suiveur" if kind == "suiveur" else "stop sécurisé"
             return [self._close(ts, self._fill(mark, False), mark, reason, self.ex.fee_rate, True, at)]
         if (low <= liq) if long else (h >= liq):
             return [self._liquidate(ts, at)]
+        out = []
+        level = pos.get("secure")
+        if level is not None and not pos.get("secured") and ((h > level) if long else (low < level)):
+            mark = level if o is None else (max(o, level) if long else min(o, level))
+            out.append(self._secure(ts, mark, at))  # ordre limite posé : une part encaissée, le reste continue
         if target is not None and ((h > target) if long else (low < target)):
             mark = target if o is None else (max(o, target) if long else min(o, target))
-            return [self._close(ts, mark, mark, "objectif", self.ex.maker_fee_rate, True, at)]  # ordre limite posé
-        return []
+            out.append(self._close(ts, mark, mark, "objectif", self.ex.maker_fee_rate, True, at))  # ordre limite posé
+        return out
+
+    def _secure(self, ts: int, mark: float, at: str | None) -> dict:
+        """Le seuil de sécurisation est dépassé : une part de la position est encaissée par un ordre limite (frais
+        maker, pas de glissement), et le stop de ce qui reste passera au prix d'entrée à la clôture de la bougie
+        (`_move_stop`). Le trade reste un seul trade : ce qui est encaissé ici est mis de côté (`banked`) et compté
+        dans son résultat quand le reste se ferme. Une part trop petite pour un ordre (ou réglée à 0) : seul le stop
+        bouge."""
+        s, pos = self.s, self.s["position"]
+        pos["secured"] = int(ts)
+        event = {"kind": "secure", "side": pos["side"], "ts": int(ts), "price": mark, "level": pos["secure"],
+                 "part": 0.0, "pnl": 0.0}
+        if at:
+            event["at"] = at
+        part = float(pos.get("part") or 0.0)
+        if part <= 0 or part * pos["notional"] < MIN_NOTIONAL:
+            return event
+        sign = 1 if pos["side"] == "long" else -1
+        qty = pos["qty"] * part
+        hours = max(ts - pos["entry_ts"], 0) / 3_600_000
+        funding = pos["notional"] * part * self.ex.funding_rate_8h * hours / 8
+        exit_fee = qty * mark * self.ex.maker_fee_rate
+        move = sign * qty * (mark - pos["price"])
+        entry_fee = pos["fee"] * part
+        s["cash"] += move - exit_fee - funding
+        pnl = move - exit_fee - funding - entry_fee
+        pos["left"] = 1.0 - part
+        pos["banked"] = {"ts": int(ts), "price": mark, "part": part, "pnl": pnl, "funding": funding,
+                         "fees": entry_fee + exit_fee + funding,
+                         "gross": part * (mark / pos["entry_mark"] - 1) * sign}
+        if at:
+            pos["banked"]["at"] = at
+        event.update(part=part, pnl=pnl)
+        return event
 
     # 3. À la clôture : les signaux.
     def close_bar(self, ts: int, close: float, entry: bool, exit_: bool, atr_value: float) -> None:
@@ -477,24 +567,29 @@ class Book:
             s["pending"] = {"kind": "entry", "atr": float(atr_value), "signal_ts": int(ts)}
 
     def _move_stop(self, pos: dict) -> None:
-        """Le stop suiveur ou sécurisé, décidé à la clôture avec le meilleur prix atteint (plus haut ou plus bas des
-        bougies terminées) : il compte dès la bougie suivante, et ne recule jamais."""
+        """Le stop qui bouge, décidé à la clôture avec ce que les bougies terminées ont montré : il compte dès la
+        bougie suivante, et ne recule jamais. Suiveur : à la distance du départ du meilleur prix atteint. Sécurisé :
+        au prix d'entrée, frais d'un aller-retour compris, une fois le seuil de sécurisation dépassé (`secured`),
+        ou, pour un bot d'avant (`stop_mode` securise), une fois le trade monté d'une distance de stop. Quand les
+        deux s'appliquent, le plus protecteur gagne ; `stop_kind` retient lequel, pour le motif de la sortie."""
         mode = self.spec.stop_mode
-        if mode == "fixe":
-            return
         long = pos["side"] == "long"
         distance = pos.get("distance") or abs(pos["price"] - pos.get("stop0", pos["stop"]))
         best = pos["high"] if long else pos["low"]
+        candidates = []
         if mode == "suiveur":
-            new = best - distance if long else best + distance
-        else:
-            if (best - pos["entry_mark"] if long else pos["entry_mark"] - best) < distance:
-                return
+            candidates.append((best - distance if long else best + distance, "suiveur"))
+        if pos.get("secured") or (mode == "securise"
+                                  and (best - pos["entry_mark"] if long else pos["entry_mark"] - best) >= distance):
             cost = 2 * self.ex.fee_rate + self.ex.slippage  # au prix d'entrée, frais d'un aller-retour compris
-            new = pos["price"] * (1 + cost) if long else pos["price"] * (1 - cost)
+            candidates.append((pos["price"] * (1 + cost) if long else pos["price"] * (1 - cost), "securise"))
+        if not candidates:
+            return
+        new, kind = max(candidates, key=lambda c: c[0]) if long else min(candidates, key=lambda c: c[0])
         if (new > pos["stop"]) if long else (new < pos["stop"]):
             pos["stop"] = new
             pos["moved"] = int(pos.get("moved") or 0) + 1
+            pos["stop_kind"] = kind
 
     def _mark(self, equity: float) -> None:
         s = self.s
@@ -505,20 +600,26 @@ class Book:
     def _close(self, ts: int, fill: float, mark: float, reason: str, fee_rate: float, during: bool,
                at: str | None) -> dict:
         s, pos = self.s, self.s["position"]
+        left, banked = pos.get("left", 1.0), pos.get("banked") or {}
         hours = max(ts - pos["entry_ts"], 0) / 3_600_000
-        funding = pos["notional"] * self.ex.funding_rate_8h * hours / 8  # compté comme un coût dans les deux sens
-        exit_fee = pos["qty"] * fill * fee_rate
+        funding = pos["notional"] * left * self.ex.funding_rate_8h * hours / 8  # un coût dans les deux sens
+        exit_fee = pos["qty"] * left * fill * fee_rate
         move = self.move(pos, fill)
         s["cash"] += move - exit_fee - funding
-        pnl = move - exit_fee - funding - pos["fee"]
-        return self._record(ts, pos, fill, mark, reason, pnl, pos["fee"] + exit_fee + funding, funding, during, at)
+        # Le résultat du trade entier : ce qui reste, plus ce que la sécurisation avait déjà encaissé.
+        pnl = move - exit_fee - funding - pos["fee"] * left + banked.get("pnl", 0.0)
+        fees = pos["fee"] * left + exit_fee + funding + banked.get("fees", 0.0)
+        return self._record(ts, pos, fill, mark, reason, pnl, fees, funding + banked.get("funding", 0.0), during, at)
 
     def _liquidate(self, ts: int, at: str | None) -> dict:
-        """Le prix a atteint le seuil de liquidation : toute la mise du trade (le capital du bot) est perdue."""
+        """Le prix a atteint le seuil de liquidation : toute la mise encore en jeu est perdue (le capital du bot, moins
+        ce que la sécurisation avait déjà encaissé et libéré)."""
         s, pos = self.s, self.s["position"]
-        s["cash"] = 0.0
-        trade = self._record(ts, pos, pos["liquidation"], pos["liquidation"], "liquidation", -pos["margin"],
-                             pos["margin"], 0.0, True, at)
+        left, banked = pos.get("left", 1.0), pos.get("banked") or {}
+        s["cash"] = 0.0 if left >= 1.0 else max(0.0, s["cash"] - left * (pos["margin"] - pos["fee"]))
+        trade = self._record(ts, pos, pos["liquidation"], pos["liquidation"], "liquidation",
+                             -pos["margin"] * left + banked.get("pnl", 0.0),
+                             pos["margin"] * left + banked.get("fees", 0.0), banked.get("funding", 0.0), True, at)
         s["dead"] = "liquidé"
         return trade
 
@@ -526,15 +627,25 @@ class Book:
         s = self.s
         long = pos["side"] == "long"
         net = pnl / pos["notional"]
+        banked = pos.get("banked")
         trade = {k: pos[k] for k in ("side", "entry_ts", "entry_mark", "price", "qty", "notional", "margin", "leverage",
                                      "stop", "target", "liquidation", "risk")}
         trade["stop0"] = pos.get("stop0", pos["stop"])  # le stop du départ (le stop suiveur ou sécurisé a pu bouger)
+        # Avant frais : le mouvement du prix entre l'entrée et la sortie ; avec une part encaissée plus tôt, la
+        # moyenne des deux sorties, chacune pour sa part.
+        gross = (mark / pos["entry_mark"] - 1) * (1 if long else -1) * pos.get("left", 1.0) \
+            + (banked["gross"] if banked else 0.0)
         trade.update(
             exit_ts=int(ts), exit_mark=mark, exit_price=fill, reason=reason, pnl=pnl, net=net, roi=pnl / pos["margin"],
-            gross=(mark / pos["entry_mark"] - 1) * (1 if long else -1), fees=fees / pos["notional"], funding=funding,
+            gross=gross, fees=fees / pos["notional"], funding=funding,
             mfe=pos["high"] / pos["entry_mark"] - 1 if long else 1 - pos["low"] / pos["entry_mark"],
             mae=pos["low"] / pos["entry_mark"] - 1 if long else 1 - pos["high"] / pos["entry_mark"],
             bars=int(pos["bars"] + (1 if during else 0)), equity=s["cash"])
+        if pos.get("secured"):  # la sécurisation de ce trade : quand, à quel prix, quelle part, pour combien
+            trade["secured"] = {"ts": pos["secured"], "price": banked["price"] if banked else pos.get("secure"),
+                                "part": banked["part"] if banked else 0.0, "pnl": banked["pnl"] if banked else 0.0}
+            if banked and banked.get("at"):
+                trade["secured"]["at"] = banked["at"]
         if pos.get("entry_at"):
             trade["entry_at"] = pos["entry_at"]
         if pos.get("context"):
@@ -544,7 +655,8 @@ class Book:
         if self.explain:
             trade["diagnosis"] = diagnose({"reason": reason, "net": net, "gross": trade["gross"], "mfe": trade["mfe"],
                                            "mae": trade["mae"], "risk": pos["risk"], "fees": trade["fees"],
-                                           "bars": trade["bars"], "family": self.spec.family if long else ""})
+                                           "bars": trade["bars"], "family": self.spec.family if long else "",
+                                           "secured": trade.get("secured")})
         s["trades"].append(trade)
         if self.keep:
             del s["trades"][:-self.keep]
@@ -675,13 +787,19 @@ def _position_view(book: Book, last: float | None) -> dict | None:
     if pos is None:
         return None
     mark = last or pos["entry_mark"]
-    equity = book.equity(mark)
+    value = book.value(mark)  # si le bot fermait maintenant : frais de sortie compris
+    banked = pos.get("banked") or {}
     return {**{k: pos[k] for k in ("side", "entry_ts", "entry_mark", "price", "notional", "margin", "leverage", "stop",
                                     "target", "liquidation", "risk", "bars")},
             "stop0": pos.get("stop0", pos["stop"]), "moved": int(pos.get("moved") or 0),
-            "stop_mode": book.spec.stop_mode,
+            "stop_mode": book.spec.stop_mode, "stop_kind": pos.get("stop_kind"),
+            # la sécurisation : son seuil, la part qu'elle encaisse, si c'est fait, ce qui reste ouvert, ce qui est acquis
+            "secure": pos.get("secure"), "part": pos.get("part"), "secured": bool(pos.get("secured")),
+            "secured_ts": pos.get("secured") or None,
+            "left": pos.get("left", 1.0), "banked": banked.get("pnl"), "banked_price": banked.get("price"),
+            "banked_at": banked.get("at") or (_iso(banked["ts"]) if banked else None),
             "entry_at": pos.get("entry_at") or _iso(pos["entry_ts"]), "last": mark,
-            "pnl": equity - pos["margin"], "roi": equity / pos["margin"] - 1 if pos["margin"] else None,
+            "pnl": value - pos["margin"], "roi": value / pos["margin"] - 1 if pos["margin"] else None,
             "move": (mark / pos["entry_mark"] - 1) * (1 if pos["side"] == "long" else -1)}
 
 
@@ -781,7 +899,8 @@ def chart_view(df: pd.DataFrame, slot: dict, ex: ExecutionParams = FUTURES, show
     if len(df) > p.warmup_bars + 2:
         sim = simulate(df, spec, CAPITAL, ex)
         rule = [{"side": t["side"], "entry": t["entry_ts"], "exit": t["exit_ts"], "net": t["net"],
-                 "reason": t["reason"], "entry_price": t["price"], "exit_price": t["exit_price"]}
+                 "reason": t["reason"], "entry_price": t["price"], "exit_price": t["exit_price"],
+                 "secured": (t.get("secured") or {}).get("ts")}
                 for t in sim.s["trades"] if t["exit_ts"] >= first and t["reason"] != "fin du test"]
         open_now = sim.position
     else:
@@ -791,7 +910,8 @@ def chart_view(df: pd.DataFrame, slot: dict, ex: ExecutionParams = FUTURES, show
         sig = signals_for(df, p, spec.side)
         signal = {"entry": bool(sig.entry[-1]), "exit": bool(sig.exit[-1])}
     trades = [{"side": t["side"], "entry": t["entry_ts"], "exit": t["exit_ts"], "net": t["net"], "roi": t["roi"],
-               "reason": t["reason"], "entry_price": t["price"], "exit_price": t["exit_price"]}
+               "reason": t["reason"], "entry_price": t["price"], "exit_price": t["exit_price"],
+               "secured": (t.get("secured") or {}).get("ts")}
               for t in bot["book"]["trades"] if t["exit_ts"] >= first]
     book = Book(spec, state=bot["book"])
     return {"slot": slot["slot"], "symbol": spec.symbol, "timeframe": spec.timeframe, "last": last,

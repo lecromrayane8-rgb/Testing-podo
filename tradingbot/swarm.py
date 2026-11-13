@@ -5,16 +5,19 @@ Comment il travaille, sans jamais s'arrêter :
    sans monnaies stables ni tokens à levier). Une crypto qui sort de la liste, ou dont l'amplitude sur 24 h tombe sous
    le seuil (« pas assez de mouvement »), passe en veille : ses bots n'ouvrent plus de trade, ils gèrent ceux en cours.
 2. Le labo en direct : chaque crypto est retestée toutes les 3 heures, et dès qu'elle entre dans la liste. Toutes les
-   techniques de la bibliothèque, à l'achat et à la vente à découvert, avec quatre façons de sortir (par la règle,
-   objectif 2R, stop suiveur, objectif 2R + stop sécurisé), sur cinq unités de temps (1 min à 4 h), sur l'historique
-   récent, frais des contrats à terme compris. Une combinaison peut devenir un bot si elle gagne sur l'étude et sur
-   la validation, avec assez de trades. Le test final (les derniers 20 % de l'historique) n'est jamais regardé pour
-   choisir : il mesure ce que vaut le choix. Au plus K bots par crypto, des techniques et des unités variées. Les
-   tests tournent à part (un fil pour télécharger, un processus pour calculer) : le direct n'attend jamais.
+   techniques de la bibliothèque, à l'achat et à la vente à découvert, avec trois façons de sortir (par la règle,
+   objectif 2R, stop suiveur), sur cinq unités de temps (1 min à 4 h), sur l'historique récent, frais des contrats à
+   terme compris. Chaque combinaison est simulée deux fois : sans et avec la sécurisation des gains (au seuil, une
+   part de la position est encaissée et le stop du reste passe au prix d'entrée). Une combinaison peut devenir un bot
+   si elle gagne sur l'étude et sur la validation, avec assez de trades. Le test final (les derniers 20 % de
+   l'historique) n'est jamais regardé pour choisir : il mesure ce que vaut le choix. Au plus K bots par crypto, des
+   techniques et des unités variées. Les tests tournent à part (un fil pour télécharger, un processus pour
+   calculer) : le direct n'attend jamais.
 3. Les bots : le même moteur que le backtest (fleet.Book), avec tout leur capital fictif à chaque trade et le levier
    de leur horizon, réduit si le stop est loin. Un bot garde sa place d'un test à l'autre (un classement qui bouge ne
    l'arrête plus) : il n'est arrêté que s'il est liquidé, à moitié ruiné, nettement perdant après 20 trades (sa
-   combinaison est alors mise de côté 24 h), ou si sa stratégie est recalée.
+   combinaison est alors mise de côté 24 h), ou si sa stratégie est recalée. Quand sa crypto quitte la liste, il
+   s'endort (compte et historique gardés) et reprend sa place à son retour.
 4. Les agents : pour chaque bot, dans quelles conditions sa stratégie a gagné ou perdu dans le backtest (tendance de
    fond, volatilité, RSI, volume, heure), sa probabilité de gain dans les conditions du moment, et après chaque trade
    réel, pourquoi il a gagné ou perdu. Ce sont des mesures, jamais des ordres : un bot n'entre que sur le signal de sa
@@ -57,13 +60,13 @@ from .data import fetch_history, ohlcv_to_frame, timeframe_to_ms
 from .execution import FUTURES, ExecutionParams
 from .explain import pct, price as fmt_price, read_chart
 from .fleet import (
-    EXITS, LOCK_FILE, MIN_PART_TRADES, SIDE_HINTS, SIDE_LABELS, SIDES, Book, Spec, _iso, _position_view, condition,
-    entry_rule, exit_rule, finite, load_json, lookback_for, save_json, signals_for, simulate, spec_from, technique,
-    tf_label,
+    EXITS, LOCK_FILE, MAX_SECURE_PART, MIN_PART_TRADES, SECURE_PART, SECURE_R, SIDE_HINTS, SIDE_LABELS, SIDES, Book,
+    Spec, _iso, _position_view, condition, entry_rule, exit_rule, finite, load_json, lookback_for, save_json,
+    signals_for, simulate, spec_from, technique, tf_label, with_security,
 )
 from .indicators import atr, rsi, sma
 from .notify import ALERT
-from .risk import TradeStats, clustered_bounds, elimination_reason
+from .risk import TradeStats, clustered_bounds, elimination_reason, paired_bounds
 from .scanner import liquid_markets
 
 log = logging.getLogger(__name__)
@@ -96,7 +99,9 @@ UNIVERSE_EVERY_S = 600
 RETEST_S = 3 * 3600
 FIRST_RETEST_S = 1800  # le deuxième test d'une crypto vient vite : c'est lui qui compte ses premiers trades à l'essai
 BAN_S = 24 * 3600
-UNFOLLOWED_S = 6 * 3600  # une crypto sortie de la liste depuis 6 h : ses bots sans position laissent leur place
+UNFOLLOWED_S = 6 * 3600  # une crypto sortie de la liste depuis 6 h : ses bots sans position s'endorment
+ASLEEP_DAYS = 30  # un bot endormi dont la crypto n'est pas revenue dans la liste en 30 jours est arrêté pour de bon
+MAX_ASLEEP = 1000  # bots endormis gardés au plus : au-delà, ceux qui dorment depuis le plus longtemps sont arrêtés
 RETEST_TIMEOUT_S = 900  # un test dure quelques secondes : au-delà, le processus de calcul est remplacé
 CHECKPOINT_S = 600
 MOOD_EVERY_S = 3600
@@ -116,6 +121,11 @@ STRETCH_GAP_S = 1800  # sans nouvelles depuis 30 min (PC éteint), on ne sait pl
 CLOSE_DELAY_S = 3600  # une crypto qui ne bouge plus : sa mesure à l'essai est close une heure après, si elle n'a pas repris
 KEEP_STRETCHES = 200
 SYNC_EVERY_S = 600  # l'heure de la plateforme est redemandée toutes les 10 minutes
+# La sécurisation des gains : chaque combinaison est mesurée « sans » et « avec ». Les lignes de la mesure à l'essai
+# de la variante « avec » portent ce préfixe ; celles de la variante « sans » gardent leur nom d'avant.
+VARIANTS = ("sans", "avec")
+SAFE = "avec:"
+SECURE_R_BOUNDS = (0.5, 3.0)
 
 
 @dataclass(frozen=True)
@@ -127,6 +137,10 @@ class SwarmSettings:
     coins: int = 60  # les cryptos qui bougent le plus
     bots_per_coin: int = 8
     min_move: float = 0.03  # amplitude sur 24 h en dessous de laquelle une crypto est en veille
+    # La sécurisation des gains : les bots l'appliquent si `secure` ; le labo mesure toujours les deux variantes.
+    secure: bool = True
+    secure_r: float = SECURE_R  # le seuil, en distances de stop (1 = quand le trade a gagné ce qu'il risquait)
+    secure_part: float = SECURE_PART  # la part de la position encaissée au seuil (0 = le stop seulement)
 
     def __post_init__(self):
         if not 10 <= self.capital <= 1e9:
@@ -139,6 +153,11 @@ class SwarmSettings:
                              f"{MAX_BOTS_PER_COIN}")
         if not 0 <= self.min_move <= 0.5:
             raise ValueError("FLOTTE_MOUVEMENT_MIN doit être entre 0 et 50 (en %)")
+        if not SECURE_R_BOUNDS[0] <= self.secure_r <= SECURE_R_BOUNDS[1]:
+            raise ValueError(f"FLOTTE_SECURISATION_SEUIL doit être entre {SECURE_R_BOUNDS[0]:g} et "
+                             f"{SECURE_R_BOUNDS[1]:g} (en distances de stop : 1 = +1R)")
+        if not 0 <= self.secure_part <= MAX_SECURE_PART:
+            raise ValueError(f"FLOTTE_SECURISATION_PART doit être entre 0 et {100 * MAX_SECURE_PART:g} (en %)")
 
     def leverage(self, timeframe: str) -> float:
         return {"long": self.leverage_long, "court": self.leverage_court,
@@ -148,11 +167,31 @@ class SwarmSettings:
     def max_bots(self) -> int:
         return self.coins * self.bots_per_coin
 
+    @property
+    def variant(self) -> str:
+        """La variante que les bots utilisent : « avec » ou « sans » sécurisation des gains."""
+        return "avec" if self.secure else "sans"
+
+    def security(self, on: bool | None = None) -> tuple[float, float]:
+        """Le seuil et la part d'une variante (celle des bots par défaut) : (0, 0) sans sécurisation."""
+        return (self.secure_r, self.secure_part) if (self.secure if on is None else on) else (0.0, 0.0)
+
 
 def settings_from_env(environ: dict[str, str]) -> SwarmSettings:
-    """FLOTTE_CAPITAL, FLOTTE_LEVIER_LONG/COURT/SCALPING, FLOTTE_CRYPTOS, FLOTTE_BOTS_PAR_CRYPTO et FLOTTE_MOUVEMENT_MIN
-    (en %) dans .env ; absents : les valeurs par défaut."""
+    """FLOTTE_CAPITAL, FLOTTE_LEVIER_LONG/COURT/SCALPING, FLOTTE_CRYPTOS, FLOTTE_BOTS_PAR_CRYPTO, FLOTTE_MOUVEMENT_MIN
+    (en %), FLOTTE_SECURISATION (oui ou non), FLOTTE_SECURISATION_SEUIL (en distances de stop) et
+    FLOTTE_SECURISATION_PART (en %) dans .env ; absents : les valeurs par défaut."""
     d = SwarmSettings()
+
+    def switch(name, default):
+        raw = (environ.get(name) or "").strip().lower()
+        if not raw:
+            return default
+        if raw in ("oui", "o", "1", "true", "on", "yes"):
+            return True
+        if raw in ("non", "n", "0", "false", "off", "no"):
+            return False
+        raise ValueError(f"{name} doit être oui ou non (reçu : {raw!r})")
 
     def num(name, default, kind=float):
         raw = (environ.get(name) or "").strip().replace(",", ".")
@@ -169,7 +208,10 @@ def settings_from_env(environ: dict[str, str]) -> SwarmSettings:
                          leverage_scalping=num("FLOTTE_LEVIER_SCALPING", d.leverage_scalping),
                          coins=num("FLOTTE_CRYPTOS", d.coins, int),
                          bots_per_coin=num("FLOTTE_BOTS_PAR_CRYPTO", d.bots_per_coin, int),
-                         min_move=num("FLOTTE_MOUVEMENT_MIN", 100 * d.min_move) / 100)
+                         min_move=num("FLOTTE_MOUVEMENT_MIN", 100 * d.min_move) / 100,
+                         secure=switch("FLOTTE_SECURISATION", d.secure),
+                         secure_r=num("FLOTTE_SECURISATION_SEUIL", d.secure_r),
+                         secure_part=num("FLOTTE_SECURISATION_PART", 100 * d.secure_part) / 100)
 
 
 def bot_id(key: str) -> str:
@@ -431,7 +473,8 @@ class Harvest:
     des bots choisis. Un trade est compté une seule fois, au test qui suit sa fermeture (`done` : la dernière bougie
     du test précédent, par unité), et seulement s'il a été ouvert pendant que la crypto bougeait (`active`), comme un
     vrai bot. La position encore ouverte attend sa fermeture ; au dernier test d'une crypto qui ne bouge plus
-    (`final`), elle est comptée à sa valeur du moment, frais de sortie compris."""
+    (`final`), elle est comptée à sa valeur du moment, frais de sortie compris. Chaque combinaison est comptée dans
+    deux séries de lignes : sans sécurisation des gains (les noms de toujours) et avec (préfixe `SAFE`)."""
 
     def __init__(self, trial: dict):
         self.since = {tf: int(ts) for tf, ts in (trial.get("done") or {}).items()}
@@ -444,7 +487,9 @@ class Harvest:
     def watched(self, ts: int) -> bool:
         return any(a <= ts <= b for a, b in self.active)
 
-    def add(self, spec: Spec, trades: list[dict]) -> None:
+    def add(self, spec: Spec, trades: list[dict], prefix: str = "", tally: bool = True) -> None:
+        """Les trades d'une combinaison, dans la série `prefix`. `tally` : cette variante est celle des bots, ses
+        positions ouvertes et ses trades comptent dans les totaux `open` et `counted` montrés sur le site."""
         since = self.since.get(spec.timeframe, 0)
         for t in reversed(trades):
             still_open = t["reason"] == "fin du test"
@@ -453,18 +498,19 @@ class Harvest:
             if not self.watched(t["entry_ts"]):
                 continue
             if still_open and not self.final:
-                self.open += 1
+                self.open += int(tally)
                 continue
-            self._count(spec, t)
+            self._count(spec, t, prefix, tally)
 
-    def _count(self, spec: Spec, t: dict) -> None:
+    def _count(self, spec: Spec, t: dict, prefix: str = "", tally: bool = True) -> None:
         net = float(t["net"])
         if not math.isfinite(net):
             return
         day = _iso(t["exit_ts"])[:10]
         in_r = net / t["risk"] if t.get("risk") else 0.0
-        for key in stat_keys(spec) + (detail_key(spec),):
-            rec = self.stats.setdefault(key, new_record(days=not key.startswith("detail:")))
+        for name in stat_keys(spec) + (detail_key(spec),):
+            key = prefix + name
+            rec = self.stats.setdefault(key, new_record(days=not name.startswith("detail:")))
             rec["n"] += 1
             rec["total"] += net
             rec["total_sq"] += net * net
@@ -474,7 +520,7 @@ class Harvest:
             if "days" in rec:
                 d = rec["days"].setdefault(day, [0, 0.0, 0])
                 d[0], d[1], d[2] = d[0] + 1, d[1] + net, d[2] + int(net > 0)
-        self.counted += 1
+        self.counted += int(tally)
 
     def result(self) -> dict:
         return {"done": self.done, "stats": self.stats, "open": self.open, "counted": self.counted, "final": self.final}
@@ -482,8 +528,17 @@ class Harvest:
 
 def _holdout(rows: list[dict]) -> dict:
     """Le test final de ces combinaisons, réuni : il n'a pas servi à les choisir."""
-    return {"n": sum(r["test_n"] for r in rows), "total": sum(r["test_total"] for r in rows),
-            "total_sq": sum(r["test_sq"] for r in rows), "wins": sum(r["test_wins"] for r in rows)}
+    out = {"n": 0, "total": 0.0, "total_sq": 0.0, "wins": 0}
+    for r in rows:
+        _add_holdout(out, r)
+    return out
+
+
+def _add_holdout(into: dict, r: dict) -> None:
+    into["n"] += r["test_n"]
+    into["total"] += r["test_total"]
+    into["total_sq"] += r["test_sq"]
+    into["wins"] += r["test_wins"]
 
 
 def retest_coin(symbol: str, frames: dict[str, pd.DataFrame], settings: dict, banned: tuple[str, ...] = (),
@@ -492,13 +547,20 @@ def retest_coin(symbol: str, frames: dict[str, pd.DataFrame], settings: dict, ba
     """Toutes les combinaisons sur une crypto : le travail d'un re-test (envoyé à un processus à part). `verdicts` :
     ce que la mesure à l'essai a appris de chaque stratégie (prouvée, recalée). `keep` : les fiches des bots déjà en
     place sur cette crypto ; ils gardent leur place, le test ne choisit que de quoi remplir les places libres.
-    `trial` : la mesure à l'essai (voir Harvest)."""
+    `trial` : la mesure à l'essai (voir Harvest).
+
+    Chaque combinaison est simulée deux fois sur les mêmes signaux : sans sécurisation des gains, et avec (le seuil et
+    la part des réglages). La variante que les bots utilisent fournit les lignes qui servent à choisir ; les deux
+    sont comptées dans la mesure à l'essai, et comparées sur le test final (`secure`)."""
     s = SwarmSettings(**settings)
     verdicts = verdicts or {}
-    kept_keys = {spec_from(d).key for d in keep}
+    kept = {spec.key: spec for spec in (spec_from(d) for d in keep)}
+    live = s.variant
     harvest = Harvest(trial) if trial is not None else None
     rows, books, feats = [], {}, {}
     eligible: set[str] = set()
+    grid: set[str] = set()  # les combinaisons de la bibliothèque (un bot d'avant peut avoir une sortie qui n'y est plus)
+    compare = {scope: {v: _holdout([]) for v in VARIANTS} for scope in ("all", "eligible")}
     for tf, df in frames.items():
         if df is None or len(df) < MIN_BARS:
             continue
@@ -515,17 +577,32 @@ def retest_coin(symbol: str, frames: dict[str, pd.DataFrame], settings: dict, ba
             for side in SIDES:
                 try:
                     sig = signals_for(df, params, side)
-                    for target, mode in EXITS:
-                        spec = Spec(TEAMS[tf], symbol, tf, name, side, target, s.leverage(tf), mode)
-                        book = simulate(df, spec, s.capital, ex, sig)
-                        row = judge_row(book, start, end)
-                        rows.append(row)
-                        if harvest is not None:
-                            harvest.add(spec, book.s["trades"])
-                        if _eligible(row, tf):
-                            eligible.add(row["key"])
-                        if row["key"] in eligible or row["key"] in kept_keys:
-                            books[row["key"]] = book
+                    old = [(k.target_r, k.stop_mode) for k in kept.values()
+                           if (k.timeframe, k.technique, k.side) == (tf, name, side)
+                           and (k.target_r, k.stop_mode) not in EXITS]
+                    for target, mode in EXITS + tuple(old):
+                        in_grid = (target, mode) in EXITS
+                        base = Spec(TEAMS[tf], symbol, tf, name, side, target, s.leverage(tf), mode)
+                        pair = {}
+                        for variant in VARIANTS:
+                            spec = with_security(base, *s.security(variant == "avec"))
+                            book = simulate(df, spec, s.capital, ex, sig)
+                            pair[variant] = row = judge_row(book, start, end)
+                            if harvest is not None and in_grid:
+                                harvest.add(spec, book.s["trades"], SAFE if variant == "avec" else "", variant == live)
+                            if variant != live:
+                                continue
+                            rows.append(row)
+                            if in_grid:
+                                grid.add(row["key"])
+                            if _eligible(row, tf):
+                                eligible.add(row["key"])
+                            if row["key"] in eligible or row["key"] in kept:
+                                books[row["key"]] = book
+                        if in_grid:  # les deux variantes de la même combinaison, sur le test final
+                            for scope in ("all", "eligible") if base.key in eligible else ("all",):
+                                for variant in VARIANTS:
+                                    _add_holdout(compare[scope][variant], pair[variant])
                 except Exception as exc:  # des bougies étranges n'arrêtent jamais le test de la crypto
                     log.warning("%s %s %s : combinaison ignorée (%s)", symbol, tf, name, exc)
         if harvest is not None:
@@ -539,16 +616,20 @@ def retest_coin(symbol: str, frames: dict[str, pd.DataFrame], settings: dict, ba
                 "curve": _curve(trades, int(frames[tf]["ts"].iloc[0]), s.capital)}
 
     by_key = {r["key"]: r for r in rows}
-    taken = [by_key[k] for k in sorted(kept_keys) if k in by_key]
-    good = [r for r in rows if r["key"] in eligible and r["key"] not in banned]
+    taken = [by_key[k] for k in sorted(kept) if k in by_key]
+    tested = [r for r in rows if r["key"] in grid]
+    good = [r for r in tested if r["key"] in eligible and r["key"] not in banned]
     final = bool(trial and trial.get("final"))  # la crypto ne bouge plus : on clôt sa mesure, on ne choisit rien
-    chosen = [] if final else _choose([r for r in good if r["key"] not in kept_keys], s.bots_per_coin, verdicts, taken)
-    best = sorted(rows, key=lambda r: -r["score"] if math.isfinite(r["score"]) else 1e9)[:12]
-    return {"symbol": symbol, "tested": len(rows), "eligible": len(good), "chosen": [full(r) for r in chosen],
+    chosen = [] if final else _choose([r for r in good if r["key"] not in kept], s.bots_per_coin, verdicts, taken)
+    best = sorted(tested, key=lambda r: -r["score"] if math.isfinite(r["score"]) else 1e9)[:12]
+    return {"symbol": symbol, "tested": len(tested), "eligible": len(good), "chosen": [full(r) for r in chosen],
             "kept": [full(r) for r in taken], "final": final,
             # ce que le labo choisirait aujourd'hui, et toutes les gagnantes de l'étude et de la validation, jugés sur
             # le test final qu'ils n'ont jamais vu
             "holdout": _holdout(_choose(good, s.bots_per_coin, verdicts)), "holdout_eligible": _holdout(good),
+            # la sécurisation des gains, sur le test final : toutes les combinaisons, et celles qui peuvent devenir
+            # un bot, chacune sans et avec
+            "secure": {"live": live, "r": s.secure_r, "part": s.secure_part, **compare},
             "trial": harvest.result() if harvest is not None else None,
             "best": [{k: r[k] for k in ("timeframe", "technique", "side", "target_r", "stop_mode", "sv_n", "sv_mean",
                                         "test_n", "test_mean", "total_return", "drawdown")}
@@ -817,7 +898,9 @@ class Swarm:
         else:
             self.trial = {"version": 1, "since": _iso(now), "stats": {}}
         self.trial_dirty = True
-        self.trial_cache: tuple | None = None
+        self.trial_cache: dict[str, tuple] = {}
+        self.variant = settings.variant  # la variante que les bots utilisent : « avec » ou « sans » sécurisation
+        self.asleep_briefs: dict[str, dict] = {}  # le résumé d'un bot endormi ne change pas : calculé une fois
         self.reference = self._reference(now)
         self.bots: dict[str, dict] = {}
         if folder:
@@ -829,11 +912,35 @@ class Swarm:
                         self.bots[bot["key"]] = bot
                 except (KeyError, TypeError, ValueError) as exc:
                     log.warning("Bot %s illisible, ignoré : %s", path.name, exc)
+        self._apply_security()
         self.save()
 
     # --- outils ---
     def book(self, bot: dict) -> Book:
         return Book(spec_from(bot["spec"]), state=bot["book"], ex=self.ex, keep=KEEP_TRADES, explain=True)
+
+    def _apply_security(self) -> None:
+        """Au démarrage : la sécurisation des gains est un réglage commun. La fiche de chaque bot reçoit le seuil et
+        la part du moment (une position déjà ouverte garde ceux de son ouverture, écrits dans la position). Et si le
+        seuil ou la part ont changé, la mesure à l'essai « avec » repart de zéro : on ne mélange pas deux réglages."""
+        r, part = self.settings.security()
+        for bot in self.bots.values():
+            spec = bot["spec"]
+            if (float(spec.get("secure_r") or 0.0), float(spec.get("secure_part") or 0.0)) != (r, part):
+                spec["secure_r"], spec["secure_part"] = r, part
+                self.dirty.add(bot["key"])
+        measured = [self.settings.secure_r, self.settings.secure_part]
+        if self.trial.get("secure") != measured:
+            stale = [k for k in self.trial["stats"] if k.startswith(SAFE)]
+            for key in stale:
+                del self.trial["stats"][key]
+            for info in self.state["coins"].values():
+                info.pop("secure", None)  # le test final « avec » de l'ancien réglage ne se compare plus
+            if stale:
+                self.event("reglage", "Les réglages de la sécurisation des gains ont changé : sa mesure à l'essai "
+                           "repart de zéro (on ne mélange pas deux réglages).")
+            self.trial["secure"] = measured
+            self.trial_dirty = True
 
     def _reference(self, now_ms: int) -> dict | None:
         """Le point de référence : les chiffres du site tels qu'ils étaient au premier lancement de cette version,
@@ -864,6 +971,7 @@ class Swarm:
 
     def add_bot(self, r: dict, now_ms: int) -> dict:
         bot = new_bot(r, self.settings.capital, now_ms)
+        bot["spec"]["secure_r"], bot["spec"]["secure_part"] = self.settings.security()  # le réglage commun du moment
         self.bots[bot["key"]] = bot
         self.dirty.add(bot["key"])
         return bot
@@ -880,7 +988,7 @@ class Swarm:
         if now_ms - int(self.state.get("universe_at") or 0) >= self.universe_every * 1000:
             events += self._refresh_universe(now_ms)
         self._schedule_tests(now_ms)
-        bots = list(self.bots.values())
+        bots = [b for b in self.bots.values() if b["status"] != "endormi"]  # un bot endormi ne demande rien
         symbols = sorted({b["spec"]["symbol"] for b in bots})
         prices = self._prices(symbols) if symbols else {}
         groups: dict[tuple[str, str], list[dict]] = {}
@@ -981,6 +1089,7 @@ class Swarm:
             return []
         events = []
         active = bot["status"] == "actif"
+        woke = int(bot.get("woke") or 0)  # réveillé : pas d'entrée sur un signal donné pendant son sommeil
         sig = signals_for(closed, book.params, book.spec.side) if len(closed) >= book.params.warmup_bars else None
         prof = (bot.get("backtest") or {}).get("profile")
         now_b = buckets(now_feats, tuple(prof["cuts"]) if prof and prof.get("cuts") else None)
@@ -994,8 +1103,8 @@ class Swarm:
                                                            row_at))
             if sig is not None:
                 i = first + k
-                book.close_bar(ts, float(row.close), bool(sig.entry[i]) and active, bool(sig.exit[i]),
-                               float(sig.atr[i]))
+                book.close_bar(ts, float(row.close), bool(sig.entry[i]) and active and ts + book.tf_ms > woke,
+                               bool(sig.exit[i]), float(sig.atr[i]))
             else:
                 book.s["last_ts"] = ts
         last_ts = int(new["ts"].iloc[-1])
@@ -1027,12 +1136,21 @@ class Swarm:
                         f"{fmt_price(r['stop'])}{target}. Signal : {condition(spec.params, spec.side)}.")
                 out.append(self.event("achat" if r["side"] == "long" else "vente", text, bot=bot["id"],
                                       symbol=spec.symbol))
+            elif r["kind"] == "secure":
+                gain = f"{'+' if r['pnl'] >= 0 else '−'}{abs(r['pnl']):.2f}".replace(".", ",")
+                cashed = (f"{pct(r['part'], 0, False)} de la position encaissés à {fmt_price(r['price'])} "
+                          f"({gain} USDT, frais compris) ; " if r["part"] else "")
+                text = (f"{name} : sécurisation, le prix a dépassé {fmt_price(r['level'])}. {cashed}"
+                        f"{'le' if cashed else 'Le'} stop du reste passe au prix d'entrée, frais compris, à la clôture "
+                        "de la bougie.")
+                out.append(self.event("securisation", text, bot=bot["id"], symbol=spec.symbol))
             else:
                 trade = bot["book"]["trades"][-1] if bot["book"]["trades"] else r
                 trade["analysis"] = trade_analysis(trade, (bot.get("backtest") or {}).get("profile"))
                 self._learn(spec, r)
-                text = (f"{name} : sort à {fmt_price(r['exit_price'])} ({r['reason']}), {pct(r['roi'])} sur son capital "
-                        f"({pct(r['net'], 2)} sur la position, frais compris).")
+                secured = " après sécurisation" if (r.get("secured") or {}).get("part") else ""
+                text = (f"{name} : sort à {fmt_price(r['exit_price'])} ({r['reason']}{secured}), {pct(r['roi'])} sur son "
+                        f"capital ({pct(r['net'], 2)} sur la position, frais compris).")
                 out.append(self.event("sortie", text, bot=bot["id"], symbol=spec.symbol, roi=r["roi"]))
         return out
 
@@ -1044,7 +1162,8 @@ class Swarm:
         net = float(trade["net"])
         if not math.isfinite(net):
             return
-        day = _iso(self.time.now_ms())[:10]
+        # Le jour de la sortie du trade : un trade rattrapé après une coupure compte pour son vrai jour.
+        day = _iso(trade.get("exit_ts") or self.time.now_ms())[:10]
         live = self.state.setdefault("live", {})
         for key in stat_keys(spec):
             rec = live.setdefault(key, {"n": 0, "total": 0.0, "total_sq": 0.0, "wins": 0, "days": {}})
@@ -1073,24 +1192,28 @@ class Swarm:
             for day in [d for d in mine.get("days", {}) if d < first]:
                 del mine["days"][day]  # on juge sur les 30 derniers jours
         if trial.get("stats"):
-            self.trial_dirty, self.trial_cache = True, None
+            self.trial_dirty, self.trial_cache = True, {}
         if trial.get("final"):  # la crypto ne bouge plus : tout ce qui était ouvert a été compté
             info.update(stretches=[], trial_close=False, trial_open=0)
             info.pop("close_at", None)
 
-    def trial_view(self) -> dict:
+    def trial_view(self, variant: str | None = None) -> dict:
         """La mesure à l'essai pour le site et pour les verdicts : par stratégie, sortie, sens et unité, sur 30 jours,
         7 jours et aujourd'hui. La fourchette compare les journées entre elles (les trades d'une même journée se
         ressemblent : le marché monte ou baisse pour toutes les cryptos à la fois). Verdict d'une stratégie après
         TRIAL_MIN_DAYS journées et LIVE_MIN_TRADES trades : « recalee » si même le haut de sa fourchette à 95 % est
-        négatif, « prouvee » si le bas, durci par le nombre de stratégies comparées, est positif."""
+        négatif, « prouvee » si le bas, durci par le nombre de stratégies comparées, est positif. `variant` : sans
+        ou avec la sécurisation des gains ; par défaut celle que les bots utilisent (c'est elle qui juge)."""
+        variant = variant or self.variant
         today = _iso(self.time.now_ms())[:10]
-        if self.trial_cache and self.trial_cache[0] == today:
-            return self.trial_cache[1]
+        cached = self.trial_cache.get(variant)
+        if cached and cached[0] == today:
+            return cached[1]
         day0 = datetime.fromisoformat(today).date()
         week = {(day0 - timedelta(days=k)).isoformat() for k in range(7)}
         month = {(day0 - timedelta(days=k)).isoformat() for k in range(TRIAL_DAYS)}
-        stats = self.trial["stats"]
+        prefix = SAFE if variant == "avec" else ""
+        stats = {k[len(prefix):]: rec for k, rec in self.trial["stats"].items() if k.startswith(SAFE) == bool(prefix)}
         judged = [k for k, rec in stats.items() if k.startswith("strategie:")]
         alpha = 0.025 / max(len(judged), 1)
         out: dict[str, list] = {"strategie": [], "technique": [], "sortie": [], "sens": [], "unite": []}
@@ -1133,12 +1256,12 @@ class Swarm:
         n = sum(v[0] for v in every.values())
         mean, lo, hi = clustered_bounds([(v[0], v[1]) for v in every.values()])
         out.update(min_trades=LIVE_MIN_TRADES, min_days=TRIAL_MIN_DAYS, window_days=TRIAL_DAYS)
-        view = {"since": self.trial.get("since"), "n": n, "days": len(every),
+        view = {"since": self.trial.get("since"), "variant": variant, "n": n, "days": len(every),
                 "all": sum(rec.get("n", 0) for k, rec in stats.items() if k.startswith("unite:")),
                 "win": sum(v[2] for v in every.values()) / n if n else None, "mean": mean if n else None,
                 "lo": lo if math.isfinite(lo) else None, "hi": hi if math.isfinite(hi) else None,
                 "ranking": out, "verdicts": verdicts}
-        self.trial_cache = (today, view)
+        self.trial_cache[variant] = (today, view)
         return view
 
     def verdicts(self) -> dict[str, str]:
@@ -1247,19 +1370,65 @@ class Swarm:
             if was and not moving:
                 events.append(self.event("veille", f"{symbol.split('/')[0]} passe en veille : pas assez de mouvement "
                                          "(ou sortie de la liste des cryptos agitées).", symbol=symbol))
-        for bot in self.bots.values():
-            info = coins.get(bot["spec"]["symbol"]) or {}
-            if bot["status"] in ("actif", "veille"):
-                status = "actif" if info.get("moving") else "veille"
-                if status != bot["status"]:
-                    bot["status"] = status
-                    self.dirty.add(bot["key"])
+        events += self._sleep_and_wake(now_ms)
         waiting = self.tester is not None  # sans testeur, personne ne viendra clore la mesure à l'essai
         for symbol in [s for s, info in coins.items() if not info.get("followed")
                        and not (waiting and info.get("trial_close"))
                        and not any(b["spec"]["symbol"] == s for b in self.bots.values())]:
             del coins[symbol]  # plus suivie, plus aucun bot, mesure à l'essai close : oubliée
             self.candles.forget(symbol)
+        return events
+
+    def _sleep_and_wake(self, now_ms: int) -> list[dict]:
+        """Le statut de chaque bot d'après sa crypto. Suivie : actif si elle bouge assez, en veille sinon. Sortie de
+        la liste : en veille, puis endormi après 6 heures s'il n'a ni position ni ordre en attente. Un bot endormi
+        garde son compte et son historique, ne demande plus ni bougies ni prix, et ne compte plus dans les places.
+        Quand sa crypto revient, il se réveille et repart de la dernière bougie terminée, comme un bot neuf : rien
+        n'est rejoué sur son sommeil. Un bot en sortie (stratégie recalée) n'est pas concerné."""
+        coins = self.state["coins"]
+        slept: dict[str, int] = {}
+        woken: dict[str, int] = {}
+        for bot in self.bots.values():
+            status = bot["status"]
+            if status == "sortie":
+                continue
+            symbol = bot["spec"]["symbol"]
+            info = coins.get(symbol) or {}
+            if info.get("followed"):
+                new = "actif" if info.get("moving") else "veille"
+                if status == "endormi":
+                    bot["book"]["last_ts"] = None
+                    bot.update(woke=now_ms, signal=None, proba=None, last_price=None)
+                    bot.pop("evicted", None)
+                    self.asleep_briefs.pop(bot["key"], None)
+                    woken[symbol] = woken.get(symbol, 0) + 1
+            else:
+                idle = bot["book"]["position"] is None and bot["book"]["pending"] is None
+                gone = now_ms - int(info.get("left_at") or now_ms) >= UNFOLLOWED_S * 1000
+                new = "endormi" if status == "endormi" or (idle and gone) else "veille"
+                if new == "endormi" and status != "endormi":
+                    slept[symbol] = slept.get(symbol, 0) + 1
+            if new != status:
+                bot["status"] = new
+                self.dirty.add(bot["key"])
+        events = []
+        for symbol, n in woken.items():
+            events.append(self.event("reveil", f"{symbol.split('/')[0]} revient parmi les cryptos les plus agitées : "
+                                     f"{n} bot{'s' if n > 1 else ''} endormi{'s' if n > 1 else ''} "
+                                     f"repren{'nent leur' if n > 1 else 'd sa'} place, avec "
+                                     f"{'leur' if n > 1 else 'son'} historique.", symbol=symbol))
+        for symbol, n in slept.items():
+            events.append(self.event("sommeil", f"{symbol.split('/')[0]} n'est plus parmi les cryptos les plus agitées "
+                                     f"depuis 6 heures : {n} bot{'s' if n > 1 else ''} s'endor{'ment' if n > 1 else 't'} "
+                                     "(compte et historique gardés) jusqu'à son retour.", symbol=symbol))
+        asleep = [b for b in self.bots.values() if b["status"] == "endormi"]
+        if len(asleep) > MAX_ASLEEP:  # trop de bots endormis : ceux qui dorment depuis le plus longtemps s'arrêtent
+            asleep.sort(key=lambda b: int((coins.get(b["spec"]["symbol"]) or {}).get("left_at") or now_ms))
+            for bot in asleep[:len(asleep) - MAX_ASLEEP]:
+                bot["evicted"] = True
+        awake = {b["spec"]["symbol"] for b in self.bots.values() if b["status"] != "endormi"}
+        for symbol in {key[0] for key in self.candles.frames} - awake:
+            self.candles.forget(symbol)  # plus aucun bot éveillé : ses bougies ne sont plus gardées en mémoire
         return events
 
     @staticmethod
@@ -1356,7 +1525,7 @@ class Swarm:
                 self.dirty.add(bot["key"])
         events = []
         places = self.settings.bots_per_coin - sum(1 for b in mine if b["status"] != "sortie")
-        live = sum(1 for b in self.bots.values() if b["status"] != "sortie")
+        live = sum(1 for b in self.bots.values() if b["status"] not in ("sortie", "endormi"))
         added = 0
         for r in chosen:
             if places <= added or live >= self.settings.max_bots:
@@ -1373,7 +1542,8 @@ class Swarm:
                                      bot=bot["id"], symbol=symbol))
         info.update(status="actif" if mine or added else "aucune stratégie gagnante", tested=_iso(now_ms),
                     n_tested=result.get("tested", 0), n_eligible=result.get("eligible", 0), best=result.get("best") or [],
-                    holdout=result.get("holdout"), holdout_eligible=result.get("holdout_eligible"), error=None)
+                    holdout=result.get("holdout"), holdout_eligible=result.get("holdout_eligible"),
+                    secure=result.get("secure"), error=None)
         return events
 
     def _retire(self, now_ms: int) -> list[dict]:
@@ -1391,9 +1561,12 @@ class Swarm:
                     reason, ban = elimination_reason(TradeStats.from_dict(s["stats"]), ELIMINATE_AFTER), True
                 elif bot["status"] == "sortie":
                     reason = "sa stratégie est recalée : elle perd nettement à l'essai, toutes cryptos réunies"
-                elif now_ms - int((self.state["coins"].get(bot["spec"]["symbol"]) or {}).get("left_at") or now_ms) \
-                        >= UNFOLLOWED_S * 1000:
-                    reason = "sa crypto n'est plus parmi les plus agitées depuis 6 heures"
+                elif bot["status"] == "endormi" and bot.get("evicted"):
+                    reason = f"plus de {MAX_ASLEEP} bots endormis : ceux qui dorment depuis le plus longtemps s'arrêtent"
+                elif bot["status"] == "endormi" and now_ms - int(
+                        (self.state["coins"].get(bot["spec"]["symbol"]) or {}).get("left_at") or now_ms) \
+                        >= ASLEEP_DAYS * 86_400_000:
+                    reason = f"sa crypto n'est pas revenue parmi les plus agitées depuis {ASLEEP_DAYS} jours"
             if not reason:
                 continue
             spec = spec_from(bot["spec"])
@@ -1408,6 +1581,7 @@ class Swarm:
                 self.state["banned"][key] = now_ms + BAN_S * 1000
             del self.bots[key]
             self.dirty.discard(key)
+            self.asleep_briefs.pop(key, None)
             if self.folder:
                 try:
                     (self.folder / DETAIL_DIR / f"{bot['id']}.json").unlink()
@@ -1440,9 +1614,10 @@ class Swarm:
             return
         now = self.clock()
         checkpoint = now - self.checkpoint >= CHECKPOINT_S
+        awake = sorted(k for k, b in self.bots.items() if b["status"] != "endormi")  # un bot endormi ne change pas
         if not self.rotation:
-            self.rotation = sorted(self.bots)
-        turn = max(1, math.ceil(len(self.bots) / 100))  # à 5 secondes le tour, toutes les fiches en dix minutes
+            self.rotation = awake
+        turn = max(1, math.ceil(len(awake) / 100))  # à 5 secondes le tour, toutes les fiches en dix minutes
         again, self.rotation = self.rotation[:turn], self.rotation[turn:]
         for key in list(self.dirty) + [k for k in again if k not in self.dirty]:
             bot = self.bots.get(key)
@@ -1490,7 +1665,7 @@ class Swarm:
         """La mesure à l'essai pour le site. Un bot à l'essai : une combinaison sur une crypto qui bouge."""
         view = self.trial_view()
         moving = [c for c in self.state["coins"].values() if c.get("moving")]
-        return {**{k: view[k] for k in ("since", "n", "all", "days", "win", "mean", "lo", "hi", "ranking")},
+        return {**{k: view[k] for k in ("since", "variant", "n", "all", "days", "win", "mean", "lo", "hi", "ranking")},
                 "bots": sum(int(c.get("n_tested") or 0) for c in moving),
                 "coins": sum(1 for c in moving if c.get("n_tested")),
                 "positions": sum(int(c.get("trial_open") or 0) for c in moving)}
@@ -1503,6 +1678,61 @@ class Swarm:
         return {"n": n, "coins": len(held), "mean": sum(h["total"] for h in held) / n if n else None,
                 "win": sum(h["wins"] for h in held) / n if n else None}
 
+    def _secure_summary(self) -> dict:
+        """La sécurisation des gains, comparée honnêtement : les mêmes combinaisons, sur les mêmes marchés, sans et
+        avec. À l'essai (30 jours) : la fourchette de l'écart compare les journées entre elles. Sur le test final
+        (dernier test de chaque crypto suivie, jamais regardé pour choisir) : elle compare les cryptos entre elles.
+        L'écart est « avec − sans », par trade, frais compris."""
+        settings = self.settings
+        day0 = datetime.fromisoformat(_iso(self.time.now_ms())[:10]).date()
+        month = {(day0 - timedelta(days=k)).isoformat() for k in range(TRIAL_DAYS)}
+        stats = self.trial["stats"]
+
+        def daily(keys) -> list[list]:
+            """Par jour : trades, somme et gagnants sans, puis avec."""
+            days: dict[str, list] = {}
+            for key in keys:
+                for at, prefix in ((0, ""), (3, SAFE)):
+                    for day, v in ((stats.get(prefix + key) or {}).get("days") or {}).items():
+                        if day in month:
+                            row = days.setdefault(day, [0, 0.0, 0, 0, 0.0, 0])
+                            row[at], row[at + 1], row[at + 2] = row[at] + v[0], row[at + 1] + v[1], row[at + 2] + v[2]
+            return list(days.values())
+
+        def compare(groups: list[list]) -> dict:
+            def side(at):
+                n, total, wins = (sum(g[at + k] for g in groups) for k in range(3))
+                return {"n": n, "mean": total / n if n else None, "win": wins / n if n else None}
+
+            diff, lo, hi = paired_bounds([(g[3], g[4], g[0], g[1]) for g in groups])
+            return {"sans": side(0), "avec": side(3), "groups": len(groups),
+                    **{k: v if math.isfinite(v) else None for k, v in (("diff", diff), ("lo", lo), ("hi", hi))}}
+
+        units = [f"unite:{tf}" for tf in TIMEFRAMES]
+        exits = sorted({k[len(SAFE):] if k.startswith(SAFE) else k for k in stats
+                        if k.startswith(("sortie:", SAFE + "sortie:"))})
+        measured = [settings.secure_r, settings.secure_part]
+
+        def usable(sec) -> bool:  # mesuré avec le réglage du moment, et complet (un état abîmé ne bloque jamais le site)
+            try:
+                return [sec["r"], sec["part"]] == measured and all(
+                    sec[scope][v]["n"] >= 0 for scope in ("all", "eligible") for v in VARIANTS)
+            except (KeyError, TypeError):
+                return False
+
+        held = [c["secure"] for c in self.state["coins"].values() if c.get("followed") and usable(c.get("secure"))]
+
+        def final(scope: str) -> dict:
+            return compare([[c[scope]["sans"]["n"], c[scope]["sans"]["total"], c[scope]["sans"]["wins"],
+                             c[scope]["avec"]["n"], c[scope]["avec"]["total"], c[scope]["avec"]["wins"]] for c in held])
+
+        return {"on": settings.secure, "r": settings.secure_r, "part": settings.secure_part,
+                "trial": {"total": compare(daily(units)),
+                          "units": [{"key": tf, "label": tf_label(tf), **compare(daily([f"unite:{tf}"]))}
+                                    for tf in TIMEFRAMES],
+                          "exits": [{"key": k.partition(":")[2], **compare(daily([k]))} for k in exits]},
+                "final": {"coins": len(held), "eligible": final("eligible"), "all": final("all")}}
+
     def _reference_summary(self) -> dict | None:
         if not self.reference:
             return None
@@ -1514,8 +1744,15 @@ class Swarm:
         """Ce que lit le site : les cryptos, chaque bot en bref, les totaux, les événements, les classements, la
         mesure à l'essai, le test final et le point de référence."""
         verdicts = self.state.get("verdicts") or {}
-        bots = [bot_brief(b) | {"live": verdicts.get(strategy_key(b["spec"]["technique"], b["spec"]["timeframe"]))}
-                for b in self.bots.values()]
+        bots = []
+        for b in self.bots.values():
+            if b["status"] == "endormi":  # son résumé ne change pas pendant son sommeil : calculé une seule fois
+                brief = self.asleep_briefs.get(b["key"])
+                if brief is None:
+                    brief = self.asleep_briefs[b["key"]] = bot_brief(b)
+            else:
+                brief = bot_brief(b)
+            bots.append(brief | {"live": verdicts.get(strategy_key(b["spec"]["technique"], b["spec"]["timeframe"]))})
         retired = self.state["retired_totals"]
         start = sum(b["start"] for b in bots) + retired["start"]
         value = sum(b["value"] for b in bots) + retired["end"]
@@ -1528,12 +1765,14 @@ class Swarm:
                 "status", "amplitude", "change", "volume", "followed", "moving", "tested", "n_tested", "n_eligible",
                 "best", "error")}, "next_test": _iso(info["next_test"]) if info.get("next_test") else None,
                 "bots": len(mine), "positions": sum(1 for b in mine if b["position"]),
+                "asleep": sum(1 for b in mine if b["status"] == "endormi"),
                 "pnl": sum(b["value"] - b["start"] for b in mine),
                 "price": next((b["last_price"] for b in mine if b["last_price"]), None)})
         coins.sort(key=lambda c: (not c["followed"], -(c["amplitude"] or 0)))
         return {"version": 2, "created": self.state["created"], "updated": self.state.get("updated"),
                 "settings": asdict(self.settings), "max_bots": self.settings.max_bots,
                 "totals": {"bots": len(bots), "active": sum(1 for b in bots if b["status"] == "actif"),
+                           "asleep": sum(1 for b in bots if b["status"] == "endormi"),
                            "positions": sum(1 for b in bots if b["position"]), "start": start, "value": value,
                            "pnl": value - start, "pnl_pct": value / start - 1 if start else None, "count": count,
                            "wins": wins, "win_rate": wins / count if count else None, "retired": retired["bots"],
@@ -1542,7 +1781,7 @@ class Swarm:
                 "coins": coins, "bots": bots, "events": list(reversed(self.state["events"]))[:80],
                 "retired": list(reversed(self.state["retired"]))[:40], "mood": self.state.get("mood"),
                 "ranking": self.ranking(), "trial": self._trial_summary(), "holdout": self._holdout_summary(),
-                "reference": self._reference_summary(),
+                "secure": self._secure_summary(), "reference": self._reference_summary(),
                 "tester": self.tester.status() if self.tester else None}
 
 
@@ -1552,13 +1791,14 @@ def bot_brief(bot: dict) -> dict:
     book = Book(spec, state=bot["book"])
     s = book.s
     last = finite(bot.get("last_price"))
-    value = book.equity(last)
+    value = book.value(last)  # ce que vaudrait le compte en fermant maintenant : frais de sortie compris
     trades = s["trades"]
     lt = trades[-1] if trades else None
     return {"id": bot["id"], "symbol": spec.symbol, "coin": spec.coin, "timeframe": spec.timeframe,
             "tf_label": tf_label(spec.timeframe), "team": bot.get("team"), "technique": spec.technique,
             "family": spec.family, "side": spec.side, "target_r": spec.target_r, "leverage": spec.leverage,
             "stop_mode": spec.stop_mode, "exit": exit_label(spec.target_r, spec.stop_mode),
+            "secure_r": spec.secure_r, "secure_part": spec.secure_part,
             "status": bot["status"], "label": bot.get("label"), "start": s["start"], "value": value,
             "pnl": value - s["start"], "pnl_pct": value / s["start"] - 1, "count": s["count"], "wins": s["wins"],
             "win_rate": s["wins"] / s["count"] if s["count"] else None, "dead": s["dead"], "last_price": last,
@@ -1566,6 +1806,7 @@ def bot_brief(bot: dict) -> dict:
             "proba": {k: v for k, v in bot["proba"].items() if k != "text"} if bot.get("proba") else None,
             "signal": bot.get("signal"),
             "last_trade": {k: lt.get(k) for k in ("exit_ts", "roi", "net", "reason", "side")} if lt else None,
+            "woke": bot.get("woke"),
             "backtest": {k: (bot.get("backtest") or {}).get(k) for k in ("sv_n", "sv_mean", "test_n", "test_mean",
                                                                           "total_return", "drawdown")}}
 

@@ -14,11 +14,13 @@ import pytest
 import tradingbot.swarm as swarm_module
 from tests.conftest import HOUR_MS, frame_from_closes
 from tradingbot.data import COLUMNS
-from tradingbot.fleet import EXITS, Spec, fleet_running, lookback_for, simulate
+from tradingbot.fleet import EXITS, Spec, fleet_running, judge, lookback_for, simulate, with_security
+from tradingbot.risk import paired_bounds
 from tradingbot.swarm import (
-    BAN_S, DETAIL_DIR, ELIMINATE_AFTER, LIBRARY, REFERENCE_FILE, STATE_FILE, SWARM_FILE, TRIAL_FILE, TRIAL_MIN_DAYS,
-    CandleStore, PlatformClock, Swarm, SwarmSettings, Retester, bot_brief, bot_detail, buckets, features, insights,
-    per_timeframe, probability, profile, run, settings_from_env, retest_coin, trade_analysis,
+    ASLEEP_DAYS, BAN_S, DETAIL_DIR, ELIMINATE_AFTER, LIBRARY, REFERENCE_FILE, SAFE, STATE_FILE, SWARM_FILE, TRIAL_FILE,
+    TRIAL_MIN_DAYS, UNFOLLOWED_S, CandleStore, PlatformClock, Swarm, SwarmSettings, Retester, bot_brief, bot_detail,
+    buckets, features, insights, per_timeframe, probability, profile, run, settings_from_env, retest_coin,
+    trade_analysis,
 )
 
 DAY_MS = 24 * HOUR_MS
@@ -96,17 +98,27 @@ COMPARED = ("side", "entry_ts", "exit_ts", "reason", "leverage")
 
 # Le parcours complet (tour après tour, comme en vrai) sur quelques techniques ; les signaux de toutes les techniques,
 # dans les deux sens, sont comparés bougie par bougie dans tests/test_fleet.py.
-@pytest.mark.parametrize("name,side,target,mode", [
-    ("Cassure 20/10", "long", 0.0, "fixe"), ("Cassure 20/10", "short", 2.0, "fixe"),
-    ("Repli RSI(2) < 10 + MM200", "long", 2.0, "fixe"), ("Rebond sur support", "short", 2.0, "fixe"),
-    ("Stochastique 14/3", "short", 0.0, "fixe"), ("Ichimoku 9/26/52", "long", 2.0, "fixe"),
-    ("Cassure 20/10", "long", 0.0, "suiveur"), ("Supertrend 10/3", "short", 0.0, "suiveur"),
-    ("EMA 9/21", "long", 2.0, "securise"), ("Momentum 28", "short", 2.0, "securise"),
+def cashed(trade: dict) -> tuple:
+    """La sécurisation d'un trade : la bougie du seuil et la part encaissée (rien : pas de sécurisation)."""
+    secured = trade.get("secured") or {}
+    return secured.get("ts"), secured.get("part")
+
+
+# `secure` : les bots appliquent la sécurisation des gains (le réglage par défaut) ou non. Dans les deux cas, le bot en
+# direct doit prendre exactement les trades de son backtest, sécurisations comprises.
+@pytest.mark.parametrize("name,side,target,mode,secure", [
+    ("Cassure 20/10", "long", 0.0, "fixe", True), ("Cassure 20/10", "short", 2.0, "fixe", True),
+    ("Repli RSI(2) < 10 + MM200", "long", 2.0, "fixe", True), ("Rebond sur support", "short", 2.0, "fixe", False),
+    ("Stochastique 14/3", "short", 0.0, "fixe", True), ("Ichimoku 9/26/52", "long", 2.0, "fixe", False),
+    ("Cassure 20/10", "long", 0.0, "suiveur", True), ("Supertrend 10/3", "short", 0.0, "suiveur", True),
+    ("EMA 9/21", "long", 2.0, "securise", False), ("Momentum 28", "short", 2.0, "securise", False),
+    ("Cassure 20/10", "long", 0.0, "fixe", False), ("EMA 9/21", "long", 0.0, "fixe", True),
 ])
-def test_live_bots_take_exactly_the_trades_of_their_backtest(monkeypatch, random_walk, name, side, target, mode):
+def test_live_bots_take_exactly_the_trades_of_their_backtest(monkeypatch, random_walk, name, side, target, mode, secure):
     monkeypatch.setattr(Swarm, "_retire", lambda self, now_ms: [])  # le bot reste en place jusqu'au bout
     df = random_walk.iloc[:1150].copy()
-    s = spec(name, side, target, stop_mode=mode)
+    settings = SwarmSettings(secure=secure)
+    s = with_security(spec(name, side, target, stop_mode=mode), *settings.security())
     backtest = [t for t in simulate(df, s).s["trades"] if t["reason"] != "fin du test"]
     index = {int(t): i for i, t in enumerate(df["ts"])}
     look = lookback_for(s.params)
@@ -114,40 +126,50 @@ def test_live_bots_take_exactly_the_trades_of_their_backtest(monkeypatch, random
     start = index[first["exit_ts"]]
     market = FakeMarket({s.symbol: df})
     market.i = start
-    swarm = make_swarm(market)
-    bot = swarm.add_bot(chosen(s), market.now_ms())
+    swarm = make_swarm(market, settings=settings)
+    bot = swarm.add_bot(chosen(spec(name, side, target, stop_mode=mode)), market.now_ms())  # le réglage vient de l'essaim
+    events = []
     for i in range(start, len(df) - 1):
         market.i = i
-        swarm.cycle(market.now_ms())
+        events += swarm.cycle(market.now_ms())
     end = int(df["ts"].iloc[-1])
     expected = [t for t in backtest if t["entry_ts"] > int(df["ts"].iloc[start]) and t["exit_ts"] < end]
     live = [t for t in bot["book"]["trades"] if t["exit_ts"] < end]
     assert len(expected) >= 2
     assert [tuple(t[k] for k in COMPARED) for t in live] == [tuple(t[k] for k in COMPARED) for t in expected]
+    assert [cashed(t) for t in live] == [cashed(t) for t in expected]
     for a, b in zip(live, expected):
         assert a["price"] == pytest.approx(b["price"], rel=1e-9)
         assert a["exit_price"] == pytest.approx(b["exit_price"], rel=1e-9)
         assert a["net"] == pytest.approx(b["net"], rel=1e-6, abs=1e-9)
         assert a["roi"] == pytest.approx(b["roi"], rel=1e-6, abs=1e-9)
         assert a["diagnosis"]["title"]  # chaque trade du direct est expliqué
+    told = [e for e in events if e["kind"] == "securisation"]
+    assert len(told) >= sum(1 for t in live if cashed(t)[0])  # le journal a une ligne par sécurisation
+    assert secure or not told
+    if (name, mode, target, secure) == ("Cassure 20/10", "fixe", 0.0, True):
+        assert any(cashed(t)[1] == 0.5 for t in live)  # ici, la sécurisation a vraiment joué
+        assert "50 % de la position encaissés" in told[0]["text"] and "prix d'entrée" in told[0]["text"]
 
 
-@pytest.mark.parametrize("name,side,target,mode", [
-    ("Cassure 20/10", "long", 2.0, "fixe"), ("Supertrend 10/3", "short", 0.0, "suiveur"),
-    ("Repli RSI(2) < 10 + MM200", "long", 2.0, "securise"),
+@pytest.mark.parametrize("name,side,target,mode,secure", [
+    ("Cassure 20/10", "long", 2.0, "fixe", True), ("Supertrend 10/3", "short", 0.0, "suiveur", True),
+    ("Repli RSI(2) < 10 + MM200", "long", 2.0, "securise", False), ("Cassure 20/10", "long", 0.0, "fixe", True),
 ])
-def test_after_a_break_the_bots_catch_up_exactly_like_their_backtest(monkeypatch, random_walk, name, side, target, mode):
+def test_after_a_break_the_bots_catch_up_exactly_like_their_backtest(monkeypatch, random_walk, name, side, target, mode,
+                                                                    secure):
     """Le PC éteint 3 jours (ou le réseau coupé) : au retour, les bougies manquées sont rejouées une par une."""
     monkeypatch.setattr(Swarm, "_retire", lambda self, now_ms: [])
     df = random_walk.iloc[:1150].copy()
-    s = spec(name, side, target, stop_mode=mode)
+    settings = SwarmSettings(secure=secure)
+    s = with_security(spec(name, side, target, stop_mode=mode), *settings.security())
     backtest = [t for t in simulate(df, s).s["trades"] if t["reason"] != "fin du test"]
     index = {int(t): i for i, t in enumerate(df["ts"])}
     first = next(t for t in backtest if index[t["exit_ts"]] >= lookback_for(s.params) + 80)
     start = index[first["exit_ts"]]
     market = FakeMarket({s.symbol: df})
     market.i = start
-    swarm = make_swarm(market)
+    swarm = make_swarm(market, settings=settings)
     bot = swarm.add_bot(chosen(s), market.now_ms())
     inside = next(t for t in backtest if index[t["entry_ts"]] >= start + 30)  # un trade s'ouvre pendant la coupure
     g0 = index[inside["entry_ts"]] - 10
@@ -160,6 +182,7 @@ def test_after_a_break_the_bots_catch_up_exactly_like_their_backtest(monkeypatch
     live = [t for t in bot["book"]["trades"] if t["exit_ts"] < end]
     assert len(expected) >= 2 and inside in expected
     assert [tuple(t[k] for k in COMPARED) for t in live] == [tuple(t[k] for k in COMPARED) for t in expected]
+    assert [cashed(t) for t in live] == [cashed(t) for t in expected]
     assert all(a["net"] == pytest.approx(b["net"], rel=1e-6, abs=1e-9) for a, b in zip(live, expected))
 
 
@@ -571,21 +594,67 @@ def test_every_combination_is_measured_once_whatever_the_number_of_tests(random_
     once = test_at(1100, {})  # le même historique en un seul test
     assert {k: v["n"] for k, v in total.items()} == {k: v["n"] for k, v in once["stats"].items()}
     assert all(total[k]["total"] == pytest.approx(once["stats"][k]["total"]) for k in total)
-    assert once["open"] == opened > 0 and once["counted"] == once["stats"]["unite:1h"]["n"]
-    # Une combinaison refaite à la main : mêmes trades, mêmes sommes.
+    # Les totaux montrés sur le site (trades comptés, positions ouvertes) sont ceux de la variante des bots : par
+    # défaut, avec la sécurisation des gains.
+    assert once["open"] == opened > 0 and once["counted"] == once["stats"][SAFE + "unite:1h"]["n"]
+    # Une combinaison refaite à la main, sans puis avec la sécurisation : mêmes trades, mêmes sommes.
     s = Spec("court", "X/USDT", "1h", "Cassure 20/10", "long", 2.0, 3.0)
-    trades = [t for t in simulate(df.iloc[:1100], s).s["trades"] if t["entry_ts"] >= start and t["reason"] != "fin du test"]
-    rec = once["stats"]["detail:Cassure 20/10|1h|long|objectif 2R"]
-    assert rec["n"] == len(trades) >= 3 and rec["total"] == pytest.approx(sum(t["net"] for t in trades))
-    assert rec["wins"] == sum(t["net"] > 0 for t in trades) and "days" not in rec
-    assert rec["r"] == pytest.approx(sum(t["net"] / t["risk"] for t in trades))
-    assert rec["gain"] == pytest.approx(sum(max(t["net"], 0.0) for t in trades))
-    # Chaque trade compte une fois dans chaque famille de lignes, et dans le jour de sa sortie.
-    n = once["stats"]["unite:1h"]["n"]
-    for family in ("detail:", "strategie:", "technique:", "sortie:", "sens:"):
-        assert sum(v["n"] for k, v in once["stats"].items() if k.startswith(family)) == n
-    assert sum(d[0] for d in once["stats"]["unite:1h"]["days"].values()) == n
-    assert len([k for k in once["stats"] if k.startswith("detail:")]) > 200  # des centaines de combinaisons mesurées
+    for prefix, bot in (("", s), (SAFE, with_security(s, 1.0, 0.5))):
+        trades = [t for t in simulate(df.iloc[:1100], bot).s["trades"]
+                  if t["entry_ts"] >= start and t["reason"] != "fin du test"]
+        rec = once["stats"][prefix + "detail:Cassure 20/10|1h|long|objectif 2R"]
+        assert rec["n"] == len(trades) >= 3 and rec["total"] == pytest.approx(sum(t["net"] for t in trades))
+        assert rec["wins"] == sum(t["net"] > 0 for t in trades) and "days" not in rec
+        assert rec["r"] == pytest.approx(sum(t["net"] / t["risk"] for t in trades))
+        assert rec["gain"] == pytest.approx(sum(max(t["net"], 0.0) for t in trades))
+        assert any(t.get("secured") for t in trades) == bool(prefix)
+    # Chaque trade compte une fois dans chaque famille de lignes, et dans le jour de sa sortie, pour chaque variante.
+    for prefix in ("", SAFE):
+        n = once["stats"][prefix + "unite:1h"]["n"]
+        for family in ("detail:", "strategie:", "technique:", "sortie:", "sens:"):
+            assert sum(v["n"] for k, v in once["stats"].items() if k.startswith(prefix + family)) == n
+        assert sum(d[0] for d in once["stats"][prefix + "unite:1h"]["days"].values()) == n
+        assert len([k for k in once["stats"] if k.startswith(prefix + "detail:")]) > 150  # des centaines de combinaisons
+    assert {k.partition(":")[2] for k in once["stats"] if k.startswith("sortie:")} == {
+        "sortie par la règle", "objectif 2R", "stop suiveur"}
+    # Avec la sécurisation désactivée pour les bots, les deux variantes restent mesurées ; les totaux suivent les bots.
+    off = retest_coin("X/USDT", {"1h": df.iloc[:1100]}, asdict(SwarmSettings(secure=False)),
+                      trial={"done": {}, "active": [[start, None]], "final": False})["trial"]
+    assert off["stats"] == once["stats"] and off["counted"] == off["stats"]["unite:1h"]["n"] != once["counted"]
+
+
+def test_the_lab_compares_every_combination_with_and_without_securing_on_the_final_test(random_walk):
+    """Le résultat d'un test dit ce que vaut la sécurisation sur le test final (jamais regardé pour choisir) : pour
+    toutes les combinaisons, et pour celles qui peuvent devenir un bot, les mêmes combinaisons sans et avec."""
+    frames = {"1h": random_walk.iloc[:1400]}
+    result = retest_coin("X/USDT", frames, asdict(SwarmSettings(bots_per_coin=4)))
+    secure = result["secure"]
+    assert (secure["live"], secure["r"], secure["part"]) == ("avec", 1.0, 0.5)
+    start, end = int(frames["1h"]["ts"].iloc[0]), int(frames["1h"]["ts"].iloc[-1])
+    by_hand = {"sans": {"n": 0, "total": 0.0, "wins": 0}, "avec": {"n": 0, "total": 0.0, "wins": 0}}
+    for name in LIBRARY:
+        for side in ("long", "short"):
+            for target, mode in EXITS:
+                base = Spec("court", "X/USDT", "1h", name, side, target, 3.0, mode)
+                for variant, bot in (("sans", base), ("avec", with_security(base, 1.0, 0.5))):
+                    row = judge(simulate(frames["1h"], bot), start, end)
+                    by_hand[variant]["n"] += row["test_n"]
+                    by_hand[variant]["total"] += row["test_total"]
+                    by_hand[variant]["wins"] += row["test_wins"]
+    for variant in ("sans", "avec"):
+        assert secure["all"][variant]["n"] == by_hand[variant]["n"] > 500
+        assert secure["all"][variant]["total"] == pytest.approx(by_hand[variant]["total"])
+        assert secure["all"][variant]["wins"] == by_hand[variant]["wins"]
+        assert 0 < secure["eligible"][variant]["n"] < secure["all"][variant]["n"]
+    # Les éligibles sont choisies avec la variante des bots : leur test final « avec » est celui du labo.
+    assert secure["eligible"]["avec"] == result["holdout_eligible"]
+    assert secure["all"]["avec"]["wins"] > secure["all"]["sans"]["wins"]  # plus de petits gains ; pas forcément plus d'argent
+    # Les lignes qui servent à choisir portent le réglage des bots : un bot créé de là l'applique.
+    assert all((r["secure_r"], r["secure_part"]) == (1.0, 0.5) for r in result["chosen"]) and result["chosen"]
+    off = retest_coin("X/USDT", frames, asdict(SwarmSettings(bots_per_coin=4, secure=False)))
+    assert off["secure"]["live"] == "sans" and off["secure"]["all"] == secure["all"]
+    assert off["secure"]["eligible"]["sans"] == off["holdout_eligible"]
+    assert all((r["secure_r"], r["secure_part"]) == (0.0, 0.0) for r in off["chosen"])
 
 
 def test_only_trades_opened_while_the_coin_moved_count_and_the_last_test_closes_the_rest(random_walk):
@@ -615,7 +684,8 @@ def test_the_swarm_measures_a_coin_while_it_moves_and_closes_its_measure_when_it
     market = FakeMarket({"A/USDT": random_walk}, tickers)
     market.i = 400
     tester = FakeTester()
-    swarm = Swarm(market, None, SwarmSettings(coins=2, min_move=0.03), clock=lambda: market.now_ms() / 1000,
+    # (sécurisation désactivée : les faux résultats de ce scénario n'ont que la variante « sans »)
+    swarm = Swarm(market, None, SwarmSettings(coins=2, min_move=0.03, secure=False), clock=lambda: market.now_ms() / 1000,
                   tester=tester, read=False, universe_every=600)
     t0 = market.now_ms()
     swarm.cycle(t0)
@@ -781,36 +851,145 @@ def test_a_stuck_test_never_freezes_the_tests_that_follow(monkeypatch, random_wa
     assert len(pools) == 3 and pools[0].closed and pools[1].closed  # chaque calcul bloqué est remplacé
 
 
-def test_a_coin_that_leaves_the_list_frees_its_places_after_six_hours(random_walk, monkeypatch, caplog):
+OPEN_POSITION = {"side": "long", "entry_ts": 0, "entry_mark": 100.0, "price": 100.0, "qty": 1.0, "notional": 100.0,
+                 "margin": 100.0, "fee": 0.0, "leverage": 1.0, "stop": 1.0, "target": None, "liquidation": 0.5,
+                 "risk": 0.99, "high": 100.0, "low": 100.0, "bars": 1}
+
+
+def test_a_bot_whose_coin_leaves_the_list_falls_asleep_and_wakes_up_with_its_history(random_walk, monkeypatch):
+    """Un bot n'est plus arrêté parce que sa crypto quitte la liste : il s'endort avec son compte, et reprend sa place
+    à son retour. Sinon aucun bot ne vivrait assez longtemps pour être jugé."""
     monkeypatch.setattr(Swarm, "_on_candles", lambda self, bot, *args: [])  # ici, seule la liste des cryptos compte
     tickers = {"A/USDT": ticker(0.20), "X/USDT": ticker(0.10)}
-    market = FakeMarket({"X/USDT": random_walk}, tickers)
+    market = FakeMarket({s: random_walk for s in ("X/USDT", "B/USDT", "C/USDT")}, tickers)
+    market.i = 400
+    tester = FakeTester()
+    swarm = Swarm(market, None, SwarmSettings(coins=2, bots_per_coin=2), clock=lambda: market.now_ms() / 1000,
+                  tester=tester, read=False, universe_every=600)
+    idle = swarm.add_bot(chosen(spec("Cassure 20/10")), market.now_ms())
+    busy = swarm.add_bot(chosen(spec("Supertrend 10/3")), market.now_ms())
+    busy["book"]["position"] = dict(OPEN_POSITION)
+    idle["book"].update(count=3, wins=2, cash=1012.0)  # il a déjà un passé
+    t0 = market.now_ms()
+    swarm.cycle(t0)
+    assert idle["status"] == busy["status"] == "actif"
+    tickers["B/USDT"], tickers["C/USDT"] = ticker(0.30), ticker(0.25)  # deux cryptos plus agitées passent devant
+    t = t0 + 600_000
+    swarm.cycle(t)
+    assert not swarm.state["coins"]["X/USDT"]["followed"]
+    assert idle["status"] == busy["status"] == "veille"  # pas tout de suite : elle peut revenir vite
+    events = swarm.cycle(t + UNFOLLOWED_S * 1000)
+    assert idle["status"] == "endormi" and idle["key"] in swarm.bots  # endormi, pas arrêté
+    assert busy["status"] == "veille"  # celui qui a une position la gère jusqu'au bout
+    assert any(e["kind"] == "sommeil" and "1 bot s'endort" in e["text"] for e in events)
+    assert not swarm.state["banned"] and not swarm.state["retired"]
+    summary = swarm.summary()
+    assert summary["totals"]["bots"] == 2 and summary["totals"]["asleep"] == 1
+    assert {b["status"] for b in summary["bots"]} == {"endormi", "veille"}
+    assert next(c for c in summary["coins"] if c["symbol"] == "X/USDT")["asleep"] == 1
+    # Sa position fermée, le second s'endort aussi : plus aucune bougie, plus aucun prix demandé pour cette crypto.
+    busy["book"]["position"] = None
+    t += UNFOLLOWED_S * 1000 + 600_000
+    swarm.cycle(t)
+    assert busy["status"] == "endormi"
+    calls = len(market.calls)
+    for k in range(1, 4):
+        swarm.next_fetch.clear()
+        swarm.cycle(t + k * 5000)
+    assert len(market.calls) == calls and not any(key[0] == "X/USDT" for key in swarm.candles.frames)
+    # Les bots endormis ne prennent la place de personne : les cryptos suivies remplissent leurs places.
+    for symbol in ("B/USDT", "C/USDT"):
+        swarm.apply_test({"symbol": symbol, "tested": 10, "eligible": 2, "kept": [], "best": [], "chosen": [
+            chosen(spec("Cassure 20/10", symbol=symbol)), chosen(spec("EMA 9/21", symbol=symbol))]}, t + 20_000)
+    assert len(swarm.bots) == 6 == swarm.settings.max_bots + 2
+    # Un redémarrage pendant leur sommeil ne change rien (ici : l'état en mémoire suffit, sans dossier).
+    assert idle["book"]["count"] == 3 and idle["book"]["cash"] == 1012.0
+    # La crypto revient : ils se réveillent avec leur compte, et le test suivant leur garde leur place.
+    tickers["X/USDT"] = ticker(0.50)
+    t += 1_200_000
+    events = swarm.cycle(t)
+    assert idle["status"] == busy["status"] == "actif" and idle["woke"] == t
+    assert idle["book"]["last_ts"] is None and idle["book"]["count"] == 3 and idle["book"]["cash"] == 1012.0
+    assert any(e["kind"] == "reveil" and "2 bots endormis reprennent" in e["text"] for e in events)
+    job = next(j for j in reversed(tester.jobs) if j["symbol"] == "X/USDT")
+    assert {d["technique"] for d in job["keep"]} == {"Cassure 20/10", "Supertrend 10/3"}
+    assert swarm.summary()["totals"]["asleep"] == 0
+
+
+def test_a_bot_asleep_for_a_month_is_stopped_and_too_many_sleepers_make_room(random_walk, monkeypatch):
+    monkeypatch.setattr(Swarm, "_on_candles", lambda self, bot, *args: [])
+    tickers = {"A/USDT": ticker(0.20), "B/USDT": ticker(0.15)}
+    market = FakeMarket({"X/USDT": random_walk, "Y/USDT": random_walk}, tickers)
     market.i = 400
     swarm = Swarm(market, None, SwarmSettings(coins=2), clock=lambda: market.now_ms() / 1000, read=False,
                   universe_every=600)
-    idle = swarm.add_bot(chosen(spec("Cassure 20/10")), market.now_ms())
-    busy = swarm.add_bot(chosen(spec("Supertrend 10/3")), market.now_ms())
-    busy["book"]["position"] = {"side": "long", "entry_ts": 0, "entry_mark": 100.0, "price": 100.0, "qty": 1.0,
-                                "notional": 100.0, "margin": 100.0, "fee": 0.0, "leverage": 1.0, "stop": 1.0,
-                                "target": None, "liquidation": 0.5, "risk": 0.99, "high": 100.0, "low": 100.0,
-                                "bars": 1}
-    swarm.cycle(market.now_ms())
-    tickers["B/USDT"], tickers["C/USDT"] = ticker(0.30), ticker(0.25)  # deux cryptos plus agitées passent devant
-    market.markets.update({s: {"spot": True, "active": True, "quote": "USDT", "base": s[0]} for s in ("B/USDT", "C/USDT")})
-    t = market.now_ms() + 600_000
+    old = swarm.add_bot(chosen(spec("Cassure 20/10")), market.now_ms())
+    recent = swarm.add_bot(chosen(spec("EMA 9/21", symbol="Y/USDT")), market.now_ms())
+    t0 = market.now_ms()
+    swarm.state["coins"].update({"X/USDT": {"left_at": t0}, "Y/USDT": {"left_at": t0 + 10 * DAY_MS}})
+    swarm.cycle(t0)
+    t = t0 + 10 * DAY_MS + UNFOLLOWED_S * 1000
     swarm.cycle(t)
-    assert not swarm.state["coins"]["X/USDT"]["followed"] and idle["key"] in swarm.bots  # pas tout de suite
-    events = swarm.cycle(t + 6 * 3600_000)
-    assert idle["key"] not in swarm.bots and busy["key"] in swarm.bots  # celui qui a une position la garde
-    assert any("plus parmi les plus agitées" in e["text"] for e in events) and not swarm.state["banned"]
+    assert old["status"] == recent["status"] == "endormi"
+    monkeypatch.setattr(swarm_module, "MAX_ASLEEP", 1)  # trop de bots endormis : le plus ancien laisse sa place
+    events = swarm.cycle(t + 600_000)
+    assert old["key"] not in swarm.bots and recent["key"] in swarm.bots
+    assert any(e["kind"] == "arret" and "bots endormis" in e["text"] for e in events)
+    monkeypatch.setattr(swarm_module, "MAX_ASLEEP", 1000)
+    events = swarm.cycle(t0 + (10 + ASLEEP_DAYS) * DAY_MS + 600_000)  # un mois sans revenir : arrêté pour de bon
+    assert recent["key"] not in swarm.bots and swarm.state["retired_totals"]["bots"] == 2
+    assert any(f"depuis {ASLEEP_DAYS} jours" in e["text"] for e in events) and not swarm.state["banned"]
+
+
+def test_a_bot_that_wakes_up_never_enters_on_a_signal_given_while_it_slept(random_walk):
+    """Au réveil, le bot repart de la dernière bougie terminée : il ne rejoue rien de son sommeil et n'entre pas sur
+    le signal d'une bougie finie avant son réveil. Un bot neuf, lui, peut entrer sur sa première bougie."""
+    s = spec("Cassure 20/10")
+    df = random_walk.iloc[:1150]
+    from tradingbot.fleet import signals_for
+    entries = np.flatnonzero(signals_for(df, s.params, "long").entry)
+    i = int(next(k for k in entries if k > 700 and not signals_for(df, s.params, "long").entry[k - 1]))
+    tickers = {"A/USDT": ticker(0.20), "B/USDT": ticker(0.15)}
+    market = FakeMarket({"X/USDT": df}, tickers)
+    market.i = i - 300
+    swarm = Swarm(market, None, SwarmSettings(coins=2), clock=lambda: market.now_ms() / 1000, read=False,
+                  universe_every=600)
+    sleeper = swarm.add_bot(chosen(s), market.now_ms())
+    sleeper.update(status="endormi")
+    sleeper["book"]["last_ts"] = int(df["ts"].iloc[i - 300])  # sa dernière bougie date d'avant son sommeil
+    swarm.cycle(market.now_ms())
+    assert sleeper["status"] == "endormi" and market.calls == []  # il dort : rien n'est demandé
+    tickers["X/USDT"] = ticker(0.50)  # sa crypto revient, juste après une bougie qui donne un signal d'achat
+    market.i = i
+    newcomer = swarm.add_bot(chosen(spec("Cassure 20/10", "long", 2.0)), market.now_ms())  # même technique, bot neuf
+    swarm.state["universe_at"] = 0
+    swarm.cycle(market.now_ms())
+    assert sleeper["status"] == "actif" and sleeper["book"]["last_ts"] == int(df["ts"].iloc[i])
+    assert sleeper["book"]["position"] is None and sleeper["book"]["pending"] is None  # pas d'entrée sur ce signal
+    assert sleeper["book"]["trades"] == []  # et rien n'a été rejoué sur les 300 bougies de son sommeil
+    assert newcomer["book"]["position"] is not None  # le bot neuf, lui, entre sur sa première bougie
+    later = int(next(k for k in entries if k > i + 30 and not signals_for(df, s.params, "long").entry[k - 1]))
+    for k in range(i + 1, later + 1):
+        market.i = k
+        swarm.cycle(market.now_ms())
+    opened = [t["entry_ts"] for t in sleeper["book"]["trades"]] + (
+        [sleeper["book"]["position"]["entry_ts"]] if sleeper["book"]["position"] else [])
+    assert opened and min(opened) > int(df["ts"].iloc[i + 1])  # ensuite, il trade normalement
+
+
+def test_a_coin_that_does_not_answer_is_reported_once_not_every_minute(random_walk, caplog):
+    market = FakeMarket({"X/USDT": random_walk})
+    market.i = 400
+    swarm = make_swarm(market)
+    swarm.add_bot(chosen(spec("Cassure 20/10")), market.now_ms())
     market.fetch_ohlcv = lambda *args, **kwargs: (_ for _ in ()).throw(ccxt.NetworkError("coupé"))
     for k in range(5):  # la crypto ne répond plus : un avertissement, pas une ligne par minute
         swarm.next_fetch.clear()
-        swarm.cycle(t + 6 * 3600_000 + k * 60_000)
+        swarm.cycle(market.now_ms() + k * 60_000)
     assert caplog.text.count("bougies indisponibles") == 1
 
 
-def measured(swarm, name, means, per_day=40, tf="1h"):
+def measured(swarm, name, means, per_day=40, tf="1h", variant=None):
     """Ajoute à la mesure à l'essai `per_day` trades par jour pour une stratégie, au gain moyen donné pour chaque
     jour (le dernier : aujourd'hui), comme le ferait le résultat d'un test."""
     now = swarm.time.now_ms()
@@ -820,8 +999,9 @@ def measured(swarm, name, means, per_day=40, tf="1h"):
     n, total = per_day * len(means), sum(v[1] for v in days.values())
     rec = {"n": n, "total": total, "total_sq": sum(per_day * m * m for m in means), "wins": sum(v[2] for v in days.values()),
            "gain": max(total, 0.0), "r": 0.0, "days": days}
+    prefix = SAFE if (variant or swarm.variant) == "avec" else ""  # par défaut : la variante que les bots utilisent
     swarm._merge_trial({}, {"done": {}, "open": 0, "final": False, "stats": {
-        f"strategie:{name}|{tf}": rec, f"unite:{tf}": json.loads(json.dumps(rec))}})
+        f"{prefix}strategie:{name}|{tf}": rec, f"{prefix}unite:{tf}": json.loads(json.dumps(rec))}})
 
 
 def test_the_trial_measure_judges_the_strategies_by_comparing_days(tmp_path, random_walk, monkeypatch):
@@ -878,6 +1058,84 @@ def test_the_trial_measure_judges_the_strategies_by_comparing_days(tmp_path, ran
     measured(swarm, "Momentum 50", [0.004 if k % 2 else -0.0005 for k in range(week)], per_day=80)
     swarm.cycle(market.now_ms() + 3000)
     assert swarm.state["verdicts"] == {"EMA 9/21|1h": "prouvee"} and busy["status"] == "actif"
+
+
+def test_the_site_compares_securing_on_the_same_days_and_the_same_coins(random_walk):
+    """« Avec ou sans sécurisation » : les deux variantes ont vécu les mêmes journées. L'écart est jugé en comparant
+    ce qu'il vaut d'une journée à l'autre (à l'essai) et d'une crypto à l'autre (sur le test final)."""
+    market = FakeMarket({"X/USDT": random_walk})
+    market.i = 400
+    swarm = make_swarm(market)
+    week = 8
+    plain = [-0.0030 + 0.0040 * (k % 4) for k in range(week)]  # des journées très différentes les unes des autres
+    safe = [m + 0.0004 + 0.0001 * (k % 2) for k, m in enumerate(plain)]  # « avec » fait un peu mieux chaque jour
+    measured(swarm, "EMA 9/21", plain, variant="sans")
+    measured(swarm, "EMA 9/21", safe, variant="avec")
+    for symbol, gain in (("A/USDT", 0.0005), ("B/USDT", 0.0007), ("C/USDT", 0.0003)):
+        scope = {"sans": {"n": 100, "total": 0.10, "total_sq": 0.0, "wins": 40},
+                 "avec": {"n": 100, "total": 0.10 + 100 * gain, "total_sq": 0.0, "wins": 46}}
+        swarm.state["coins"][symbol] = {"followed": True, "secure": {"live": "avec", "r": 1.0, "part": 0.5,
+                                                                      "all": scope, "eligible": scope}}
+    swarm.state["coins"]["D/USDT"] = {"followed": True, "secure": {"live": "avec", "r": 2.0, "part": 0.5,
+                                                                    "all": scope, "eligible": scope}}  # ancien réglage
+    secure = swarm.summary()["secure"]
+    assert (secure["on"], secure["r"], secure["part"]) == (True, 1.0, 0.5)
+    total = secure["trial"]["total"]
+    assert total["sans"]["n"] == total["avec"]["n"] == 40 * week and total["groups"] == week
+    assert total["sans"]["mean"] == pytest.approx(sum(plain) / week) and total["avec"]["mean"] == pytest.approx(sum(safe) / week)
+    assert total["diff"] == pytest.approx(0.00045) and 0 < total["lo"] < total["diff"] < total["hi"] < 0.001
+    # Chaque variante seule ne prouve rien (ses journées vont de −0,3 % à +0,9 %) ; c'est l'écart, jour par jour, qui parle.
+    view = swarm.trial_view("avec")
+    assert view["lo"] < 0 < view["hi"] and view["variant"] == "avec" and swarm.trial_view("sans")["variant"] == "sans"
+    by_hand = paired_bounds([(40, 40 * a, 40, 40 * b) for a, b in zip(safe, plain)])
+    assert (total["diff"], total["lo"], total["hi"]) == pytest.approx(by_hand)
+    assert [u["key"] for u in secure["trial"]["units"]] == list(swarm_module.TIMEFRAMES)
+    hour = next(u for u in secure["trial"]["units"] if u["key"] == "1h")
+    assert hour["label"] == "1 h" and hour["diff"] == pytest.approx(total["diff"])
+    assert next(u for u in secure["trial"]["units"] if u["key"] == "5m")["diff"] is None  # rien de mesuré : pas d'écart
+    final = secure["final"]
+    assert final["coins"] == 3 and final["all"]["groups"] == 3  # la crypto mesurée avec un autre réglage ne compte pas
+    assert final["all"]["sans"]["mean"] == pytest.approx(0.001) and final["all"]["avec"]["mean"] == pytest.approx(0.0015)
+    assert final["all"]["diff"] == pytest.approx(0.0005) and final["all"]["lo"] > 0 and final["all"]["avec"]["win"] == 0.46
+    # Les verdicts suivent la variante que les bots utilisent.
+    assert swarm.summary()["trial"]["variant"] == "avec" and swarm.summary()["trial"]["mean"] == pytest.approx(sum(safe) / week)
+    off = make_swarm(market, settings=SwarmSettings(secure=False))
+    off.trial = swarm.trial
+    assert off.summary()["trial"]["variant"] == "sans" and off.summary()["trial"]["mean"] == pytest.approx(sum(plain) / week)
+    assert off.summary()["secure"]["on"] is False and off.summary()["secure"]["trial"]["total"]["diff"] == pytest.approx(0.00045)
+
+
+def test_changing_the_securing_settings_updates_every_bot_and_restarts_its_measure(tmp_path, random_walk):
+    """La sécurisation est un réglage commun : au redémarrage, chaque bot le reçoit. Une position déjà ouverte garde
+    le seuil de son ouverture. Et si le seuil ou la part changent, la mesure « avec » repart de zéro."""
+    market = FakeMarket({"X/USDT": random_walk})
+    market.i = 400
+    swarm = make_swarm(market, tmp_path)
+    bot = swarm.add_bot(chosen(spec("Cassure 20/10")), market.now_ms())
+    assert (bot["spec"]["secure_r"], bot["spec"]["secure_part"]) == (1.0, 0.5)
+    bot["book"]["position"] = dict(OPEN_POSITION, secure=104.0, part=0.5)
+    measured(swarm, "EMA 9/21", [0.001] * 3, variant="sans")
+    measured(swarm, "EMA 9/21", [0.002] * 3, variant="avec")
+    swarm.state["coins"]["X/USDT"] = {"followed": True, "secure": {"r": 1.0, "part": 0.5}}
+    swarm.dirty.add(bot["key"])
+    swarm.state_dirty = True
+    swarm.save()
+    same = make_swarm(market, tmp_path)  # même réglage : rien ne bouge
+    assert any(k.startswith(SAFE) for k in same.trial["stats"]) and same.state["coins"]["X/USDT"]["secure"]
+    assert not any(e["kind"] == "reglage" for e in same.state["events"])
+    wider = make_swarm(market, tmp_path, settings=SwarmSettings(secure_r=1.5, secure_part=0.3))
+    again = wider.bots[bot["key"]]
+    assert (again["spec"]["secure_r"], again["spec"]["secure_part"]) == (1.5, 0.3)
+    assert again["book"]["position"]["secure"] == 104.0 and again["book"]["position"]["part"] == 0.5  # position en cours
+    assert not any(k.startswith(SAFE) for k in wider.trial["stats"]) and wider.trial["secure"] == [1.5, 0.3]
+    assert wider.trial["stats"]["strategie:EMA 9/21|1h"]["n"] == 120  # la mesure « sans » n'a pas changé de réglage
+    assert "secure" not in wider.state["coins"]["X/USDT"]
+    assert any(e["kind"] == "reglage" and "repart de zéro" in e["text"] for e in wider.state["events"])
+    off = make_swarm(market, tmp_path, settings=SwarmSettings(secure=False, secure_r=1.5, secure_part=0.3))
+    assert (off.bots[bot["key"]]["spec"]["secure_r"], off.bots[bot["key"]]["spec"]["secure_part"]) == (0.0, 0.0)
+    assert off.variant == "sans" and off.trial["secure"] == [1.5, 0.3]  # désactivée pour les bots, toujours mesurée
+    on_disk = json.loads((tmp_path / DETAIL_DIR / f"{bot['id']}.json").read_text(encoding="utf-8"))
+    assert on_disk["spec"]["secure_r"] == 0.0
 
 
 def test_live_trades_of_the_bots_are_ranked_apart(random_walk):
@@ -1002,7 +1260,16 @@ def test_settings_are_read_and_checked():
     assert s.capital == 500 and s.leverage("1m") == 10 and s.leverage("4h") == 1 and s.leverage("15m") == 3
     assert s.max_bots == 300 and s.min_move == pytest.approx(0.025)
     assert SwarmSettings().max_bots >= 400  # des centaines de bots au plus, par défaut
+    # La sécurisation des gains : activée par défaut à +1R pour la moitié de la position, réglable, désactivable.
+    assert (s.secure, s.secure_r, s.secure_part, s.variant, s.security()) == (True, 1.0, 0.5, "avec", (1.0, 0.5))
+    tuned = settings_from_env({"FLOTTE_SECURISATION": "Non", "FLOTTE_SECURISATION_SEUIL": "1,5",
+                               "FLOTTE_SECURISATION_PART": "30"})
+    assert (tuned.secure, tuned.secure_r, tuned.variant) == (False, 1.5, "sans") and tuned.secure_part == pytest.approx(0.3)
+    assert tuned.security() == (0.0, 0.0) and tuned.security(True) == (1.5, pytest.approx(0.3))
+    assert settings_from_env({"FLOTTE_SECURISATION": "oui", "FLOTTE_SECURISATION_PART": "0"}).security() == (1.0, 0.0)
     for bad in ({"FLOTTE_LEVIER_COURT": "50"}, {"FLOTTE_CAPITAL": "beaucoup"}, {"FLOTTE_CRYPTOS": "0"},
-                {"FLOTTE_BOTS_PAR_CRYPTO": "21"}, {"FLOTTE_MOUVEMENT_MIN": "80"}):
+                {"FLOTTE_BOTS_PAR_CRYPTO": "21"}, {"FLOTTE_MOUVEMENT_MIN": "80"}, {"FLOTTE_SECURISATION": "peut-être"},
+                {"FLOTTE_SECURISATION_SEUIL": "0.2"}, {"FLOTTE_SECURISATION_SEUIL": "9"},
+                {"FLOTTE_SECURISATION_PART": "95"}):
         with pytest.raises(ValueError):
             settings_from_env(bad)

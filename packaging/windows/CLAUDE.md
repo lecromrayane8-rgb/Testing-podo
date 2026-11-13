@@ -17,17 +17,22 @@ place, puis lui dises en quelques lignes ce qui en ressort.
   `moving` = assez de mouvement, `status`, `tested`, `n_tested`, `n_eligible`, `best` = les combinaisons les mieux
   classées de son dernier test), `bots` (chaque bot en bref, avec sa `position`), `events` et `retired` ; `trial` (la
   mesure à l'essai : `bots` = combinaisons mesurées, `n` trades comptés sur 30 jours, `mean` par trade, `lo` et `hi` sa
-  fourchette, `days`, `ranking` par stratégie avec `verdict`), `holdout` (le test final des choix du labo) et
-  `reference` (le point de référence).
+  fourchette, `days`, `ranking` par stratégie avec `verdict`, `variant` = la variante que les bots utilisent),
+  `holdout` (le test final des choix du labo), `secure` (la sécurisation des gains : réglage `on`, `r`, `part`, et la
+  comparaison `sans` / `avec` : `trial` à l'essai par jour, `final` sur le test final par crypto ; `diff`, `lo`, `hi` =
+  l'écart avec − sans et sa fourchette) et `reference` (le point de référence).
 - `data\bots\essaim\<id>.json` : le compte complet de chaque bot : `spec` (crypto, unité, technique, sens, objectif,
-  levier), `book` (argent, position, trades avec `roi`, `net`, `reason`, `diagnosis`, `analysis`), `backtest` (son
-  dernier test, avec `profile` = où sa stratégie gagne et perd), `status` (`actif`, `veille`, `sortie`).
+  levier, `secure_r` et `secure_part` = sa sécurisation des gains), `book` (argent, position, trades avec `roi`,
+  `net`, `reason`, `diagnosis`, `analysis`, `secured` = la part encaissée en route), `backtest` (son dernier test,
+  avec `profile` = où sa stratégie gagne et perd), `status` (`actif`, `veille`, `endormi` = sa crypto a quitté la
+  liste, il garde son compte et reprendra à son retour, `sortie`).
 - `data\bots\essaim-etat.json` : la mémoire de l'essaim (cryptos suivies, prochains tests, combinaisons mises de côté
   24 h dans `banned`, classement des bots en direct dans `live`, `verdicts`) ; `data\bots\en-cours.json` : le signal de
   vie (les bots tournent si son heure a moins de 45 s).
 - `data\bots\essaim-essais.json` : la mesure à l'essai (`stats` : une ligne par stratégie `strategie:technique|unité`,
   par `sortie:`, `sens:`, `unite:`, `technique:` et par combinaison complète `detail:` ; `n`, `total`, `wins`, `gain`,
-  `r`, et `days` = trades, somme et gagnants de chaque jour). `data\bots\reference.json` : les chiffres du site au
+  `r`, et `days` = trades, somme et gagnants de chaque jour ; les mêmes lignes avec le préfixe `avec:` = la variante
+  avec sécurisation des gains). `data\bots\reference.json` : les chiffres du site au
   premier lancement de cette version (`totals`, `ranking`), jamais réécrits : le point de comparaison.
 - `data\bot.log` : le journal. Les anciens labos, tournois et le trader fictif écrivent toujours dans `data\` quand
   on les lance depuis `autres lanceurs\`.
@@ -56,16 +61,20 @@ relance les bots tout seul toutes les 20 secondes s'ils s'arrêtent, sauf si l'u
 1. Toutes les 10 minutes, les N cryptos USDT les plus agitées sur 24 h (au moins 5 M$ échangés par jour, sans monnaies
    stables). Sous `FLOTTE_MOUVEMENT_MIN` d'amplitude (3 % par défaut), une crypto passe en veille : ses bots n'ouvrent
    plus de trade et gèrent ceux en cours.
-2. Chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures : 39 techniques × 2 sens × 4
-   façons de sortir (par la règle, objectif 2R, stop suiveur, objectif 2R + stop sécurisé) × 5 unités (1 min à 4 h) =
-   1560 combinaisons, sur l'historique récent, frais des contrats à terme compris. Une combinaison peut devenir un bot
+2. Chaque crypto est retestée dès son entrée dans la liste, puis toutes les 3 heures : 39 techniques × 2 sens × 3
+   façons de sortir (par la règle, objectif 2R, stop suiveur) × 5 unités (1 min à 4 h) = 1170 combinaisons, chacune
+   simulée sans et avec la sécurisation des gains (`FLOTTE_SECURISATION`, `_SEUIL` en R, `_PART` en % : au seuil, une
+   part de la position est encaissée et le stop du reste passe au prix d'entrée, frais compris), sur l'historique
+   récent, frais des contrats à terme compris. Une combinaison peut devenir un bot
    si elle gagne sur l'étude et la validation (les premiers 80 % de l'historique), avec assez de trades et sans
    liquidation. Le test final (les derniers 20 %) n'est jamais regardé pour choisir : il mesure ce que vaut le choix
    (`holdout`). Au plus `FLOTTE_BOTS_PAR_CRYPTO` bots par crypto (8 par défaut, 60 cryptos : 480 bots au plus).
 3. Chaque bot met tout son capital fictif à chaque trade, avec le levier de son horizon (×5 scalping, ×3 court terme,
    ×1 long terme par défaut), réduit si le stop est loin. Un bot garde sa place d'un test à l'autre ; il n'est arrêté
    que s'il est liquidé, à moitié ruiné ou nettement perdant après 20 trades (sa combinaison est alors mise de côté
-   24 h), si sa stratégie est recalée, ou si sa crypto a quitté la liste depuis 6 heures.
+   24 h), ou si sa stratégie est recalée. Quand sa crypto quitte la liste depuis 6 heures, il s'endort (`endormi` :
+   compte et historique gardés, plus de bougies ni de prix demandés) et se réveille à son retour ; il n'est arrêté
+   pour de bon qu'après 30 jours sans retour.
 4. Les agents d'analyse mesurent, sur le backtest de chaque bot, dans quelles conditions sa stratégie gagne ou perd
    (tendance de fond, volatilité, RSI, volume, heure), une probabilité de gain dans les conditions du moment, et
    pourquoi chaque trade réel a gagné ou perdu. Ce sont des mesures : un bot n'entre que sur le signal de sa règle.

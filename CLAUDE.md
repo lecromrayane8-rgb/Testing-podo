@@ -55,7 +55,9 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   sur l'exécutable Windows), `site`. `NothingRetained` : un labo qui ne retient rien n'est pas une panne (code 0).
 - `tradingbot/swarm.py` : l'essaim de bots en argent fictif (commande `flotte`, lanceur 19, lancé tout seul par le site).
   `SwarmSettings` (`FLOTTE_CAPITAL`, `FLOTTE_CRYPTOS` 60 au plus 80, `FLOTTE_BOTS_PAR_CRYPTO` 8 au plus 20,
-  `FLOTTE_MOUVEMENT_MIN` 3 %, `FLOTTE_LEVIER_SCALPING/COURT/LONG` 5/3/1 ; `max_bots` = cryptos × bots). `Swarm.cycle`
+  `FLOTTE_MOUVEMENT_MIN` 3 %, `FLOTTE_LEVIER_SCALPING/COURT/LONG` 5/3/1, `FLOTTE_SECURISATION` oui/non,
+  `FLOTTE_SECURISATION_SEUIL` 1R de 0,5 à 3, `FLOTTE_SECURISATION_PART` 50 % de 0 à 90 ; `max_bots` = cryptos × bots ;
+  `variant` = « avec » ou « sans », `security()` = seuil et part de la variante). `Swarm.cycle`
   (un tour toutes les 5 s, à l'heure de la plateforme : `PlatformClock`, `fetch_time` toutes les 10 min puis horloge
   monotone ; sans elle, horloge du PC) : résultats des re-tests (`apply_test` : les bots en place gardent leur place,
   leur fiche est rafraîchie par `kept`, les places libres reçoivent les mieux classées ; un test ne met plus personne
@@ -71,9 +73,16 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   nouvel essai 5 s plus tard, puis de moins en moins souvent), `_on_candles` (même ordre que le backtest : `range_bar`
   sur les bougies manquées, `close_bar`, `open_bar` au prix du moment), stop et objectif au prix du moment, `_retire`
   (liquidé, moitié du capital, gardien après `ELIMINATE_AFTER` trades → arrêté et `banned` 24 h ; `sortie` =
-  stratégie recalée → arrêté sans mise de côté ; crypto hors liste depuis 6 h), humeur (`mood` = `fetch_mood`, une
-  fois par heure). `retest_coin` : `LIBRARY` (39 techniques) × `SIDES` × `fleet.EXITS` (règle, 2R, stop suiveur, 2R +
-  stop sécurisé) × `TIMEFRAMES` (1m à 4h) = 1560 combinaisons, `_eligible` (étude et validation positives,
+  stratégie recalée → arrêté sans mise de côté), humeur (`mood` = `fetch_mood`, une fois par heure). Bots endormis
+  (`_sleep_and_wake`, dans `_refresh_universe`) : une crypto hors liste depuis 6 h (`UNFOLLOWED_S`) → ses bots sans
+  position passent `endormi` : compte gardé, ni bougies ni prix demandés (`cycle` les saute), hors `max_bots` et hors
+  rotation des fichiers ; au retour de la crypto, réveil (`last_ts` None, `woke` : aucune entrée sur une bougie finie
+  avant le réveil, rien de rejoué) ; arrêt après `ASLEEP_DAYS` = 30 jours ou au-delà de `MAX_ASLEEP` = 1000.
+  `retest_coin` : `LIBRARY` (39 techniques) × `SIDES` × `fleet.EXITS` (règle, 2R, stop suiveur) × `TIMEFRAMES` (1m à
+  4h) = 1170 combinaisons, chacune simulée deux fois (`VARIANTS` : sans et avec la sécurisation des gains ; la
+  variante des bots fournit les lignes qui choisissent ; `secure` = le test final des deux, pour toutes les
+  combinaisons et pour les éligibles ; les bots d'avant en `securise` sont simulés à part), `_eligible` (étude et
+  validation positives,
   `MIN_TRADES`, pas de liquidation avant le test final ; LE TEST FINAL N'EST JAMAIS REGARDÉ POUR CHOISIR), `_label`
   (ce que dit le test final : « 3 » gagnant, « 1 » perdant, « 2 » trop peu de trades, « 0 » bot en place qui ne
   gagne plus), `_choose(rows, k, verdicts, taken)` (stratégies prouvées d'abord, recalées jamais, familles variées,
@@ -83,30 +92,40 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   ont été ouverts pendant que la crypto bougeait (`active`) ; la position encore ouverte attend, sauf au test
   `final` (comptée à sa valeur du moment) ; lignes `strategie:` technique|unité, `technique:`, `sortie:`, `sens:`,
   `unite:` (avec le détail par jour) et `detail:` (combinaison complète) : `n`, `total`, `total_sq`, `wins`, `gain`,
-  `r` ; `_merge_trial`, `trial_view` (30 jours `TRIAL_DAYS`, fourchette `risk.clustered_bounds` qui compare les
-  journées, verdicts après `TRIAL_MIN_DAYS` = 7 jours et `LIVE_MIN_TRADES` trades : `recalee` si le haut à 95 % < 0,
-  `prouvee` si le bas durci par Bonferroni > 0), `verdicts`, `_judge_strategies` (annonce ; bots d'une recalée en
-  `sortie`, repris si le verdict est levé). Classement en direct, à part : `_learn` (chaque trade fini d'un bot, net
+  `r` ; les mêmes lignes avec le préfixe `SAFE` (« avec: ») pour la variante sécurisée ; `_merge_trial`,
+  `trial_view(variant)` (par défaut la variante des bots : c'est elle qui juge ; 30 jours `TRIAL_DAYS`, fourchette
+  `risk.clustered_bounds` qui compare les journées, verdicts après `TRIAL_MIN_DAYS` = 7 jours et `LIVE_MIN_TRADES`
+  trades : `recalee` si le haut à 95 % < 0, `prouvee` si le bas durci par Bonferroni > 0), `verdicts`,
+  `_judge_strategies` (annonce ; bots d'une recalée en `sortie`, repris si le verdict est levé), `_secure_summary`
+  (avec − sans : à l'essai par journées, sur le test final par cryptos, `risk.paired_bounds`), `_apply_security` (au
+  démarrage : chaque fiche reçoit le réglage ; seuil ou part changés → la mesure « avec » repart de zéro). Classement en direct, à part : `_learn` (chaque trade fini d'un bot, net
   sans levier, mêmes lignes `stat_keys`, jours gardés `LIVE_DAYS`), `ranking` (site ; le verdict affiché vient de la
   mesure à l'essai). Agents : `features` (tendance MM200 et
   pente, ATR %, RSI 14, volume, heure UTC), `buckets`, `profile`, `insights`, `probability` (tirée vers la moyenne,
   `SHRINK`), `trade_analysis` (après chaque trade). Fichiers : `essaim.json` (résumé du site, `summary`, `bot_brief` ;
-  `trial`, `holdout`, `reference`), `essaim-etat.json` (`STATE_FILE`, la mémoire, écrite si `state_dirty` ou toutes
+  `trial`, `holdout`, `secure`, `reference`), `essaim-etat.json` (`STATE_FILE`, la mémoire, écrite si `state_dirty` ou toutes
   les 10 min ; un test perdu au redémarrage est refait), `essaim-essais.json` (`TRIAL_FILE`, la mesure à l'essai,
   écrite quand un test l'a complétée), `reference.json` (`REFERENCE_FILE` : les chiffres du site au premier lancement
   de cette version, lus dans l'ancien résumé avant de le réécrire ; jamais réécrit), `essaim/<id>.json` (compte de
   chaque bot, écrit s'il change, et tous à tour de rôle en 10 min : `rotation`), verrou `en-cours.json` (fil de signal
   de vie toutes les 10 s, à l'horloge du PC). `run` : réseau coupé → tours retentés de plus en plus tard.
-  Tests : parité direct/backtest (`test_swarm`) et signaux de la fenêtre du direct = tout l'historique, pour chaque
-  technique dans les deux sens (`test_fleet`), reprise après redémarrage identique à une course sans arrêt, trades à
-  l'essai comptés une seule fois quel que soit le nombre de tests, verdicts par journées.
+  Tests : parité direct/backtest avec et sans sécurisation (`test_swarm`) et signaux de la fenêtre du direct = tout
+  l'historique, pour chaque technique dans les deux sens (`test_fleet`), reprise après redémarrage identique à une
+  course sans arrêt, trades à l'essai comptés une seule fois quel que soit le nombre de tests, verdicts par journées,
+  comparaison avec/sans refaite à la main, sommeil et réveil d'un bot.
 - `tradingbot/fleet.py` : le moteur commun au backtest et au direct. `technique` (`lab.ALL_VARIANTS` + `EXTRA` : EMA,
   VWAP, stochastique, Keltner, ADX, Parabolic SAR, Ichimoku, écart à la moyenne, Heikin-Ashi), `Spec` = crypto, unité,
   technique, sens (`long`, ou `short` = même règle sur le graphique retourné, `mirror`), objectif (`target_r` 0 ou 2R),
-  levier, `stop_mode` (`fixe` ; `suiveur` : à la distance du départ du meilleur prix ; `securise` : au prix d'entrée
-  frais compris dès +1R ; décidé à la clôture dans `_move_stop`, compte dès la bougie suivante, ne recule jamais ; clé
-  du bot inchangée pour `fixe`). `Book` (`open_bar`, `range_bar` stop d'abord puis objectif au prix limite,
-  `close_bar`) ; tout le capital ×
+  levier, `stop_mode` (`fixe` ; `suiveur` : à la distance du départ du meilleur prix ; `securise` : l'ancienne
+  sortie, gardée pour les bots d'avant ; décidé à la clôture dans `_move_stop`, compte dès la bougie suivante, ne
+  recule jamais ; clé du bot inchangée pour `fixe`), `secure_r` et `secure_part` (la sécurisation des gains, réglage
+  commun : hors de la clé du bot, comme le levier ; `with_security`). `Book` (`open_bar`, `range_bar` stop d'abord,
+  puis seuil de sécurisation, puis objectif, au prix limite ; `close_bar`). Sécurisation (`_secure`) : au seuil
+  (`pos["secure"]` = prix d'entrée ± `secure_r` × distance, aucun si l'objectif vient avant), un ordre limite encaisse
+  `secure_part` (frais maker, financement de cette part) ; `left` = part encore ouverte, `banked` = ce qui est
+  encaissé ; `qty`, `notional`, `margin`, `fee` restent ceux de l'entrée ; à la clôture de la bougie le stop passe au
+  prix d'entrée, frais d'un aller-retour compris (`stop_kind`). UN SEUL trade par position (`_record` : pnl = encaissé
+  + reste, `secured`). `value` = `equity` moins les frais de sortie (ce que le site affiche). Tout le capital ×
   levier, levier réduit pour que le stop passe avant la liquidation (`LIQ_SAFETY`), frais `execution.FUTURES`,
   financement compté comme un coût dans les deux sens, liquidation = toute la mise ; `explain=True` : `diagnosis`.
   `simulate`, `judge` (étude 50 % / validation 30 % / test final 20 % ; un trade à cheval sur le test final ne compte
@@ -124,8 +143,10 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `#crypto/SOL` = `/api/crypto` + `/api/crypto-graphique` : bots, graphique par unité, lecture, actualité, `best` du
   dernier test), page d'un bot (`#bot/<id>` = `/api/bot` + `/api/bot-graphique` : position au chiffre près, agents,
   direct contre backtest, trades expliqués, fiche `knowledge.ENTRIES`), Actualité, Prix ; sous « Plus » : École,
-  Réglages, Journal. `zoomChart` : bougies, volume, lignes, zones, marques (entrée, stop, objectif, liquidation),
-  triangles des trades ; molette, glisser, pincer, boutons, clavier, double-clic ; mise à jour sans perdre le zoom
+  Réglages, Journal. Onglet Stratégies : d'abord « Sécurisation des gains : avec ou sans ? » (`renderSecure`,
+  `summary["secure"]`). Bots endormis : statut `endormi`, filtre « Endormis », tuile des bots sans eux. `zoomChart` :
+  bougies, volume, lignes, zones, marques (entrée, stop, objectif, liquidation, seuil de sécurisation en pointillés),
+  `bands` (zone du risque jusqu'au stop, zone visée jusqu'à l'objectif), triangles des trades, rond d'une sécurisation ; molette, glisser, pincer, boutons, clavier, double-clic ; mise à jour sans perdre le zoom
   (`box._chart.update`). `bot_data` prend le prix, le statut, le signal et la probabilité du dernier tour dans le
   résumé. `ACTIONS` = `flotte`, `check`, `telegram` (même commande que leur lanceur, test `test_packaging`), chacune
   dans un sous-processus (`TaskManager`, `Task`) dont le journal s'affiche en direct. `Site.start_background` lance
@@ -229,6 +250,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   partagées par crypto (`CcxtBroker` avec cache), un dossier par labo (`data/tournoi/`, `data/tournoi-court-terme/`).
 - `risk.student_t` et `risk.clustered_bounds` : la fourchette d'une moyenne quand les trades d'un même groupe (une
   journée) se ressemblent ; loi de Student faite maison (pas de scipy), vérifiée contre les tables.
+  `risk.paired_bounds` : la fourchette de l'écart entre deux mesures faites sur les mêmes groupes (avec et sans
+  sécurisation, mêmes journées ou mêmes cryptos).
 - Élimination (`risk.TradeStats`, `elimination_reason`, `is_candidate`) : après `ELIMINATE_AFTER_TRADES` trades,
   borne haute à 95 % < 0 → plus d'entrée ; mêmes règles en backtest et en live (test de parité). Jamais de
   modification automatique des réglages. « Candidate au testnet » : ≥ 30 trades et borne basse > 0, seuil durci
@@ -250,8 +273,11 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
 - `audit/` : les mesures de contrôle, hors du bot (rien n'est lu sur une plateforme, rien n'est écrit dans `data/`).
   `hasard.py` : des cryptos en marche au hasard (un prix toutes les 10 s, bougies tirées de ce chemin : AUCUNE mèche
   ajoutée, sinon les objectifs gagnent artificiellement), le vrai `retest_coin` choisit ses bots, puis on regarde
-  leur test final, leur « direct » sur la suite et la mesure à l'essai de toutes les combinaisons
-  (`python audit/hasard.py 80 12 hasard.json`). `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
+  leur test final, leur « direct » sur la suite et la mesure à l'essai de toutes les combinaisons, sans et avec
+  sécurisation (`python audit/hasard.py 80 12 hasard.json`). `vrai.py` : les mêmes mesures sur de VRAIES bougies
+  Binance (prix publics par le miroir `data-api.binance.vision`, cache hors du dépôt) : `essai --jours 14` rejoue la
+  mesure à l'essai (univers reconstitué heure par heure, trades ouverts pendant que la crypto bougeait), `aujourdhui`
+  fait le test du moment sur chaque crypto suivie ; les deux comparent avec et sans sécurisation. `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
 
@@ -265,8 +291,11 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `tests/test_fleet.py` (moteur : stop, objectif, levier, frais, financement, liquidation) et `tests/test_swarm.py`
   (parité direct/backtest, reprise, re-tests, classement).
 - Les réglages d'une technique sont fixés d'avance, jamais ajustés sur les données. Les frais et le glissement des bots
-  sont dans `execution.FUTURES`, comptés dans `fleet.Book` (`_open`, `_fill`, `_close`) et nulle part ailleurs.
-- Un réglage du site passe par `webapp.FIELDS` (liste blanche, phrase d'aide `help`, bornes) et `swarm.SwarmSettings`.
+  sont dans `execution.FUTURES`, comptés dans `fleet.Book` (`_open`, `_fill`, `_secure`, `_close`) et nulle part
+  ailleurs. Garde-fou : sur un marché fabriqué sans avantage, le moteur doit rendre exactement les frais, avec ou
+  sans sécurisation (`test_fleet`).
+- Un réglage du site passe par `webapp.FIELDS` (liste blanche, phrase d'aide `help`, bornes ; `switch` = oui ou non,
+  écrit seulement s'il change) et `swarm.SwarmSettings`.
   La page est dans `tradingbot/sitepage.py` (CSS et JS dans des chaînes Python) : un texte venu des données s'insère
   avec `textContent` ; après une modification, `node --check` sur le JS et vérification à 1280, 820 et 390 px.
 - Pas de nouvelle dépendance sans nécessité : le site et les bots n'utilisent que la bibliothèque standard, ccxt,
@@ -274,8 +303,13 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
 
 ## Environnement
 
-- Les sessions cloud n'accèdent pas aux plateformes d'échange (réseau bloqué). Les vraies données s'obtiennent
-  sur l'ordinateur de l'utilisateur : version Windows, ou Remote Control vers un dossier de son PC.
+- Sessions cloud : depuis le 13/11/2026, l'environnement « Ray » de l'utilisateur autorise les prix publics de
+  Binance. `data-api.binance.vision` (miroir officiel : bougies, tickers, liste des paires) et `data.binance.vision`
+  (archives, dont contrats à terme et financement) répondent ; `api.binance.com` et `fapi.binance.com` répondent 451
+  (région refusée par Binance). Le vrai code tourne donc sur de vraies bougies avec `audit/vrai.py` (ccxt :
+  `urls["api"]["public"]` vers le miroir et `session.trust_env = True`). Les bots en direct, eux, tournent sur le PC
+  de l'utilisateur (version Windows) ; ses résultats (`data\bots`) ne sont lisibles d'ici que s'il partage son dossier
+  (Remote Control). Les autres plateformes restent bloquées.
 - Branche de travail : `claude/trading-bot`.
 - Plateforme (recherche du 04/11/2026, presse de fin juin 2026, statut actuel non confirmé) : Binance n'avait pas
   l'agrément MiCA au 30/06/2026 et a arrêté le trading pour les clients français (retraits seulement). En paper, ses

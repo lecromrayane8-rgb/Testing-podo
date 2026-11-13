@@ -2,7 +2,9 @@ import math
 
 import pytest
 
-from tradingbot.risk import RiskGuard, RiskParams, clustered_bounds, position_size, student_t, student_tail
+from tradingbot.risk import (
+    RiskGuard, RiskParams, clustered_bounds, paired_bounds, position_size, student_t, student_tail,
+)
 
 
 def test_position_size_risks_fixed_fraction():
@@ -103,3 +105,28 @@ def test_few_days_make_a_wide_range_and_many_trades_on_one_day_prove_nothing():
     assert clustered_bounds([(0, 0.0), (10, 0.1), (10, 0.3)])[0] == pytest.approx(0.02)  # un jour sans trade ne compte pas
     with pytest.raises(ValueError):
         student_t(0.9, 5)
+
+
+def test_the_gap_between_two_measures_of_the_same_days_is_judged_on_how_it_varies():
+    """Deux façons de trader mesurées sur les mêmes journées : une bonne journée l'est pour les deux. La fourchette
+    de l'écart vient de ce que l'écart varie d'une journée à l'autre, pas de la dispersion de chaque mesure."""
+    days = [-0.004, 0.006, -0.002, 0.008, 0.001, -0.005, 0.003]
+    a = [(50, 50 * (m + 0.0005)) for m in days]  # A fait 0,05 % de mieux que B chaque jour, par trade
+    b = [(50, 50 * m) for m in days]
+    diff, lo, hi = paired_bounds([(na, ta, nb, tb) for (na, ta), (nb, tb) in zip(a, b)])
+    assert diff == pytest.approx(0.0005) and lo == pytest.approx(0.0005) and hi == pytest.approx(0.0005)  # écart constant
+    assert clustered_bounds(a)[1] < 0 < clustered_bounds(a)[2]  # alors que chaque mesure, seule, ne prouve rien
+    # Un écart qui change de signe d'un jour à l'autre : la fourchette contient zéro.
+    noisy = [(50, 50 * (m + (0.002 if k % 2 else -0.0015)), 50, 50 * m) for k, m in enumerate(days)]
+    diff, lo, hi = paired_bounds(noisy)
+    assert lo < 0 < hi and lo < diff < hi
+    # La même formule que la fourchette d'une moyenne quand B vaut toujours zéro.
+    mean, low, high = clustered_bounds(a)
+    assert paired_bounds([(na, ta, na, 0.0) for na, ta in a]) == pytest.approx((mean, low, high))
+    # Des nombres de trades différents (la variante sécurisée prend d'autres entrées) : chaque moyenne garde son compte.
+    diff, _, _ = paired_bounds([(10, 0.10, 20, 0.10), (30, 0.30, 20, 0.10)])
+    assert diff == pytest.approx(0.40 / 40 - 0.20 / 40)
+    assert all(math.isnan(x) for x in paired_bounds([]))
+    assert all(math.isnan(x) for x in paired_bounds([(0, 0.0, 5, 0.1)]))  # rien d'un côté : pas d'écart
+    one = paired_bounds([(5, 0.05, 5, 0.01)])
+    assert one[0] == pytest.approx(0.008) and math.isnan(one[1]) and math.isnan(one[2])  # un seul groupe : pas de fourchette

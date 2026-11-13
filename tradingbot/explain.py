@@ -252,17 +252,19 @@ KINDS = {  # étiquette courte de chaque diagnostic
     "gagne": "Scénario réussi", "gain_partiel": "Gagné, une partie rendue", "frais": "Bon sens, mais trop petit",
     "faux_depart": "Faux départ", "gain_rendu": "Gagnant, puis retourné", "stop": "Stop touché",
     "temps": "Rien ne s'est passé", "sortie_regle": "La règle a coupé", "liquidation": "Liquidé par le levier",
-    "ouvert": "Encore ouvert", "securise": "Sécurisé à zéro",
+    "ouvert": "Encore ouvert", "securise": "Sécurisé à zéro", "encaisse": "Gain sécurisé en route",
 }
 
 
 def diagnose(t: dict) -> dict:
     """Ce que dit un trade fini. Clés attendues : reason, net, gross, family ; facultatives : mfe, mae, risk, fees,
-    bars (plus haut et plus bas atteints pendant le trade, distance du stop, frais, durée en bougies)."""
+    bars (plus haut et plus bas atteints pendant le trade, distance du stop, frais, durée en bougies) et secured (la
+    sécurisation du trade : la part encaissée en route)."""
     reason, net, gross = t["reason"], float(t["net"]), float(t.get("gross", t["net"]))
     family = t.get("family", "")
     mfe, risk, fees = t.get("mfe"), t.get("risk"), t.get("fees") or 0.0
     bars = t.get("bars")
+    cashed = float((t.get("secured") or {}).get("part") or 0.0)
     fail = FAILURES.get(family, "La tendance attendue n'a pas démarré.")
     if reason == "liquidation":
         kind = "liquidation"
@@ -270,6 +272,20 @@ def diagnose(t: dict) -> dict:
         lesson = "Le levier grossit les pertes autant que les gains : un stop placé avant la liquidation l'évite."
     elif reason == "fin du test":
         kind, text, lesson = "ouvert", f"Le trade était encore ouvert à la fin de l'historique ({pct(net)}).", ""
+    elif cashed > 0:
+        kind = "encaisse"
+        start = f"En route, {pct(cashed, 0, False)} de la position ont été encaissés au seuil de sécurisation"
+        if reason == "objectif":
+            text = f"{start}, puis le reste a atteint l'objectif : {pct(net)} après frais."
+        elif reason == "stop sécurisé":
+            text = (f"{start}, puis le prix est revenu toucher le stop, passé entre-temps au prix d'entrée : {pct(net)} "
+                    "au lieu d'une perte.")
+        elif reason.startswith("stop"):
+            text = f"{start}, puis le prix s'est retourné jusqu'au stop : {pct(net)} au total."
+        else:
+            text = f"{start}, puis le reste est sorti ({reason}) : {pct(net)} au total."
+        lesson = ("Encaisser une partie du gain en route rend les résultats plus réguliers ; en échange, un trade qui "
+                  "s'envole ne rapporte plus que sur la part restante.")
     elif reason == "stop sécurisé" and -0.002 <= net <= max(fees, 0.002):
         kind = "securise"
         text = (f"Le trade a gagné une fois sa distance de stop, alors le stop est monté au prix d'entrée ; le prix "

@@ -9,8 +9,8 @@ from tests.conftest import HOUR_MS, T0
 from tradingbot.data import ohlcv_to_frame
 from tradingbot.execution import FUTURES
 from tradingbot.fleet import (
-    CAPITAL, EXITS, LIQ_SAFETY, MAINTENANCE, SIDES, Book, Spec, chart_view, condition, entry_rule, exit_rule, judge,
-    lookback_for, mirror, signals_for, simulate, spec_from, technique,
+    CAPITAL, EXITS, LIQ_SAFETY, MAINTENANCE, SIDES, Book, Spec, _position_view, chart_view, condition, entry_rule,
+    exit_rule, judge, lookback_for, mirror, signals_for, simulate, spec_from, technique, with_security,
 )
 from tradingbot.lab import ALL_VARIANTS
 from tradingbot.strategy import STRATEGY_TYPES
@@ -18,8 +18,8 @@ from tradingbot.swarm import LIBRARY, new_bot
 
 
 def spec(name="Cassure 20/10", side="long", target=0.0, leverage=3.0, section="court", symbol="X/USDT", tf="1h",
-         stop_mode="fixe"):
-    return Spec(section, symbol, tf, name, side, target, leverage, stop_mode)
+         stop_mode="fixe", secure_r=0.0, secure_part=0.0):
+    return Spec(section, symbol, tf, name, side, target, leverage, stop_mode, secure_r, secure_part)
 
 
 def test_a_long_stopped_out_loses_its_leverage_times_the_move_plus_fees():
@@ -105,6 +105,212 @@ def test_a_secured_stop_goes_to_the_entry_price_once_the_trade_has_gained_its_ri
     assert exit_["diagnosis"]["kind"] == "securise"
 
 
+def secured_trade(side, target=0.0, part=0.5, leverage=3.0, stop_mode="fixe", explain=False):
+    """Un bot avec sécurisation à +1R, entré à 100 avec un stop à 2 $ (2 ATR) : le livre, l'entrée et le signe."""
+    s = spec("Cassure 20/10", side, target, leverage, stop_mode=stop_mode, secure_r=1.0, secure_part=part)
+    book = Book(s, 1000.0, FUTURES, explain=explain)
+    book.close_bar(T0, 100.0, True, False, 1.0)
+    [entry] = book.open_bar(T0 + HOUR_MS, 100.0)
+    return book, entry, 1 if side == "long" else -1
+
+
+def bar(book, k, open_, far, near):
+    """La bougie k (en heures depuis T0) : `far` est l'extrême du côté du gain, `near` celui du côté du stop."""
+    return book.range_bar(T0 + k * HOUR_MS, open_, max(far, near), min(far, near))
+
+
+@pytest.mark.parametrize("side", SIDES)
+def test_securing_cashes_half_the_position_at_one_r_and_moves_the_stop_to_the_entry_price(side):
+    """Le compte d'un trade sécurisé, au centime : la moitié encaissée par un ordre limite à +1R (frais maker, pas de
+    glissement, financement de cette moitié jusque-là), puis le reste sorti au stop passé au prix d'entrée."""
+    book, entry, sign = secured_trade(side, explain=True)
+    price, qty, fee_in = entry["price"], entry["qty"], 3000.0 * FUTURES.fee_rate
+    level = price + sign * 2.0
+    assert entry["secure"] == pytest.approx(level) and entry["part"] == 0.5 and entry["notional"] == pytest.approx(3000.0)
+    assert bar(book, 1, 100.0, 100.0 + sign * 1.5, 100.0 - sign * 0.2) == []  # +0,75 R : rien
+    book.close_bar(T0 + HOUR_MS, 100.0 + sign * 1.0, False, False, 1.0)
+    assert book.position["stop"] == entry["stop"] and "left" not in book.position
+    [event] = bar(book, 2, 100.0 + sign * 1.0, 100.0 + sign * 2.6, 100.0 + sign * 0.8)  # +1,3 R : le seuil est dépassé
+    funding_a = 1500.0 * FUTURES.funding_rate_8h * 1 / 8  # une heure depuis l'entrée, sur la moitié
+    half = sign * (qty / 2) * (level - price) - (qty / 2) * level * FUTURES.maker_fee_rate - funding_a - fee_in / 2
+    assert event["kind"] == "secure" and event["part"] == 0.5 and event["price"] == pytest.approx(level)
+    assert event["pnl"] == pytest.approx(half) and half > 0
+    assert book.s["cash"] == pytest.approx(1000.0 - fee_in / 2 + half)  # la moitié des frais d'entrée reste à compter
+    assert book.s["count"] == 0 and book.s["trades"] == []  # le trade n'est pas fini : rien n'est compté deux fois
+    pos = book.position
+    assert pos["left"] == 0.5 and pos["qty"] == pytest.approx(qty) and pos["notional"] == pytest.approx(3000.0)
+    assert pos["stop"] == entry["stop"]  # le stop ne bouge qu'à la clôture de la bougie
+    assert book.equity(level) == pytest.approx(book.s["cash"] + sign * (qty / 2) * (level - price))
+    book.close_bar(T0 + 2 * HOUR_MS, 100.0 + sign * 2.2, False, False, 1.0)
+    cost = 2 * FUTURES.fee_rate + FUTURES.slippage
+    stop = price * (1 + sign * cost)
+    assert pos["stop"] == pytest.approx(stop) and pos["moved"] == 1 and pos["stop_kind"] == "securise"
+    assert bar(book, 2, 100.0 + sign * 2.3, 100.0 + sign * 2.6, 100.0 + sign * 2.2) == []  # jamais encaissée deux fois
+    [exit_] = bar(book, 3, stop + sign * 0.3, stop + sign * 0.4, stop - sign * 0.5)
+    fill = stop * (1 - sign * FUTURES.slippage)
+    funding_b = 1500.0 * FUTURES.funding_rate_8h * 2 / 8  # deux heures, sur l'autre moitié
+    rest = sign * (qty / 2) * (fill - price) - (qty / 2) * fill * FUTURES.fee_rate - funding_b - fee_in / 2
+    assert exit_["kind"] == "exit" and exit_["reason"] == "stop sécurisé"
+    assert abs(rest + funding_b) < 0.01  # sans le financement, le reste sort à zéro : « prix d'entrée, frais compris »
+    assert exit_["pnl"] == pytest.approx(half + rest) and exit_["net"] == pytest.approx((half + rest) / 3000.0)
+    assert exit_["roi"] == pytest.approx((half + rest) / 1000.0) and exit_["funding"] == pytest.approx(funding_a + funding_b)
+    assert exit_["qty"] == pytest.approx(qty) and exit_["notional"] == pytest.approx(3000.0)  # la taille de l'entrée
+    assert exit_["gross"] == pytest.approx(0.5 * sign * (level / 100.0 - 1) + 0.5 * sign * (stop / 100.0 - 1))
+    assert exit_["secured"] == {"ts": T0 + 2 * HOUR_MS, "price": pytest.approx(level), "part": 0.5,
+                                "pnl": pytest.approx(half)}
+    assert exit_["diagnosis"]["kind"] == "encaisse"
+    assert book.s["cash"] == pytest.approx(1000.0 + half + rest)  # le compte retombe sur ses pieds
+    assert (book.s["count"], book.s["wins"]) == (1, 1) and book.s["pnl"] == pytest.approx(half + rest)
+    assert book.position is None
+
+
+@pytest.mark.parametrize("side", SIDES)
+def test_a_secured_trade_reaching_its_target_is_one_trade_with_two_exits(side):
+    book, entry, sign = secured_trade(side, target=2.0)
+    price, qty, fee_in = entry["price"], entry["qty"], 3000.0 * FUTURES.fee_rate
+    level, target = price + sign * 2.0, price + sign * 4.0
+    assert entry["target"] == pytest.approx(target)
+    # Une seule bougie dépasse le seuil puis l'objectif : la moitié au seuil, le reste à l'objectif, un seul trade.
+    events = bar(book, 3, 100.0 + sign * 0.5, 100.0 + sign * 4.5, 100.0 + sign * 0.2)
+    assert [e["kind"] for e in events] == ["secure", "exit"]
+    funding = 1500.0 * FUTURES.funding_rate_8h * 2 / 8  # deux heures, pour chaque moitié
+    half = sign * (qty / 2) * (level - price) - (qty / 2) * level * FUTURES.maker_fee_rate - funding - fee_in / 2
+    rest = sign * (qty / 2) * (target - price) - (qty / 2) * target * FUTURES.maker_fee_rate - funding - fee_in / 2
+    trade = events[1]
+    assert trade["reason"] == "objectif" and trade["exit_price"] == pytest.approx(target)
+    assert trade["pnl"] == pytest.approx(half + rest) and book.s["cash"] == pytest.approx(1000.0 + half + rest)
+    assert trade["fees"] == pytest.approx((fee_in + (qty / 2) * (level + target) * FUTURES.maker_fee_rate
+                                           + 2 * funding) / 3000.0)
+    assert book.s["count"] == 1 and len(book.s["trades"]) == 1 and book.position is None
+
+
+@pytest.mark.parametrize("side", SIDES)
+def test_the_stop_comes_first_when_one_candle_touches_the_stop_and_the_securing_level(side):
+    """Dans une bougie qui touche à la fois le stop et le seuil, on ne sait pas lequel est venu d'abord : le moteur
+    compte le pire (le stop sur toute la position), comme pour l'objectif."""
+    book, entry, sign = secured_trade(side)
+    [exit_] = bar(book, 1, 100.0, 100.0 + sign * 3.0, 100.0 - sign * 2.5)
+    assert exit_["reason"] == "stop" and "secured" not in exit_ and exit_["pnl"] < 0
+    qty = entry["qty"]
+    fill = entry["stop"] * (1 - sign * FUTURES.slippage)
+    assert exit_["pnl"] == pytest.approx(sign * qty * (fill - entry["price"]) - qty * fill * FUTURES.fee_rate
+                                         - 3000.0 * FUTURES.fee_rate)
+
+
+def test_securing_without_a_part_only_moves_the_stop():
+    book, entry, sign = secured_trade("long", part=0.0)
+    cash = book.s["cash"]
+    [event] = bar(book, 1, 100.0, 102.5, 99.9)
+    assert event["kind"] == "secure" and event["part"] == 0.0 and event["pnl"] == 0.0
+    assert book.s["cash"] == cash and "left" not in book.position and "banked" not in book.position
+    book.close_bar(T0 + HOUR_MS, 102.0, False, False, 1.0)
+    assert book.position["stop"] == pytest.approx(entry["price"] * (1 + 2 * FUTURES.fee_rate + FUTURES.slippage))
+    [exit_] = bar(book, 2, 101.0, 101.2, 100.0)
+    assert exit_["reason"] == "stop sécurisé" and exit_["secured"]["part"] == 0.0
+    assert abs(exit_["net"]) < 3e-5  # zéro, au financement d'une heure près (0,00125 %)
+
+
+def test_a_part_too_small_for_an_order_is_not_cashed():
+    s = spec("Cassure 20/10", "long", 0.0, 1.0, secure_r=1.0, secure_part=0.5)
+    book = Book(s, 15.0, FUTURES)  # 15 USDT en jeu : la moitié (7,5) est sous le plus petit ordre accepté (10)
+    book.close_bar(T0, 100.0, True, False, 1.0)
+    book.open_bar(T0 + HOUR_MS, 100.0)
+    [event] = bar(book, 1, 100.0, 102.5, 99.9)
+    assert event["part"] == 0.0 and "left" not in book.position and book.position["secured"]
+
+
+@pytest.mark.parametrize("secure_r", [2.0, 3.0])
+def test_no_securing_level_when_it_is_not_before_the_target(secure_r):
+    s = spec("Cassure 20/10", "long", 2.0, 3.0, secure_r=secure_r, secure_part=0.5)
+    book = Book(s, 1000.0, FUTURES)
+    book.close_bar(T0, 100.0, True, False, 1.0)
+    [entry] = book.open_bar(T0 + HOUR_MS, 100.0)
+    assert "secure" not in entry  # l'objectif à 2R ferme tout avant (ou en même temps)
+    [exit_] = bar(book, 1, 100.0, 104.5, 99.9)
+    assert exit_["reason"] == "objectif" and "secured" not in exit_
+
+
+def test_a_gap_through_liquidation_after_securing_loses_only_what_was_still_at_stake():
+    book, entry, sign = secured_trade("long", leverage=5.0)
+    assert entry["leverage"] == 5 and entry["notional"] == pytest.approx(5000.0)
+    [event] = bar(book, 1, 100.0, 102.5, 99.9)
+    book.close_bar(T0 + HOUR_MS, 102.2, False, False, 1.0)
+    cash = book.s["cash"]
+    fee_in = 5000.0 * FUTURES.fee_rate
+    assert cash == pytest.approx(1000.0 - fee_in / 2 + event["pnl"])
+    [exit_] = book.range_bar(T0 + 2 * HOUR_MS, 70.0, 71.0, 69.0)  # ouverture à −30 % : sous la liquidation
+    assert exit_["reason"] == "liquidation" and book.s["dead"] == "liquidé"
+    assert exit_["pnl"] == pytest.approx(-500.0 + event["pnl"])  # la moitié de la mise restait en jeu
+    assert book.s["cash"] == pytest.approx(1000.0 + exit_["pnl"]) and book.s["cash"] > 400.0
+
+
+def test_a_trailing_stop_with_securing_keeps_the_most_protective_stop():
+    book, entry, sign = secured_trade("long", stop_mode="suiveur", leverage=1.0)
+    price = entry["price"]
+    [event] = bar(book, 1, 100.0, 102.1, 99.9)  # tout juste +1R : le stop suiveur (100,1) est sous le prix d'entrée
+    assert event["kind"] == "secure"
+    book.close_bar(T0 + HOUR_MS, 101.9, False, False, 1.0)
+    pos = book.position
+    assert pos["stop"] == pytest.approx(price * (1 + 2 * FUTURES.fee_rate + FUTURES.slippage)) and pos["stop_kind"] == "securise"
+    assert bar(book, 2, 102.0, 106.0, 101.5) == []
+    book.close_bar(T0 + 2 * HOUR_MS, 105.5, False, False, 1.0)
+    assert pos["stop"] == pytest.approx(104.0) and pos["stop_kind"] == "suiveur" and pos["moved"] == 2
+    [exit_] = bar(book, 3, 105.0, 105.2, 103.5)
+    assert exit_["reason"] == "stop suiveur" and exit_["secured"]["part"] == 0.5 and exit_["pnl"] > event["pnl"]
+
+
+def test_securing_belongs_to_the_settings_not_to_the_name_of_the_bot():
+    plain, safe = spec("Cassure 20/10", "long", 2.0), spec("Cassure 20/10", "long", 2.0, secure_r=1.0, secure_part=0.5)
+    assert safe.key == plain.key == "X/USDT|1h|Cassure 20/10|long|2"
+    assert with_security(plain, 1.0, 0.5) == safe and with_security(safe, 0.0, 0.5) == plain
+    old = {"section": "court", "symbol": "X/USDT", "timeframe": "1h", "technique": "Cassure 20/10", "side": "long",
+           "target_r": 2.0, "leverage": 3.0}
+    assert spec_from(old) == plain and spec_from({**old, "secure_r": 1.0, "secure_part": 0.5}) == safe
+    assert "Sécurisation" not in exit_rule(plain)
+    assert "il encaisse 50 % de sa position" in exit_rule(safe) and "1 fois la distance de son stop" in exit_rule(safe)
+    assert "encaisse" not in exit_rule(spec(secure_r=1.5)) and "1,5 fois" in exit_rule(spec(secure_r=1.5))
+    for bad in ({"secure_r": -1.0}, {"secure_part": 0.95}, {"secure_part": -0.1}, {"secure_r": math.inf}):
+        with pytest.raises(ValueError):
+            spec(**bad)
+
+
+def test_an_open_position_is_shown_at_what_closing_it_now_would_give():
+    """La valeur affichée d'une position compte les frais de sa sortie : elle ne paraît pas plus belle qu'elle n'est."""
+    book, entry, sign = secured_trade("long")
+    qty, price = entry["qty"], entry["price"]
+    view = _position_view(book, 101.0)
+    exit_cost = qty * 101.0 * (FUTURES.fee_rate + FUTURES.slippage)
+    assert view["pnl"] == pytest.approx(qty * (101.0 - price) - 3000.0 * FUTURES.fee_rate - exit_cost)
+    assert book.value(101.0) == pytest.approx(book.equity(101.0) - exit_cost) and book.value(None) == book.s["cash"]
+    assert (view["secure"], view["part"], view["secured"], view["left"], view["banked"]) == (
+        pytest.approx(price + 2.0), 0.5, False, 1.0, None)
+    [event] = bar(book, 1, 100.0, 102.5, 99.9)
+    view = _position_view(book, 102.4)
+    assert view["secured"] and view["left"] == 0.5 and view["banked"] == pytest.approx(event["pnl"])
+    assert view["pnl"] == pytest.approx(event["pnl"] + (qty / 2) * (102.4 - price) - 3000.0 * FUTURES.fee_rate / 2
+                                        - (qty / 2) * 102.4 * (FUTURES.fee_rate + FUTURES.slippage))
+    assert view["notional"] == pytest.approx(3000.0)  # la taille de l'entrée ; `left` dit ce qui reste ouvert
+
+
+@pytest.mark.parametrize("side", SIDES)
+@pytest.mark.parametrize("exit_", EXITS)
+def test_with_securing_the_account_still_adds_up_trade_by_trade(random_walk, side, exit_):
+    """Sur des milliers de bougies : le capital final est le capital de départ plus la somme des trades, chaque trade
+    sécurisé est compté une fois, et sa taille reste celle de l'entrée."""
+    target, mode = exit_
+    for name in ("Cassure 20/10", "Croisement MM 20/100", "Repli RSI(2) < 10 sans filtre"):
+        s = spec(name, side, target, 3.0, stop_mode=mode, secure_r=1.0, secure_part=0.5)
+        book = simulate(random_walk, s)
+        trades = book.s["trades"]
+        assert book.s["cash"] == pytest.approx(CAPITAL + sum(t["pnl"] for t in trades))
+        assert book.s["count"] == len(trades) and book.position is None
+        assert all(t["net"] == pytest.approx(t["pnl"] / t["notional"]) for t in trades)
+        assert all(t["notional"] == pytest.approx(t["qty"] * t["price"]) for t in trades)
+        plain = simulate(random_walk, with_security(s, 0.0, 0.0))
+        assert all("secured" not in t for t in plain.s["trades"])
+    assert any((t.get("secured") or {}).get("part") for t in trades)  # RSI(2) : beaucoup de trades, certains sécurisés
+
+
 def test_the_stop_mode_is_part_of_the_bot_and_old_bots_keep_their_name():
     fixed, trailing = spec("Cassure 20/10", "long", 2.0), spec("Cassure 20/10", "long", 0.0, stop_mode="suiveur")
     assert fixed.key == "X/USDT|1h|Cassure 20/10|long|2" and trailing.key.endswith("|0|suiveur")
@@ -160,27 +366,43 @@ def test_on_a_market_with_nothing_to_win_the_engine_gives_back_the_costs_and_not
     le résultat moyen d'un trade doit être le prix des frais, ni plus ni moins. Un aller-retour au marché coûte
     2 × (0,05 % de frais + 0,02 % de glissement) = 0,14 % ; un peu moins quand la sortie est un objectif (ordre
     limite : 0,02 %, sans glissement). Des frais oubliés ou une exécution trop belle feraient remonter cette moyenne ;
-    un stop ou un objectif mal compté la ferait sortir de la fourchette."""
+    un stop ou un objectif mal compté la ferait sortir de la fourchette. La sécurisation des gains ne crée aucun
+    avantage : elle remplace seulement, pour la part encaissée, une sortie au marché par un ordre limite moins cher."""
     df = fair_market()
     names = ("Cassure 20/10", "Repli RSI(2) < 10 sans filtre", "Bollinger rebond 20/2 sans filtre", "Supertrend 10/3",
              "EMA 9/21", "MACD 12/26/9", "Stochastique 14/3", "Keltner 20/2", "Parabolic SAR", "Heikin-Ashi 2 bougies",
              "Momentum 28", "Écart à la moyenne 20/2")
-    nets = {exit_: [] for exit_ in EXITS}
+    nets = {(exit_, secured): [] for exit_ in EXITS for secured in (False, True)}
+    gross = {False: [], True: []}
+    cashed = 0
     for name in names:
         for side in SIDES:
             signals = signals_for(df, technique(name), side)
             for target, mode in EXITS:
-                book = simulate(df, Spec("scalping", "X/USDT", "1m", name, side, target, 5.0, mode), signals=signals)
-                assert book.s["dead"] != "liquidé"  # le stop passe avant la liquidation (mais les frais ruinent)
-                nets[(target, mode)] += [t["net"] for t in book.s["trades"] if t["reason"] != "fin du test"]
-    everything = [x for xs in nets.values() for x in xs]
-    assert len(everything) > 40_000 and all(len(xs) > 8_000 for xs in nets.values())
-    assert -0.00143 < np.mean(everything) < -0.00131  # le prix des frais, à 0,006 % près
-    by_rule = np.mean(nets[(0.0, "fixe")])  # sortie par la règle ou par le stop : toujours au marché
+                for secured in (False, True):
+                    bot = Spec("scalping", "X/USDT", "1m", name, side, target, 5.0, mode, *((1.0, 0.5) if secured else ()))
+                    book = simulate(df, bot, signals=signals)
+                    assert book.s["dead"] != "liquidé"  # le stop passe avant la liquidation (mais les frais ruinent)
+                    done = [t for t in book.s["trades"] if t["reason"] != "fin du test"]
+                    nets[((target, mode), secured)] += [t["net"] for t in done]
+                    gross[secured] += [t["gross"] for t in done]
+                    cashed += sum(1 for t in done if (t.get("secured") or {}).get("part"))
+    plain = [x for (_, secured), xs in nets.items() if not secured for x in xs]
+    safe = [x for (_, secured), xs in nets.items() if secured for x in xs]
+    assert len(plain) > 30_000 and len(safe) > 30_000 and all(len(xs) > 8_000 for xs in nets.values())
+    assert cashed > 5_000  # la sécurisation a vraiment joué
+    assert -0.00143 < np.mean(plain) < -0.00131  # le prix des frais, à 0,006 % près
+    by_rule = np.mean(nets[((0.0, "fixe"), False)])  # sortie par la règle ou par le stop : toujours au marché
     assert -0.00145 < by_rule < -0.00132
-    for exit_, xs in nets.items():  # aucune façon de sortir ne gagne ni ne perd plus que ses frais
-        assert -0.00146 < np.mean(xs) < -0.00128, exit_
-    assert 0.2 < np.mean(np.array(everything) > 0) < 0.45  # et bien moins d'un trade sur deux est gagnant
+    for key, xs in nets.items():  # aucune façon de sortir ne gagne ni ne perd plus que ses frais
+        assert -0.00146 < np.mean(xs) < -0.00118, key
+    # Avant frais, rien à gagner avec ou sans sécurisation : le hasard ne se laisse pas « sécuriser ».
+    assert abs(np.mean(gross[False])) < 0.00008 and abs(np.mean(gross[True])) < 0.00008
+    # Après frais, la sécurisation coûte un peu moins cher (une demi-sortie en ordre limite), jamais plus : au mieux
+    # la moitié de l'écart entre une sortie au marché (0,07 %) et un ordre limite (0,02 %).
+    assert 0 < np.mean(safe) - np.mean(plain) < 0.00025
+    assert 0.2 < np.mean(np.array(plain) > 0) < 0.45  # et bien moins d'un trade sur deux est gagnant
+    assert np.mean(np.array(safe) > 0) > np.mean(np.array(plain) > 0)  # plus de petits gains, pas plus d'argent
 
 
 def test_a_short_sees_the_chart_upside_down(random_walk):

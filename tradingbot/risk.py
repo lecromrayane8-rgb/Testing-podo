@@ -89,6 +89,27 @@ def clustered_bounds(groups, alpha: float = 0.025) -> tuple[float, float, float]
     return mean, mean - half, mean + half
 
 
+def paired_bounds(groups, alpha: float = 0.025) -> tuple[float, float, float]:
+    """L'écart entre deux façons de trader mesurées sur les mêmes groupes (les mêmes journées, les mêmes cryptos).
+
+    `groups` : pour chaque groupe, (trades de A, somme des rendements de A, trades de B, somme de B). Rend (écart, bas,
+    haut) pour « moyenne par trade de A − moyenne par trade de B ». Les deux mesures ont vécu les mêmes marchés : une
+    bonne journée l'est pour les deux. La fourchette vient donc de ce que l'écart varie d'un groupe à l'autre, pas de
+    la dispersion de chaque mesure (qui exagérerait le doute). Pas de fourchette avec moins de deux groupes."""
+    groups = [(int(na), float(ta), int(nb), float(tb)) for na, ta, nb, tb in groups if na > 0 or nb > 0]
+    count_a, count_b = sum(g[0] for g in groups), sum(g[2] for g in groups)
+    if not count_a or not count_b:
+        return math.nan, math.nan, math.nan
+    mean_a, mean_b = sum(g[1] for g in groups) / count_a, sum(g[3] for g in groups) / count_b
+    diff = mean_a - mean_b
+    g = len(groups)
+    if g < 2:
+        return diff, math.nan, math.nan
+    spread = sum(((ta - mean_a * na) / count_a - (tb - mean_b * nb) / count_b) ** 2 for na, ta, nb, tb in groups)
+    half = student_t(alpha, g - 1) * math.sqrt(g / (g - 1) * spread)
+    return diff, diff - half, diff + half
+
+
 @dataclass(frozen=True)
 class RiskParams:
     risk_per_trade: float = 0.01  # fraction du capital perdue si le stop est touché
