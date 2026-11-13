@@ -302,7 +302,16 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   (flux acheteurs/vendeurs et nombre de trades des bougies complètes `publicGetKlines`, tendance de l'unité
   au-dessus et du Bitcoin, comptes acheteurs/vendeurs et intérêt ouvert des archives des contrats à terme), puis
   « condition vraie » contre « fausse » jour par jour (`paired_bounds`, seuil durci), avec deux témoins (pile ou
-  face, et la bougie d'entrée connue après coup) : `trades`, `donnees`, `mesure` (`--dossier`, `--unites`).
+  face, et la bougie d'entrée connue après coup) : `trades`, `donnees`, `mesure` (`--dossier`, `--unites`) ;
+  conditions depuis le 14/11 : flux, flux net (55 %), activité, pic de volume (×2), unité au-dessus, Bitcoin, foule,
+  argent engagé, carnet d'ordres à 1 % et à 0,2 % du prix (archives `bookDepth`, une photo toutes les 30 s), les
+  trois d'accord ; `matrice` : technique × unité × sens × condition, cherchée sur une période et confirmée sur une
+  autre (`--decouverte`, `--confirmation`). `long.py` : le long terme, en bougies d'un jour depuis 2020 (univers
+  reconstitué jour par jour, paires retirées de la cote comprises ; chaque trade aussi mesuré contre le panier du
+  marché ; première période puis seconde), le portefeuille momentum, et les règles simples en argent composé (filtre
+  de tendance sur le Bitcoin et l'Ether depuis 2017, panier filtré, portefeuilles de la semaine). `secondes.py` : le
+  très court terme, en bougies de 15 secondes fabriquées à partir de chaque transaction (`aggTrades`), résultat
+  avant et après frais.
   `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
@@ -515,3 +524,18 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   donne cet historique en gros (et des données qui passent par la conversation coûtent des tokens, pas celles que la
   machine télécharge). Proposé, EN ATTENTE D'ACCORD : mesurer le carnet d'ordres sur l'historique avant de
   construire l'enregistreur.
+- 14/11/2026 : l'utilisateur trouve que je le freine ; il croit au court terme (beaucoup de trades, levier) et demande
+  des tests sur les trois horizons, avec des combinaisons liées au volume (« je te laisse faire »). Fait, hors des
+  bots, point de retour `4517daa` : 15,8 millions de trades réels. 15 secondes (`audit/secondes.py`) : +0,003 % avant
+  frais, −0,131 % après, 0 technique sur 98. 1 min à 4 h (`contexte.py matrice`, deux fois 14 jours et deux fois 60
+  jours) : aucune combinaison technique × condition confirmée (en 1 min, aucune n'est même positive en moyenne ; les
+  ventes à découvert en 1 h gagnent du 16/10 au 13/11 parce que 85 % des cryptos baissaient). Carnet d'ordres
+  (`bookDepth`), pic de volume, flux net : aucun écart. 1 jour depuis 2020 (`audit/long.py`, 465 cryptos) : 0
+  technique candidate ; le panier des 50 cryptos les plus échangées fait ×0,08 ; le portefeuille momentum 28 jours
+  est une loterie (×1,15 à ×18,6, −90 % en route). CE QUI TIENT : Bitcoin et Ether gardés, et mieux encore la règle
+  « au-dessus de sa moyenne 50, 100 et 200 jours, un tiers chacune » : Bitcoin ×15,5 (pire baisse −50 %) contre
+  ×6,2 (−77 %) de 2018 à 2026, mieux que garder sur les trois périodes dont 2018-2019 jamais vue ; levier ×2 → ×37
+  mais −80 %, ×5 → liquidé. Proposé, EN ATTENTE D'ACCORD : un bot de tendance simple (cette règle, argent fictif sur
+  le site, porte `robustesse`). Leçons : sur une période qui baisse, les ventes à découvert « gagnent » sans
+  mérite (comparer au marché) ; une moyenne par semaine cache la casse d'un portefeuille très agité (toujours
+  regarder l'argent composé et la pire baisse).

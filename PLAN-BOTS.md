@@ -612,6 +612,90 @@ C'est l'intérêt de vérifier ailleurs : sur une seule période, la seconde pis
   lui : à mesurer en direct, pas sur des bougies) ; des **horizons de plusieurs jours** (le seul effet appuyé par
   la recherche, le momentum : le labo portefeuille du bot existe déjà) ; le calendrier des annonces (étape 6).
 
+## Le grand test sur trois horizons (14/11/2026)
+
+La demande : « fais en sorte que les tests soient surtout long terme, moyen terme et très très court terme, avec des
+techniques et des combinaisons de 1 ou 2 indicateurs liés au volume… je te laisse faire ». Avec l'idée qu'une
+stratégie de court terme peut payer par le nombre de trades et le levier.
+
+La méthode, la même partout : **chercher large sur une période, ne croire que ce qui se confirme sur une autre**. Tout
+est dans `audit/` (`contexte.py matrice`, `long.py`, `secondes.py`) ; rien n'a été changé dans les bots. 15,8 millions
+de trades réels en argent fictif, frais compris.
+
+### Le résultat, horizon par horizon
+
+| Horizon | Ce qui a été testé | Ce qui en sort |
+|---|---|---|
+| 15 secondes | 51 techniques, achat et vente, sur les 10 cryptos les plus échangées, 14 jours (1,97 million de trades) | Avant frais : +0,003 % par trade. Après frais : −0,131 %. Aucune des 98 techniques jugées ne gagne. Une bougie de 15 secondes bouge de 0,03 % ; un aller-retour coûte 0,14 %. |
+| 1 minute | Chaque technique seule, puis avec chacune des 11 conditions (volume, flux, carnet d'ordres…), deux périodes de 14 jours (12,2 millions de trades pour 1 min à 4 h) | 2 325 combinaisons jugées : aucune n'est même positive en moyenne. |
+| 5 minutes | Idem | 2 312 combinaisons : 112 positives en moyenne, aucune nettement (le hasard seul en donnerait 58). |
+| 15 minutes | Idem | 2 167 combinaisons : 32 nettement positives (54 par hasard), aucune prouvée. |
+| 1 heure | Idem, plus deux périodes de 60 jours (1,06 million de trades) | Du 16/10 au 13/11 : 94 nettement positives (30 par hasard), presque toutes des ventes à découvert, pendant que 85 % des cryptos baissaient : c'est le marché, pas la technique. Sur les 120 jours d'avant : 1 (45 par hasard). Aucune prouvée. |
+| 4 heures | Idem | Aucune prouvée. La famille qui revient le plus en tête (acheter une forte baisse : « écart à la moyenne », « Bollinger rebond ») fait −0,37 %, +0,38 % et +0,77 % par trade selon la période : pas stable. |
+| 1 jour | 51 techniques sur 465 cryptos depuis 2020, retirées de la cote comprises (629 240 trades) | Aucune candidate sur 101. L'ensemble fait moins bien que de garder le panier du marché (−0,68 % par trade contre lui sur 2020-2023). |
+
+« Prouvée » : fourchette durcie par le nombre de combinaisons essayées, et confirmée sur l'autre période. Aucune
+combinaison ne passe, à aucun horizon.
+
+### Ce que tu voulais voir combiné : volume, flux, carnet d'ordres
+
+Écart entre les trades pris quand la condition est vraie et les autres (tous à −0,13 % ou −0,14 % en moyenne) :
+
+| Condition | Du 16/10 au 30/10 (6,8 millions de trades) | Du 30/10 au 13/11 (5,4 millions) |
+|---|---|---|
+| Pic de volume (2 fois la moyenne) | −0,004 % (de −0,014 à +0,006) | −0,004 % (de −0,037 à +0,029) |
+| Flux net du côté du trade (55 % du volume) | +0,010 % (de −0,016 à +0,036) | 0,000 % (de −0,028 à +0,028) |
+| Le carnet d'ordres penche du côté du trade, à 1 % du prix | −0,028 % (de −0,087 à +0,031) | −0,019 % (de −0,075 à +0,038) |
+| Le carnet penche du côté du trade, à 0,2 % du prix | +0,005 % (de −0,021 à +0,032) | −0,005 % (de −0,029 à +0,019) |
+
+Le carnet d'ordres vient des archives de Binance (une photo toutes les 30 secondes) : il n'a donc pas fallu attendre
+des semaines. Résultat : qu'il penche du bon côté ou non, un trade fait la même chose.
+
+### Pourquoi « beaucoup de trades et du levier » ne suffit pas ici
+
+Le levier et le nombre de trades multiplient ce qu'un trade rapporte en moyenne. En bougies de 15 secondes, un trade
+rapporte +0,003 % avant frais et coûte 0,134 % : il faudrait des frais quarante fois plus bas. Plus de trades, c'est
+plus de frais ; plus de levier, c'est la même perte en plus gros.
+
+### Le long terme : ce qui ressort vraiment
+
+En argent composé (ce que devient 1 placé au début), avec la pire baisse en route entre parenthèses :
+
+- **Les cryptos « les plus échangées du moment » sont un très mauvais terrain à tenir.** Le panier des 50 plus
+  échangées, à parts égales, revu chaque jour : ×0,08 depuis 2020 (−99 %). C'est le terrain des bots actuels.
+- **Garder les 3 cryptos qui montent le plus depuis 28 jours** (l'ancien labo le classait « à surveiller ») : de ×1,15
+  à ×18,6 selon le jour où l'on commence, avec −90 % à −97 % en route. Une loterie. Sur 7 jours : la ruine. Le
+  contraire (garder celles qui baissent le plus) : la ruine aussi.
+- **Le Bitcoin et l'Ether, simplement gardés, ont fait mieux que tout le reste.** Et une règle toute simple a fait
+  mieux encore, avec des baisses moins profondes : ne les tenir que quand leur clôture est au-dessus de leur moyenne
+  des 50, 100 et 200 derniers jours (un tiers par moyenne, pour ne pas choisir un réglage après coup). Une décision
+  par jour, 13 ordres par an :
+
+| | 2018-03 à 2019 | 2020 à 2023 | 2024 à 2026-11 | Tout |
+|---|---|---|---|---|
+| Bitcoin gardé | ×0,63 (−70 %) | ×6,14 (−77 %) | ×1,62 (−53 %) | ×6,24 (−77 %) |
+| Bitcoin, règle des trois moyennes | ×1,23 (−37 %) | ×7,35 (−50 %) | ×1,71 (−30 %) | ×15,49 (−50 %) |
+| Ether gardé | ×0,15 (−90 %) | ×17,99 (−79 %) | ×0,86 (−68 %) | ×2,38 (−90 %) |
+| Ether, règle des trois moyennes | ×0,92 (−44 %) | ×9,67 (−55 %) | ×1,80 (−37 %) | ×16,10 (−56 %) |
+
+  Pour le Bitcoin : mieux que « garder » sur les trois périodes, dont 2018-2019 que la règle n'avait jamais vue, et
+  une pire baisse plus petite à chaque fois. Pour l'Ether : pire baisse plus petite à chaque fois, moins de gain
+  pendant la grande hausse de 2020-2023. Sur d'autres cryptos anciennes (XRP, LTC), c'est mitigé : la règle protège
+  des chutes, elle ne fabrique pas une hausse qui n'existe pas.
+- **Le levier sur cette règle (Bitcoin, 2018-2026)** : ×1 → ×15,5 (−50 %) ; ×2 → ×37 (−80 %) ; ×3 → ×22 (−93 %) ;
+  ×5 → liquidé en route. Le levier aide un peu une règle qui marche, puis il la détruit.
+
+Dit franchement : c'est le passé d'un seul actif, et −50 % en route reste très dur à vivre. Rien ne garantit la suite.
+Mais c'est la seule chose, de tout ce qui a été mesuré depuis le début, qui tient sur plusieurs périodes séparées.
+
+### Proposition (en attente d'accord) : un bot de tendance, simple
+
+1. Une seule règle, celle du tableau : Bitcoin (et Ether) en bougies d'un jour, au comptant, sans levier par défaut.
+2. En argent fictif sur le site : dedans ou dehors, depuis quand, et la comparaison avec « acheter et garder ».
+3. La porte officielle du projet avant tout argent réel : `python main.py robustesse`, puis des semaines en argent
+   fictif et en testnet.
+4. Les bots actuels restent comme laboratoire : ils mesurent honnêtement, ils ne sont pas un revenu.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
@@ -702,3 +786,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 13/11/2026 | 1 — Sécurisation des gains | Faite : moteur, réglages, labo avec et sans, site, mesures sur de vraies bougies | `3b234da` |
 | 13/11/2026 | 1 bis — La lecture du graphique | Faite : 12 techniques (51 en tout), garanties testées, mesures sur du hasard et sur de vraies bougies ; deux défauts de l'étape 1 corrigés après relecture | `38b843b` |
 | 13/11/2026 | 1 ter — Le contexte autour du signal | Mesure faite (sept conditions, 5,36 millions de trades, deux pistes revérifiées sur d'autres périodes) : aucun avantage, rien à brancher ; actions en jetons écartées | `8308621` |
+| 14/11/2026 | Le grand test sur trois horizons (15 secondes à 1 jour, techniques seules et combinées au volume, au flux et au carnet d'ordres) | Fait : 15,8 millions de trades, aucune combinaison confirmée ; seule tient une règle de tendance simple sur le Bitcoin et l'Ether. Bot de tendance proposé, en attente d'accord | `4517daa` |

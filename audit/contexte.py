@@ -58,12 +58,21 @@ FLOW_BARS, ACTIVITY_BARS, TREND_BARS = 10, 50, 50  # fixés d'avance
 CROWD_ROWS, MONEY_ROWS, CROWD_DELAY = 3 * 288, 12, 5 * MIN  # 3 jours et 1 heure de points à 5 min ; un point de retard
 CROWD_AGE = 20 * MIN  # un point des contrats à terme vieux de plus de 20 minutes ne compte pas (archive incomplète)
 ARCHIVE = "https://data.binance.vision/data/futures/um/daily/metrics/{id}/{id}-metrics-{day}.zip"
-CONDITIONS = ("flux", "activite", "dessus", "bitcoin", "foule", "argent", "ensemble")
+BOOK = "https://data.binance.vision/data/futures/um/daily/bookDepth/{id}/{id}-bookDepth-{day}.zip"
+BOOK_AGE = 2 * MIN  # une photo du carnet d'ordres vieille de plus de 2 minutes ne compte pas
+STRONG_FLOW, VOLUME_SPIKE = 0.55, 2.0  # « flux net » : 55 % du volume d'un côté ; « pic » : 2 fois le volume moyen
+MIN_CELL = 300  # trades au moins pour juger une combinaison technique × unité × sens × condition
+CONDITIONS = ("flux", "flux_fort", "activite", "volume", "dessus", "bitcoin", "foule", "argent", "carnet",
+              "carnet_proche", "ensemble")
 WITNESSES = ("hasard", "triche")
 LABELS = {"flux": "Qui pousse (acheteurs ou vendeurs au marché)", "activite": "Activité au-dessus de sa moyenne",
           "dessus": "L'unité au-dessus va dans le même sens", "bitcoin": "Le Bitcoin va dans le même sens",
           "foule": "La foule n'est pas déjà de ce côté", "argent": "L'argent engagé augmente",
           "ensemble": "Flux, unité au-dessus et Bitcoin d'accord", "hasard": "Témoin : pile ou face",
+          "flux_fort": "Flux net du côté du trade (55 % du volume au moins)",
+          "volume": "Pic de volume (2 fois la moyenne)",
+          "carnet": "Le carnet d'ordres penche du côté du trade (à 1 % du prix)",
+          "carnet_proche": "Le carnet d'ordres penche du côté du trade (à 0,2 % du prix)",
           "triche": "Témoin : la bougie d'entrée (connue après coup)"}
 READING = np.array([technique(name).strategy_type in PATTERN_FAMILIES for name in LIBRARY])
 
@@ -170,6 +179,43 @@ def _flow_job(args):
     return len(rows)
 
 
+def _book_job(args):
+    """Le carnet d'ordres des contrats à terme d'une crypto, une photo toutes les 30 secondes (archives publiques de
+    Binance) : la valeur des ordres d'achat et de vente en attente à 1 % et à 0,2 % du prix."""
+    symbol, days, out = args
+    if out.exists():
+        return 0
+    import requests  # la session de la bibliothèque déjà installée avec ccxt : proxy et certificat de l'environnement
+    if not hasattr(LOCAL, "session"):
+        LOCAL.session = requests.Session()
+    base, parts = symbol.split("/")[0], []
+    for name in (f"{base}USDT", f"1000{base}USDT"):
+        for day in days:
+            try:
+                reply = LOCAL.session.get(BOOK.format(id=name, day=day), timeout=60)
+            except Exception:
+                continue
+            if reply.status_code != 200:
+                continue
+            with zipfile.ZipFile(io.BytesIO(reply.content)) as archive:
+                frame = pd.read_csv(archive.open(archive.namelist()[0]))
+            frame = frame[frame["percentage"].isin((-1.0, 1.0, -0.2, 0.2))]
+            parts.append(frame.pivot_table(index="timestamp", columns="percentage", values="notional", aggfunc="last"))
+        if parts:
+            break
+    if not parts:
+        np.savez_compressed(out, ts=np.array([], dtype=np.int64), b1=np.array([]), a1=np.array([]), b02=np.array([]),
+                            a02=np.array([]))
+        return 0
+    wide = pd.concat(parts).sort_index()
+    wide = wide[~wide.index.duplicated(keep="last")]
+    stamps = pd.to_datetime(wide.index, utc=True)
+    ts = np.asarray((stamps - pd.Timestamp("1970-01-01", tz="UTC")) // pd.Timedelta(milliseconds=1), dtype=np.int64)
+    column = lambda level: wide[level].to_numpy(float) if level in wide.columns else np.full(len(wide), np.nan)  # noqa: E731
+    np.savez_compressed(out, ts=ts, b1=column(-1.0), a1=column(1.0), b02=column(-0.2), a02=column(0.2))
+    return len(parts)
+
+
 def _crowd_job(args):
     """Les contrats à terme d'une crypto, toutes les 5 minutes : intérêt ouvert et nombre de comptes acheteurs pour un
     compte vendeur (archives publiques de Binance ; « 1000PEPE » pour les cryptos au prix minuscule)."""
@@ -206,8 +252,9 @@ def donnees(args) -> None:
     folder = Path(args.cache) / args.dossier
     meta = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
     start, end = meta["start"], meta["end"]
+    units = [tf for tf in TIMEFRAMES if tf in args.unites.split(",")]
     flow = [(s, tf, start - (ACTIVITY_BARS + 10) * timeframe_to_ms(tf), end, folder / f"flux-{safe(s)}-{tf}.npz")
-            for s in meta["symbols"] for tf in TIMEFRAMES]
+            for s in meta["symbols"] for tf in units]
     days = [str(pd.Timestamp(t, unit="ms").date()) for t in range(start - 4 * DAY, end + 1, DAY)]
     crowd = [(s, days, folder / f"foule-{safe(s)}.npz") for s in meta["symbols"]]
     began = time.time()
@@ -219,7 +266,15 @@ def donnees(args) -> None:
         got = [n for n in pool.map(_crowd_job, crowd)]
     with_contract = sum(1 for _, _, out in crowd if len(np.load(out)["ts"]))
     print(f"contrats à terme : {with_contract}/{len(crowd)} cryptos en ont un ({sum(got)} points lus) · "
-          f"{time.time() - began:4.0f} s")
+          f"{time.time() - began:4.0f} s", flush=True)
+    if args.sans_carnet:  # sur une longue période, le carnet pèse trop lourd (0,5 Mo par crypto et par jour)
+        return
+    book_days = [str(pd.Timestamp(t, unit="ms").date()) for t in range(start - DAY, end + 1, DAY)]
+    books = [(s, book_days, folder / f"carnet-{safe(s)}.npz") for s in meta["symbols"]]
+    with ThreadPoolExecutor(8) as pool:
+        files = sum(pool.map(_book_job, books))
+    with_book = sum(1 for _, _, out in books if len(np.load(out)["ts"]))
+    print(f"carnet d'ordres : {with_book}/{len(books)} cryptos ({files} journées lues) · {time.time() - began:4.0f} s")
 
 
 # --- 3. la mesure ---------------------------------------------------------------------------------------------------
@@ -281,6 +336,11 @@ def conditions(symbol: str, rows, cache: Path, folder: Path, ex, btc: tuple, see
             with np.errstate(invalid="ignore"):
                 out["flux"][mine] = np.where(np.isnan(buyers), np.nan, np.where(side, buyers < 0.5, buyers > 0.5))
                 out["activite"][mine] = np.where(found, busy[pos], np.nan) if len(ts) else np.nan
+                out["flux_fort"][mine] = np.where(np.isnan(buyers), np.nan, np.where(
+                    side, buyers <= 1 - STRONG_FLOW, buyers >= STRONG_FLOW))
+            calm = volume.rolling(ACTIVITY_BARS, min_periods=ACTIVITY_BARS).mean().shift(1)
+            spike = np.where(calm.notna() & (calm > 0), (volume > VOLUME_SPIKE * calm).astype(float), np.nan)
+            out["volume"][mine] = np.where(found, spike[pos], np.nan) if len(ts) else np.nan
             # le témoin « triche » : le sens de la bougie d'entrée elle-même, connu seulement à sa clôture
             at_entry = np.searchsorted(ts, at)
             seen = (at_entry < len(ts)) & (ts[np.clip(at_entry, 0, len(ts) - 1)] == at) if len(ts) else np.zeros(len(at), bool)
@@ -306,6 +366,15 @@ def conditions(symbol: str, rows, cache: Path, folder: Path, ex, btc: tuple, see
         lean = known(crowd["ts"], more_buyers, entry - CROWD_DELAY, CROWD_AGE)
         out["foule"] = np.where(np.isnan(lean), np.nan, np.where(short, lean >= 0, lean <= 0))
         out["argent"] = known(crowd["ts"], rising, entry - CROWD_DELAY, CROWD_AGE)
+    source = folder / f"carnet-{safe(symbol)}.npz"
+    book = np.load(source) if source.exists() else {"ts": np.array([], dtype=np.int64)}
+    if len(book["ts"]):  # la dernière photo du carnet avant la clôture du signal : part des ordres d'achat en attente
+        for name, bids, asks in (("carnet", "b1", "a1"), ("carnet_proche", "b02", "a02")):
+            waiting = book[bids] + book[asks]
+            with np.errstate(invalid="ignore", divide="ignore"):
+                lean = np.where(waiting > 0, book[bids] / waiting, np.nan)
+            seen = known(book["ts"], lean, entry, BOOK_AGE)
+            out[name] = np.where(np.isnan(seen), np.nan, np.where(short, seen < 0.5, seen > 0.5))
     agree = np.stack([out["flux"], out["dessus"], out["bitcoin"]])
     out["ensemble"] = np.where(np.isnan(agree).any(axis=0), np.nan, (agree == 1).all(axis=0))
     out["hasard"] = np.random.default_rng(seed).integers(0, 2, n).astype(float)
@@ -369,6 +438,135 @@ def mesure(args) -> None:
         print(f"\nDétail écrit dans {args.sortie}")
 
 
+def cells(args, name: str) -> dict:
+    """Pour une période : par combinaison (unité × technique × sens) et par condition vraie ou fausse, les trades et
+    leur somme, jour par jour. « seule » : la technique sans condition."""
+    cache, folder = Path(args.cache), Path(args.cache) / name
+    meta = json.loads((folder / "meta.json").read_text(encoding="utf-8"))
+    ex = vrai.exchange()
+    ex.load_markets()
+    btc = trend_up(vrai.candles(ex, "BTC/USDT", "1h", meta["start"] - TEST_DAYS["1h"] * DAY, meta["end"], cache), HOUR)
+    day0, days = meta["start"] // DAY - 1, meta["days"] + 4
+    size = len(TIMEFRAMES) * len(LIBRARY) * 2
+    keys = [("seule", 1)] + [(c, state) for c in CONDITIONS for state in (1, 0)]
+    count, total = ({k: np.zeros((size, days)) for k in keys} for _ in range(2))
+    for seed, symbol in enumerate(meta["symbols"]):
+        path = folder / f"rows-{safe(symbol)}.npz"
+        if not path.exists():
+            continue
+        rows = np.load(path)
+        if not len(rows["net"]):
+            continue
+        cond = conditions(symbol, rows, cache, folder, ex, btc, seed, meta["start"], meta["end"])
+        cell = (rows["tf"].astype(np.int64) * len(LIBRARY) + rows["tech"]) * 2 + rows["short"]
+        day, net = np.clip(rows["out"] // DAY - day0, 0, days - 1), rows["net"]
+        for key in keys:
+            pick = np.ones(len(net), bool) if key[0] == "seule" else cond[key[0]] == key[1]
+            np.add.at(count[key], (cell[pick], day[pick]), 1)
+            np.add.at(total[key], (cell[pick], day[pick]), net[pick])
+    return {"count": count, "total": total, "keys": keys, "size": size, "meta": meta}
+
+
+def cell_name(cell: int, key: tuple) -> str:
+    short, rest = cell % 2, cell // 2
+    tech, tf = rest % len(LIBRARY), rest // len(LIBRARY)
+    extra = "" if key[0] == "seule" else f" + {LABELS[key[0]].lower()} : {'oui' if key[1] else 'non'}"
+    return f"{LIBRARY[tech]} · {tf_label(TIMEFRAMES[tf])} · {'vente' if short else 'achat'}{extra}"
+
+
+def cell_stat(data: dict, key: tuple, cell: int, alpha: float = 0.025) -> dict:
+    groups = [(n, t) for n, t in zip(data["count"][key][cell], data["total"][key][cell]) if n > 0]
+    n = int(sum(g[0] for g in groups))
+    mean, lo, hi = clustered_bounds(groups, alpha) if groups else (math.nan, math.nan, math.nan)
+    return {"n": n, "mean": mean, "lo": lo, "hi": hi}
+
+
+def matrice(args) -> None:
+    """Chercher large sur une période, ne croire que ce qui se confirme sur l'autre. Une combinaison est « candidate »
+    si, sur la période de recherche, elle a au moins MIN_CELL trades et une fourchette à 95 % entièrement positive
+    (frais compris). Elle est « confirmée » si, sur l'autre période, sa fourchette durcie par le nombre de candidates
+    est encore entièrement positive."""
+    first, second = cells(args, args.decouverte), cells(args, args.confirmation)
+    report = {}
+    for label, search, check in (("aller", first, second), ("retour", second, first)):
+        measured, positive, candidates = 0, 0, []
+        for key in search["keys"]:
+            for cell in range(search["size"]):
+                a = cell_stat(search, key, cell)
+                if a["n"] < MIN_CELL:
+                    continue
+                measured += 1
+                positive += a["mean"] > 0
+                if math.isfinite(a["lo"]) and a["lo"] > 0:
+                    candidates.append((key, cell, a))
+        alpha = 0.025 / max(len(candidates), 1)
+        rows = []
+        for key, cell, a in candidates:
+            b, plain = cell_stat(check, key, cell, alpha), cell_stat(check, key, cell)
+            rows.append({"name": cell_name(cell, key), "a": a, "b": b, "b95": plain,
+                         "confirmed": bool(b["n"] >= MIN_CELL // 3 and math.isfinite(b["lo"]) and b["lo"] > 0)})
+        judged = [r for r in rows if r["b"]["n"] >= MIN_CELL // 3]
+        period = lambda d: (f"{pd.to_datetime(d['meta']['start'], unit='ms'):%d/%m} → "  # noqa: E731
+                            f"{pd.to_datetime(d['meta']['end'], unit='ms'):%d/%m}")
+        print(f"\n=== Recherche sur {period(search)}, confirmation sur {period(check)} ===")
+        print(f"combinaisons avec au moins {MIN_CELL} trades : {measured} · moyenne positive après frais : {positive} · "
+              f"candidates (fourchette à 95 % toute positive) : {len(candidates)}")
+        print(f"sur l'autre période : {len(judged)} jugées · encore positives en moyenne : "
+              f"{sum(r['b']['mean'] > 0 for r in judged)} · CONFIRMÉES (fourchette durcie toute positive) : "
+              f"{sum(r['confirmed'] for r in rows)}")
+        best = sorted(judged, key=lambda r: -(r["b"]["mean"]))[:12]
+        for r in sorted(rows, key=lambda r: (-r["confirmed"], -r["a"]["mean"]))[:8] + [x for x in best if x["confirmed"]]:
+            a, b = r["a"], r["b95"]
+            print(f"  {'CONFIRMÉE ' if r['confirmed'] else ''}{r['name']}\n      recherche : {a['n']} trades {vrai.pct(a['mean'])} "
+                  f"[{vrai.pct(a['lo'])} ; {vrai.pct(a['hi'])}] · autre période : {b['n']} trades {vrai.pct(b['mean'])} "
+                  f"[{vrai.pct(b['lo'])} ; {vrai.pct(b['hi'])}]")
+        report[label] = {"measured": measured, "positive": int(positive), "candidates": len(candidates),
+                         "judged": len(judged), "still_positive": int(sum(r["b"]["mean"] > 0 for r in judged)),
+                         "confirmed": [r for r in rows if r["confirmed"]], "rows": rows}
+    # Les deux périodes réunies : ce qui ressort le plus, à titre indicatif (seuil durci par le nombre de combinaisons)
+    days_a = first["count"][("seule", 1)].shape[1]
+    pooled = []
+    for key in first["keys"]:
+        both_n = np.concatenate([first["count"][key], second["count"][key]], axis=1)
+        both_t = np.concatenate([first["total"][key], second["total"][key]], axis=1)
+        for cell in np.flatnonzero(both_n.sum(axis=1) >= 2 * MIN_CELL):
+            groups = [(n, t) for n, t in zip(both_n[cell], both_t[cell]) if n > 0]
+            mean, lo, hi = clustered_bounds(groups)
+            pooled.append((mean, lo, hi, int(both_n[cell].sum()), key, int(cell), groups))
+    hard = 0.025 / max(len(pooled), 1)
+    pooled.sort(key=lambda r: -r[0])
+    proven = [r for r in pooled if clustered_bounds(r[6], hard)[1] > 0]
+    print(f"\n=== Les deux périodes réunies ({days_a - 4} + {second['count'][('seule', 1)].shape[1] - 4} jours) ===")
+    print(f"combinaisons avec au moins {2 * MIN_CELL} trades : {len(pooled)} · moyenne positive après frais : "
+          f"{sum(r[0] > 0 for r in pooled)} · fourchette à 95 % toute positive : {sum(r[1] > 0 for r in pooled)} "
+          f"(attendu par chance : environ {0.025 * len(pooled):.0f}) · prouvées au seuil durci : {len(proven)}")
+    print("Les 15 qui ressortent le plus (indicatif) :")
+    for mean, lo, hi, n, key, cell, _ in pooled[:15]:
+        print(f"  {cell_name(cell, key)}\n      {n} trades {vrai.pct(mean)} [{vrai.pct(lo)} ; {vrai.pct(hi)}]")
+    report["pooled"] = {"measured": len(pooled), "positive": int(sum(r[0] > 0 for r in pooled)),
+                        "ci_positive": int(sum(r[1] > 0 for r in pooled)), "proven": len(proven),
+                        "top": [{"name": cell_name(c, k), "n": n, "mean": m, "lo": lo, "hi": hi}
+                                for m, lo, hi, n, k, c, _ in pooled[:40]], "units": {}}
+    print("\nPar unité de temps (les deux périodes réunies) : combinaisons jugées · gagnantes en moyenne · fourchette à 95 % "
+          "toute positive (attendu par chance) · prouvées · puis les trois meilleures")
+    for k, tf in enumerate(TIMEFRAMES):
+        mine = [r for r in pooled if r[5] // 2 // len(LIBRARY) == k]
+        if not mine:
+            continue
+        sure = [r for r in mine if r[1] > 0]
+        print(f"  {tf_label(tf)} : {len(mine)} · {sum(r[0] > 0 for r in mine)} · {len(sure)} ({0.025 * len(mine):.0f}) · "
+              f"{sum(1 for r in mine if r in proven)}")
+        for mean, lo, hi, n, key, cell, _ in mine[:3]:
+            print(f"      {cell_name(cell, key)} : {n} trades {vrai.pct(mean)} [{vrai.pct(lo)} ; {vrai.pct(hi)}]")
+        report["pooled"]["units"][tf] = {"measured": len(mine), "positive": int(sum(r[0] > 0 for r in mine)),
+                                         "ci_positive": len(sure), "proven": sum(1 for r in mine if r in proven),
+                                         "top": [{"name": cell_name(c, key), "n": n, "mean": m, "lo": lo, "hi": hi}
+                                                 for m, lo, hi, n, key, c, _ in mine[:5]]}
+    if args.sortie:
+        Path(args.sortie).write_text(json.dumps(report, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
+        print(f"\nDétail écrit dans {args.sortie}")
+
+
 def line(groups, wins) -> dict:
     n = sum(g[0] for g in groups)
     mean, lo, hi = clustered_bounds(groups)
@@ -408,7 +606,7 @@ def verdict(r: dict) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("trades", "donnees", "mesure"):
+    for name in ("trades", "donnees", "mesure", "matrice"):
         p = sub.add_parser(name)
         p.add_argument("--cache", default=vrai.CACHE, help="dossier des bougies déjà téléchargées (hors du dépôt)")
         p.add_argument("--dossier", default="contexte", help="sous-dossier de cette mesure (une période = un dossier)")
@@ -418,10 +616,16 @@ def main() -> None:
             p.add_argument("--cryptos", type=int, default=60)
             p.add_argument("--coeurs", type=int, default=3)
             p.add_argument("--unites", default=",".join(TIMEFRAMES), help="unités mesurées, par exemple 1h,4h")
-        if name == "mesure":
+        if name == "donnees":
+            p.add_argument("--unites", default=",".join(TIMEFRAMES), help="unités dont on télécharge le flux")
+            p.add_argument("--sans-carnet", dest="sans_carnet", action="store_true")
+        if name in ("mesure", "matrice"):
             p.add_argument("--sortie", default="")
+        if name == "matrice":
+            p.add_argument("--decouverte", default="contexte", help="dossier de la période où l'on cherche")
+            p.add_argument("--confirmation", default="contexte-b", help="dossier de la période où l'on confirme")
     args = parser.parse_args()
-    {"trades": trades, "donnees": donnees, "mesure": mesure}[args.command](args)
+    {"trades": trades, "donnees": donnees, "mesure": mesure, "matrice": matrice}[args.command](args)
 
 
 if __name__ == "__main__":
