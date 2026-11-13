@@ -342,6 +342,10 @@ BODY = """
           ou trois grandes chutes ne font pas une preuve, et c'est ce que dit le test ci-dessus.</li>
         <li>Quand le marché monte fort, la règle gagne moins que « acheter et garder » : elle sort sur les creux et
           revient un peu plus haut. Son intérêt est de moins perdre quand tout baisse.</li>
+        <li>Ailleurs, elle n'a pas fait mieux que garder. Sur huit autres marchés (actions américaines et
+          japonaises, pétrole, cinq monnaies ; 39 à 77 ans de prix), la même règle n'a jamais fini plus haut que
+          « acheter et garder », frais compris. Sur les actions, elle a divisé les pires chutes par deux en rapportant
+          moins. C'est une protection, pas une façon de gagner plus (mesure du 13/11/2026).</li>
         <li>Au moins trois sorties sur quatre sont perdantes, de peu le plus souvent : le prix repart, le bot rachète
           un peu plus cher. C'est le prix de la protection, et il faut l'accepter pour suivre la règle.</li>
         <li>Les frais comptent : à 0,50 % par ordre au lieu de 0,15 %, le résultat du Bitcoin depuis 2018 passe

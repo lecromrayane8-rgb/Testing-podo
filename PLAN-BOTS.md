@@ -745,6 +745,60 @@ règle est la meilleure chose mesurée jusqu'ici, et elle n'est pas prouvée. Ar
 - Le compte fictif suppose que l'ordre passe à l'ouverture du jour (1 h du matin en hiver), même site fermé.
 - Pas fait : alerte Telegram quand le bot change de position, leçon de l'École sur la tendance, lanceur Windows.
 
+## La règle de tendance sur d'autres marchés (13/11/2026, fait)
+
+Accord du 13/11 (« la A »). La question : la réussite de la règle sur le Bitcoin et l'Ether tient-elle à la règle, ou
+à la chance ? Tout est dans `audit/marches.py` ; rien n'est changé dans les bots.
+
+**La méthode.** La liste des marchés, la façon de compter et ce qui vaut preuve ont été écrits et enregistrés dans git
+(`fe44aec`) avant le premier calcul, pour ne rien choisir après coup. Huit marchés indépendants, en prix d'un jour de
+la banque centrale américaine : actions américaines (Nasdaq, 55 ans), actions japonaises (Nikkei, 77 ans), pétrole
+(Brent, 39 ans) et cinq monnaies face au dollar (55 ans). La règle est celle du bot, inchangée, avec ses frais ;
+l'ordre passe à la clôture du lendemain, ce qui est plus dur que la réalité. L'or manque : aucune source officielle
+ne répond aux robots sans clé (il faudrait un fichier téléchargé à la main).
+
+### Ce qui en sort
+
+| Marché | La règle | Garder | Test du mélange |
+|---|---|---|---|
+| Actions américaines (Nasdaq, 1971-2026) | ×139 (pire baisse −50 %) | ×246 (−78 %) | mieux que 99,9 % des mélanges : net |
+| Actions japonaises (Nikkei, 1950-2026) | ×159 (−38 %) | ×564 (−82 %) | 100 % : net |
+| Pétrole (Brent, 1988-2026) | ×3,0 (−69 %) | ×6,6 (−94 %) | 78 % : non |
+| Yen | ×1,74 (−60 %) | ×2,08 (−54 %) | 99,7 % : net |
+| Livre sterling | ×0,53 (−66 %) | ×0,54 (−60 %) | 97,6 % : pas net |
+| Franc suisse | ×1,69 (−61 %) | ×4,87 (−50 %) | 95,5 % : pas net |
+| Dollar canadien | ×0,29 (−72 %) | ×0,71 (−41 %) | 39,5 % : non |
+| Dollar australien | ×0,42 (−67 %) | ×0,59 (−68 %) | 82 % : non |
+
+Le test du mélange : les mêmes journées tirées dans le désordre, 1 000 fois. Mêmes hausses, mêmes baisses, même prix
+d'arrivée, mais plus aucune tendance. Si la règle exploite de vraies tendances, elle doit finir plus haut sur le vrai
+marché que sur presque tous ses mélanges.
+
+1. **La règle ne finit plus haut que « garder » sur aucun des huit marchés.** Sa pire baisse est plus petite sur
+   quatre (surtout les actions : deux fois moins profonde), plus grande sur quatre (les monnaies).
+2. **Les tendances existent pourtant.** Les huit tests du mélange réunis excluent le hasard, et trois marchés sont nets
+   à eux seuls. Sur le Nasdaq mélangé, la règle finit à ×10 ; sur le vrai, à ×139. Elle capte donc quelque chose de réel.
+3. **Ce qui mange l'avantage : le temps passé dehors pendant que le marché monte, et les frais** (une trentaine
+   d'ordres par an). Hors protocole, pour comprendre : sans le jour de retard, la règle passe devant « garder » sur 2
+   marchés sur 8 ; avec en plus des frais de professionnel (0,03 % par ordre), sur 6 sur 8.
+4. **La porte du projet** : 0 ligne « robuste » sur 24, 21 « perd de l'argent ». Toutes les sorties réunies font
+   −0,20 % contre « garder » (de −0,47 à +0,06) ; sur des marchés sans tendance, la même mesure rend les frais
+   (−0,31 % en moyenne sur 20 essais, pour −0,30 % attendus).
+5. **Les cryptos.** Sur les 9 ans de bougies du bot (Binance), le test du mélange n'est pas net : mieux que 94,8 %
+   des mélanges pour le Bitcoin, 96,0 % pour l'Ether. Sur les prix de Coinbase, plus longs (Bitcoin depuis 2015, Ether
+   depuis 2016), la règle bat « garder » (×383 contre ×254, pire baisse −63 % contre −84 % ; ×743 contre ×297,
+   −61 % contre −94 %) et le test est net (99,7 % et 99,9 %). C'est le même actif vu d'ailleurs : pas une preuve
+   de plus. L'or en jetons (6 ans, pour information) : ×1,70 contre ×2,23.
+
+### Ce que ça veut dire
+
+- **La règle est une protection, pas une façon de gagner plus.** Elle coupe les très grandes chutes ; en échange, elle
+  rapporte moins quand le marché monte longtemps.
+- **Elle n'a battu « garder » que sur les cryptos**, parce que leurs chutes ont été énormes (−77 % à −94 %) et
+  fréquentes. Si les cryptos deviennent un marché plus calme, il faut s'attendre au résultat des actions : des chutes
+  moins dures, et moins de gain que « garder ».
+- **Les frais décident, encore une fois.** Le bot de tendance reste en argent fictif.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
@@ -837,3 +891,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 13/11/2026 | 1 ter — Le contexte autour du signal | Mesure faite (sept conditions, 5,36 millions de trades, deux pistes revérifiées sur d'autres périodes) : aucun avantage, rien à brancher ; actions en jetons écartées | `8308621` |
 | 13/11/2026 | Le grand test sur trois horizons (15 secondes à 1 jour, techniques seules et combinées au volume, au flux et au carnet d'ordres) | Fait : 15,8 millions de trades, aucune combinaison confirmée ; seule tient une règle de tendance simple sur le Bitcoin et l'Ether | `4517daa` |
 | 13/11/2026 | Le bot de tendance (argent fictif) | Fait : moteur et tests de l'argent, onglet « Tendance », porte `robustesse --tendance` (verdict : pas robuste, argent fictif seulement), outil de mesure sur le même moteur | `95db6b4` |
+| 13/11/2026 | La règle de tendance sur d'autres marchés (option A) | Fait : huit marchés, 39 à 77 ans, protocole enregistré avant le calcul. La règle ne bat « garder » sur aucun ; les tendances sont réelles mais les frais et le temps dehors mangent l'avantage. Une protection, pas un gain | `fe44aec` |

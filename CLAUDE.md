@@ -332,7 +332,14 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   de tendance sur le Bitcoin et l'Ether depuis 2017, rejoué par le moteur du bot : `trend_rules` appelle
   `trend.replay` ; panier filtré, portefeuilles de la semaine). `secondes.py` : le
   très court terme, en bougies de 15 secondes fabriquées à partir de chaque transaction (`aggTrades`), résultat
-  avant et après frais.
+  avant et après frais. `marches.py` : la règle du bot de tendance, inchangée (`trend.replay`), sur d'autres marchés :
+  prix d'un jour de la banque centrale américaine (FRED, sans clé : Nasdaq depuis 1971, Nikkei depuis 1949, Brent,
+  cinq monnaies ; Bitcoin et Ether de Coinbase en recoupement), cryptos du bot et or en jetons par Binance. Le
+  PROTOCOLE est écrit en tête du fichier et a été enregistré dans git avant le premier calcul (`fe44aec`) : la règle
+  contre « garder » par décennie, le test du mélange (les mêmes journées dans le désordre, 1 000 fois : la règle
+  exploite-t-elle de vraies tendances ?), la porte du projet, les sorties réunies année par année, un témoin sans
+  tendance refait 20 fois ; hors protocole : l'effet du jour de retard et des frais ; `--csv-dir` pour des fichiers
+  fournis à la main (or, S&P 500).
   `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
@@ -369,7 +376,10 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   (région refusée par Binance). Le vrai code tourne donc sur de vraies bougies avec `audit/vrai.py` (ccxt :
   `urls["api"]["public"]` vers le miroir et `session.trust_env = True`). Les bots en direct, eux, tournent sur le PC
   de l'utilisateur (version Windows) ; ses résultats (`data\bots`) ne sont lisibles d'ici que s'il partage son dossier
-  (Remote Control). Les autres plateformes restent bloquées.
+  (Remote Control). Vu le 13/11 au soir : l'environnement « Ray » est en accès réseau libre. `fred.stlouisfed.org`
+  répond sans clé (`/graph/fredgraph.csv?id=SERIE` : séries d'un jour officielles). Refusent les robots : `stooq.com`
+  (vérification du navigateur), `prices.lbma.org.uk` (403) ; l'or n'est plus chez FRED : pas de longue série de l'or
+  sans un fichier donné par l'utilisateur.
 - Branche de travail : `claude/trading-bot`.
 - Plateforme (recherche du 04/11/2026, presse de fin juin 2026, statut actuel non confirmé) : Binance n'avait pas
   l'agrément MiCA au 30/06/2026 et a arrêté le trading pour les clients français (retraits seulement). En paper, ses
@@ -577,3 +587,18 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   toujours passer une nouvelle mesure sur un marché sans avantage avant de la croire). Pas fait, dit : alerte
   Telegram quand le bot de tendance change de position, leçon de l'École sur la tendance, lanceur Windows dédié.
   À faire approuver : la suite (étape 2 du plan, ou ces compléments).
+- 13/11/2026 (fin de soirée) : l'utilisateur choisit l'option A (« la A ») : la règle de tendance sur d'autres
+  marchés. Fait, hors des bots (`audit/marches.py`, protocole enregistré avant le calcul : `fe44aec`). RÉSULTAT sur
+  huit marchés indépendants (Nasdaq 55 ans, Nikkei 77 ans, Brent 39 ans, cinq monnaies 55 ans ; frais du bot, ordre
+  au lendemain) : la règle ne finit plus haut que « garder » sur AUCUN (Nasdaq ×139 contre ×246, Nikkei ×159 contre
+  ×564) ; sa pire baisse est plus petite sur 4 (Nasdaq −50 % contre −78 %, Nikkei −38 % contre −82 %) ; la porte :
+  0 ligne robuste sur 24, 21 « perd de l'argent » ; sorties réunies −0,20 % (de −0,47 à +0,06), témoin sans tendance
+  −0,31 % (les frais). POURTANT les tendances sont réelles : la règle fait mieux sur le vrai marché que sur ses
+  mélanges (réunis : hasard exclu ; net sur Nasdaq, Nikkei, yen). Ce qui mange l'avantage : le temps dehors pendant
+  que ça monte et une trentaine d'ordres par an ; sans jour de retard 2 marchés sur 8, avec des frais de 0,03 %
+  6 sur 8. Cryptos : sur les 9 ans de Binance le test du mélange n'est pas net (94,8 % et 96,0 %) ; sur Coinbase
+  (Bitcoin depuis 2015, Ether depuis 2016) la règle bat « garder » (×383 contre ×254 ; ×743 contre ×297) et le test
+  est net, mais c'est le même actif. CONCLUSION dite à l'utilisateur : la règle est une protection (chutes moins
+  profondes), pas une façon de gagner plus ; elle n'a battu « garder » que là où les chutes sont énormes et
+  fréquentes (les cryptos jusqu'ici). Argent fictif seulement. L'or n'a pas pu être testé (sources fermées aux
+  robots) ; phrase ajoutée dans l'onglet « Tendance ». À faire approuver : la suite.

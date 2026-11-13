@@ -30,6 +30,11 @@ LE PROTOCOLE, ÉCRIT AVANT DE CALCULER LE MOINDRE RÉSULTAT (pour ne rien choisi
 5. Les cryptos du bot (bougies de Binance) passent le même test du mélange. Le Bitcoin et l'Ether de Coinbase (FRED,
    depuis 2014 et 2016) servent de recoupement : même actif, autre plateforme, donc pas une preuve de plus.
 
+AJOUTÉ APRÈS LES PREMIERS RÉSULTATS, HORS PROTOCOLE (pour comprendre, pas pour juger) :
+- le témoin est refait 20 fois au lieu d'une (un seul tirage peut tomber loin de −0,30 % par hasard) ;
+- « ce qui mange l'avantage » : la même règle sans le jour de retard, puis avec des frais presque nuls (0,03 % par
+  ordre). Le verdict reste celui du protocole : frais du bot, ordre au lendemain.
+
     python audit/marches.py --sortie marches.json          # --melanges 1000 --coeurs N --csv-dir dossier
 
 `--csv-dir` : des fichiers « Date,Open,High,Low,Close » donnés à la main (or, S&P 500…), mesurés à part avec leurs
@@ -45,6 +50,7 @@ import sys
 import time
 import urllib.request
 from concurrent.futures import ProcessPoolExecutor
+from dataclasses import replace
 from pathlib import Path
 from statistics import NormalDist
 
@@ -79,6 +85,9 @@ BINANCE = (("BTC", "Bitcoin, bougies du bot (Binance)", "BTC/USDT", "crypto"),
            ("ETH", "Ether, bougies du bot (Binance)", "ETH/USDT", "crypto"),
            ("Or-jetons", "Or en jetons (PAXG, Binance)", "PAXG/USDT", INFO))
 JUDGED = 10  # les 8 marchés indépendants et les 2 cryptos du bot : le seuil « net » est partagé entre eux
+WITNESSES = 20  # le témoin sans tendance, refait autant de fois
+EXIT_COST = math.log((1 - trend.SPOT.slippage) * (1 - trend.SPOT.fee_rate) ** 2 / (1 + trend.SPOT.slippage))
+CHEAP = replace(trend.SPOT, fee_rate=0.0002, slippage=0.0001)  # des frais de professionnel : 0,03 % par ordre
 
 
 def fred(series: str, cache: Path) -> tuple[np.ndarray, np.ndarray]:
@@ -157,8 +166,15 @@ def measure(job: tuple) -> dict:
                       "p": float((1 + (finals >= real_final).sum()) / (shuffles + 1)),
                       "worst": trend.worst(base.value, base.capital), "worst_median": float(np.median(worsts)),
                       "worst_beats": float((trend.worst(base.value, base.capital) > worsts).mean())}
-    # Le témoin : un marché tiré au hasard, sans tendance ni dérive, aussi long et aussi agité que le vrai.
-    out["witness"] = exit_logs(frame(ts, path(rng.normal(0.0, steps.std(), len(steps))), late))
+    # Le témoin : des marchés tirés au hasard, sans tendance ni dérive, aussi longs et aussi agités que le vrai.
+    out["witness"] = [exit_logs(frame(ts, path(rng.normal(0.0, steps.std(), len(steps))), late))
+                      for _ in range(WITNESSES)]
+    # Hors protocole : ce qui mange l'avantage (le jour de retard, puis les frais).
+    finish = lambda late_, ex: trend.replay(frame(ts, close, late_), ex=ex)  # noqa: E731
+    out["what_if"] = {name_: {"total": float(r.value[-1] / r.capital), "worst": trend.worst(r.value, r.capital)}
+                      for name_, r in (("protocole", base), ("sans_retard", finish(False, trend.SPOT)),
+                                       ("sans_retard_frais_bas", finish(False, CHEAP)))}
+    out["what_if"]["garder"] = {"total": float(base.hold[-1] / base.capital), "worst": trend.worst(base.hold, base.capital)}
     return out
 
 
@@ -249,7 +265,8 @@ def main() -> None:
     print(trend.robustness_report(gate).split("\n\n")[0])
     robust = [r.market for r in gate if r.verdict == ROBUST]
     print(f"Lignes « robustes » : {len(robust)} sur {len(gate)}" + (f" ({', '.join(robust)})" if robust else ""))
-    exits, witness = pooled(main_rows, "exits"), pooled(main_rows, "witness")
+    exits = pooled(main_rows, "exits")
+    witness = [pooled([{"w": r["witness"][k]} for r in main_rows], "w") for k in range(WITNESSES)]
     combined = stouffer([r["shuffle"]["p"] for r in main_rows])
     better = sum(r["rule"]["total"] > r["hold"]["total"] for r in main_rows)
     safer = sum(r["rule"]["worst"] > r["hold"]["worst"] for r in main_rows)
@@ -261,10 +278,25 @@ def main() -> None:
     line = lambda title, m: (f"{title} : {m['n']} sorties sur {m['years']} années, {100 * m['wins']:.0f} % gagnantes, "  # noqa: E731
                              f"{100 * m['mean']:+.2f} % par sortie (de {100 * m['low']:+.2f} à {100 * m['high']:+.2f})")
     print(line("Toutes les sorties réunies, contre « garder »", exits))
-    print(line("Le témoin (marchés au hasard, sans tendance ; attendu −0,30 %)", witness))
+    means = [w["mean"] for w in witness]
+    held = sum(w["low"] <= EXIT_COST <= w["high"] for w in witness)
+    print(f"Le témoin (marchés au hasard, sans tendance), refait {WITNESSES} fois : {100 * np.mean(means):+.2f} % par sortie en "
+          f"moyenne (de {100 * min(means):+.2f} à {100 * max(means):+.2f}) ; attendu : les frais d'une sortie, "
+          f"{100 * EXIT_COST:+.2f} % ; sa fourchette les contient {held} fois sur {WITNESSES}.")
+    print("\n=== HORS PROTOCOLE : CE QUI MANGE L'AVANTAGE (ce que devient 1, pire baisse) ===")
+    labels = (("protocole", "protocole"), ("sans_retard", "sans le jour de retard"),
+              ("sans_retard_frais_bas", "sans retard, frais 0,03 %"), ("garder", "garder"))
+    print(f"  {'':<10}" + "".join(f"{title:>28}" for _key, title in labels))
+    for row in main_rows:
+        print(f"  {row['key']:<10}" + "".join(
+            f"{'×%.2f (%+.0f %%)' % (row['what_if'][k]['total'], 100 * row['what_if'][k]['worst']):>28}" for k, _t in labels))
+    for k, title in labels[:3]:
+        above = sum(r["what_if"][k]["total"] > r["what_if"]["garder"]["total"] for r in main_rows)
+        print(f"  {title} : la règle finit plus haut que « garder » sur {above} marchés sur {len(main_rows)}")
     if args.sortie:
         report = {"markets": [{k: v for k, v in r.items() if k not in ("exits", "witness")} for r in rows],
                   "gate": [r.__dict__ for r in gate], "pooled": exits, "witness": witness, "stouffer": combined,
+                  "exit_cost": EXIT_COST,
                   "better": better, "safer": safer, "net": net}
         Path(args.sortie).write_text(json.dumps(report, ensure_ascii=False, indent=1, default=float), encoding="utf-8")
         print(f"\nDétail écrit dans {args.sortie}")

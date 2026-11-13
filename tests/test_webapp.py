@@ -303,6 +303,7 @@ def test_the_site_serves_its_page_and_only_obeys_its_own_page(server):
     # le bot de tendance : son onglet, son test de robustesse, et ses mises en garde
     assert 'href="#tendance"' in page and "<h1>Le bot de tendance</h1>" in page and 'id="trend-robust-rows"' in page
     assert "Jamais de levier sur cette règle" in page and "Le passé ne garantit rien" in page
+    assert "Sur huit autres marchés" in page and "C'est une protection, pas une façon de gagner plus" in page
     assert "gagnant sur 3 périodes" not in page and "trois périodes" not in page  # le test final ne choisit plus
     for gone in ("Radar des mouvements", "Mes essais", "Labos", "Mon trader", "Tableau de bord"):
         assert gone not in page  # retirés du site
