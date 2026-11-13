@@ -132,11 +132,12 @@ def funding(contract: str, cache: Path) -> pd.Series | None:
 
 
 def daily_funding(contract: str, cache: Path) -> pd.Series | None:
-    """La somme des taux de chaque jour (jour en ms, à 00:00 UTC) : ce qu'un vendeur encaisse en tenant la journée."""
+    """Ce qu'un vendeur encaisse en tenant un jour entier, de 00:00 à 24:00 UTC (jour en ms) : la somme des échéances
+    tombées pendant ce temps. Celle de 00:00 paie la veille : une position ouverte à minuit ne la touche pas."""
     rates = funding(contract, cache)
     if rates is None or not len(rates):
         return None
-    return rates.groupby(rates.index // DAY * DAY).sum()
+    return rates.groupby((rates.index - 1) // DAY * DAY).sum()
 
 
 def daily_frames(cache: Path) -> dict[str, pd.DataFrame]:
@@ -533,6 +534,231 @@ def paire(args) -> dict:
     return {"paire": result}
 
 
+# --- étude 3 : encaisser le financement sans parier sur le prix ---------------------------------------------------------
+
+CARRY_IN, CARRY_OUT = SPOT + PERP, SPOT + PERP  # ouvrir : acheter au comptant et vendre le contrat ; fermer : l'inverse
+CAPITAL = 1.5  # pour 1 tenu de chaque côté : 1 d'achat au comptant et 0,5 de marge pour le contrat vendu
+
+
+def financement(args) -> dict:
+    """ENCAISSER LE FINANCEMENT SANS PARIER SUR LE PRIX (le « portage neutre »).
+    Le principe : acheter une crypto au comptant et vendre le même montant en contrat à terme. Que le prix monte ou
+    baisse, les deux se compensent ; ce qui reste, c'est le financement que les acheteurs de contrats versent aux
+    vendeurs (quand il est positif), toutes les 8 heures.
+    Protocole, fixé avant le calcul :
+    - le vrai financement de chaque contrat (archives de Binance) ; résultat par jour pour 1 de capital, en comptant
+      1,5 de capital pour 1 tenu de chaque côté (l'achat, et une marge de moitié pour la vente) ;
+    - frais : 0,22 % pour ouvrir (0,15 % au comptant et 0,07 % sur le contrat) et autant pour fermer ; puis « durs » :
+      0,60 % pour ouvrir et autant pour fermer ;
+    - règle A, « toujours » : la position est tenue en permanence, moitié Bitcoin, moitié Ether ;
+    - règle B, « seulement quand ça paie » : pour chacun des deux, dedans quand le financement moyen des 7 derniers
+      jours est positif, dehors sinon ;
+    - règle C, « les mieux payés » : chaque lundi, parmi les contrats dont la crypto fait partie des 50 plus échangées
+      au comptant, les 5 dont le financement moyen des 7 derniers jours est le plus haut, s'il dépasse 0,02 % par
+      8 heures (sinon cette place reste en argent) ; tenus une semaine, un cinquième chacun ;
+    - ce qui n'est PAS compté : l'écart de prix entre le contrat et le comptant à l'ouverture et à la fermeture (en
+      moyenne en faveur du vendeur quand le financement est haut), et le travail de garder la marge du contrat quand le
+      prix s'envole (sans lui, la vente serait liquidée)."""
+    cache = Path(args.cache)
+    frames = daily_frames(cache)
+    member, _ = longterm.universe(frames, 50)
+    index = member.index.to_numpy(dtype="int64")
+    earned = {}
+    for symbol in member.columns:
+        contract = contract_of(symbol, cache)
+        rates = daily_funding(contract, cache) if contract else None
+        if rates is not None:
+            earned[symbol] = rates.reindex(index)
+    table = pd.DataFrame(earned, index=index)
+    print(f"ÉTUDE 3 — ENCAISSER LE FINANCEMENT : {table.shape[1]} cryptos ont à la fois un comptant et un contrat")
+    out = {}
+    for costs, cost_name in (((CARRY_IN, CARRY_OUT), "frais des bots"), ((2 * HARD, 2 * HARD), "frais durs")):
+        print(f"\n--- {cost_name} : {100 * costs[0]:.2f} % pour ouvrir, {100 * costs[1]:.2f} % pour fermer ---")
+        majors = table[["BTC/USDT", "ETH/USDT"]]
+        live = majors.notna().all(axis=1).to_numpy()
+        always = majors.fillna(0.0).mean(axis=1).to_numpy() / CAPITAL
+        always[np.flatnonzero(live)[0]] -= costs[0] / CAPITAL
+        result = judge(always[live], index[live])
+        print(show(f"A. toujours, moitié Bitcoin moitié Ether · {100 * (majors[live] < 0).mean().mean():.0f} % des jours payés au lieu d'encaissés", result))
+        out[f"A | {cost_name}"] = {**result, "yearly": float(always[live].mean() * 365)}
+        print(f"      en moyenne : {100 * always[live].mean() * 365:+.1f} % par an sur le capital")
+        signal = majors.rolling(7).mean().shift(1)  # connu le matin : les 7 jours d'avant
+        inside = (signal > 0).astype(float)
+        turn = inside.diff().abs().fillna(inside)
+        paid = np.where(inside.diff().fillna(inside) > 0, costs[0], costs[1])
+        when = ((inside * majors.fillna(0.0)) - turn * paid).mean(axis=1).to_numpy() / CAPITAL
+        ok = live & signal.notna().all(axis=1).to_numpy()
+        result = judge(when[ok], index[ok])
+        print(show(f"B. seulement quand ça paie · dedans {100 * inside[ok].mean().mean():.0f} % du temps", result))
+        print(f"      en moyenne : {100 * when[ok].mean() * 365:+.1f} % par an sur le capital")
+        out[f"B | {cost_name}"] = {**result, "yearly": float(when[ok].mean() * 365)}
+        week = pd.to_datetime(index, unit="ms", utc=True)
+        monday = week.dayofweek == 0
+        past = table.rolling(7, min_periods=7).mean().shift(1).where(member.reindex(columns=table.columns))
+        held = pd.DataFrame(0.0, index=index, columns=table.columns)
+        current = pd.Series(0.0, index=table.columns)
+        for i in range(len(index)):
+            if monday[i]:
+                best = past.iloc[i].dropna()
+                best = best[best > 3 * 0.0002].nlargest(5)  # 0,02 % par 8 heures = 0,06 % par jour
+                current = pd.Series(0.0, index=table.columns)
+                current[best.index] = 1 / 5
+            held.iloc[i] = current
+        change = held.diff().fillna(held)
+        fees = (change.clip(lower=0) * costs[0] + (-change).clip(lower=0) * costs[1]).sum(axis=1)
+        best_days = ((held * table.fillna(0.0)).sum(axis=1) - fees).to_numpy() / CAPITAL
+        ok = np.arange(len(index)) >= 14
+        result = judge(best_days[ok], index[ok])
+        print(show(f"C. les 5 mieux payés de la semaine · {100 * held[ok].sum(axis=1).mean():.0f} % du capital occupé en moyenne · "
+                   f"{held[ok].gt(0).any().sum()} cryptos tenues au moins une semaine", result))
+        print(f"      en moyenne : {100 * best_days[ok].mean() * 365:+.1f} % par an sur le capital")
+        out[f"C | {cost_name}"] = {**result, "yearly": float(best_days[ok].mean() * 365)}
+    return out
+
+
+# --- étude 7 : le financement comme signal ---------------------------------------------------------------------------
+
+def signal(args) -> dict:
+    """LE FINANCEMENT COMME SIGNAL : quand tout le monde paie cher pour acheter, parier contre la foule.
+    Protocole, fixé avant le calcul :
+    - Bitcoin et Ether ; chaque soir, le financement moyen des 3 derniers jours est comparé à ses valeurs des 365
+      jours d'avant ; dans les 10 % les plus hauts : vendre à découvert le lendemain ; dans les 10 % les plus bas :
+      acheter ; sinon rien ;
+    - résultat par jour : la variation du prix dans le sens du pari, plus le financement (un vendeur l'encaisse quand
+      il est positif, un acheteur quand il est négatif), moins 0,07 % par changement de position."""
+    cache, out = Path(args.cache), {}
+    print("ÉTUDE 7 — LE FINANCEMENT COMME SIGNAL (parier contre la foule, 10 % les plus hauts et les plus bas d'un an)")
+    for symbol in trend.SYMBOLS:
+        frame = major(symbol, cache)
+        ts, close = frame["ts"].to_numpy(dtype="int64"), frame["close"].to_numpy(dtype=float)
+        rates = daily_funding(contract_of(symbol, cache), cache).reindex(ts)
+        recent = rates.rolling(3, min_periods=3).mean()
+        rank = recent.rolling(365, min_periods=365).apply(lambda w: (w[:-1] < w[-1]).mean(), raw=True).to_numpy()
+        bet = np.where(rank >= 0.9, -1.0, np.where(rank <= 0.1, 1.0, 0.0))
+        bet[~np.isfinite(rank)] = np.nan
+        move = np.append(close[1:] / close[:-1] - 1, np.nan)
+        paid = rates.reindex(ts + DAY).fillna(0.0).to_numpy()
+        days = bet * move - bet * paid - PERP * np.abs(np.diff(np.concatenate(([0.0], np.nan_to_num(bet)))))
+        result = judge(days, ts)
+        side = np.nan_to_num(bet)
+        print(show(f"{symbol} · vendu {100 * (side < 0).mean():.0f} % du temps, acheté {100 * (side > 0).mean():.0f} %", result))
+        out[symbol] = result
+    return out
+
+
+# --- étude 6 : les heures et les jours de la semaine ----------------------------------------------------------------------
+
+def heures(args) -> dict:
+    """LES HEURES ET LES JOURS : le prix monte-t-il plus à certaines heures de la semaine ?
+    Protocole, fixé avant le calcul :
+    - Bitcoin et Ether, bougies d'une heure depuis 2017 ; les 168 heures de la semaine (UTC) ;
+    - sur la période de recherche : les heures dont la variation moyenne est positive avec une fourchette à 95 % toute
+      positive (en comparant les semaines) ; le hasard seul en donne environ 4 sur 168 ;
+    - la règle jugée sur la période de confirmation : ne tenir la crypto que pendant ces heures-là ; résultat par
+      heure tenue, avant frais, puis avec 0,14 % par aller-retour (un aller-retour par suite d'heures)."""
+    cache, out = Path(args.cache), {}
+    ex = vrai.exchange()
+    ex.load_markets()
+    end = ex.fetch_time() // DAY * DAY
+    print("ÉTUDE 6 — LES HEURES ET LES JOURS DE LA SEMAINE (bougies d'une heure depuis 2017)")
+    for symbol in trend.SYMBOLS:
+        frame = vrai.candles(ex, symbol, "1h", trend.EARLY_MS, end, cache).reset_index(drop=True)
+        ts, close = frame["ts"].to_numpy(dtype="int64"), frame["close"].to_numpy(dtype=float)
+        move = close[1:] / close[:-1] - 1  # la variation de l'heure qui commence à ts[1:]
+        hour = ts[1:]
+        stamp = pd.to_datetime(hour, unit="ms", utc=True)
+        slot = (stamp.dayofweek * 24 + stamp.hour).to_numpy()
+        week = hour // (7 * DAY)
+        before = hour < ms(CUT)
+        chosen = []
+        for k in range(168):
+            pick = before & (slot == k)
+            table = pd.DataFrame({"w": week[pick], "v": move[pick]}).groupby("w")["v"].agg(["count", "sum"])
+            mean, low, _high = clustered_bounds(list(zip(table["count"], table["sum"])))
+            if low == low and low > 0:
+                chosen.append(k)
+        held = np.isin(slot, chosen)
+        starts = held & ~np.concatenate(([False], held[:-1]))  # le début de chaque suite d'heures tenues
+        gross = np.where(held, move, 0.0)
+        net = gross - np.where(starts, 2 * PERP, 0.0)
+        after = ~before
+        result = {"hours": len(chosen), "gross": bounds(gross[after & held], hour[after & held]),
+                  "net_per_day": float(net[after].sum() / (after.sum() / 24)), "gross_search": float(move[before & held].mean()) if held.any() else math.nan}
+        g = result["gross"]
+        print(f"  {symbol} : {len(chosen)} heures « nettes » sur 168 pendant la recherche (le hasard : environ 4). Sur la confirmation, "
+              f"ces heures font {100 * g['mean']:+.4f} % par heure avant frais (de {100 * g['low']:+.4f} à {100 * g['high']:+.4f}) ; "
+              f"avec les frais : {100 * result['net_per_day']:+.3f} % par jour")
+        out[symbol] = result
+    return out
+
+
+# --- suite des études 2 et 5 : les deux pistes à la baisse, avec le vrai financement ------------------------------------------
+
+def baisse(args) -> dict:
+    """LES DEUX PISTES À LA BAISSE, REFAITES AVEC LE VRAI FINANCEMENT (écrit après les études 2 et 5, avant ce calcul).
+    Les études 2 et 5 donnent deux « pistes » : vendre à découvert le lendemain d'une envolée, et vendre les nouvelles
+    cotations. Elles ne comptaient pas le financement, que le vendeur paie souvent très cher juste après une envolée,
+    et supposaient qu'un contrat existe. Ici :
+    - seulement les cas où un contrat perpétuel existait ce jour-là (un financement est connu le lendemain) ;
+    - le résultat du vendeur = la baisse du prix, plus le financement encaissé (ou payé) chaque jour tenu, moins deux
+      ordres à 0,30 % (frais durs) ; une vente dont le prix double est liquidée (−100 %) ;
+    - envolées : +20 %, +30 % et +50 % dans la journée (mêmes conditions que l'étude 2), tenues 1 et 3 jours ;
+    - nouvelles cotations : de la clôture du 1er jour où le contrat existe, tenues 30 et 90 jours.
+    10 façons de faire. Verdict comme partout : net sur les deux périodes."""
+    cache = Path(args.cache)
+    frames = daily_frames(cache)
+    out, pumps, fresh = {}, [], []
+    for symbol, frame in frames.items():
+        contract = contract_of(symbol, cache)
+        rates = daily_funding(contract, cache) if contract else None
+        if rates is None or len(frame) < 40:
+            continue
+        ts = frame["ts"].to_numpy(dtype="int64")
+        closes, highs = frame["close"].to_numpy(dtype=float), frame["high"].to_numpy(dtype=float)
+        money = (frame["close"] * frame["volume"]).to_numpy(dtype=float)
+        got = rates.reindex(ts).to_numpy()  # le financement de chaque jour (NaN : pas de contrat ce jour-là)
+
+        def short(at: int, days: int) -> float | None:
+            end = at + days
+            if end >= len(closes) or not np.isfinite(got[at + 1:end + 1]).all():
+                return None
+            if highs[at + 1:end + 1].max() >= 2 * closes[at]:
+                return -1.0
+            return max(-1.0, -(closes[end] / closes[at] - 1) + float(got[at + 1:end + 1].sum()) - 2 * HARD)
+
+        usual = pd.Series(money).rolling(30).mean().shift(1).to_numpy()
+        jump = np.concatenate(([0.0], closes[1:] / closes[:-1] - 1))
+        for at in np.flatnonzero((jump >= JUMPS[0]) & (money >= SURGE * usual) & (usual >= MIN_MONEY)):
+            for days in (1, 3):
+                result = short(int(at), days)
+                if result is not None:
+                    paid = float(got[at + 1:at + days + 1].sum())
+                    pumps.append({"ts": int(ts[at]), "jump": float(jump[at]), "days": days, "net": result, "funding": paid})
+        known = np.flatnonzero(np.isfinite(got))
+        if len(known) and ts[0] >= ms(START) + 60 * DAY and known[0] <= 30:  # contrat ouvert dans le mois de la cotation
+            for days in (30, 90):
+                result = short(int(known[0]), days)
+                if result is not None:
+                    fresh.append({"ts": int(ts[known[0]]), "days": days, "net": result,
+                                  "funding": float(got[known[0] + 1:known[0] + days + 1].sum())})
+    pumps, fresh = pd.DataFrame(pumps), pd.DataFrame(fresh)
+    print("SUITE — LES DEUX PISTES À LA BAISSE AVEC LE VRAI FINANCEMENT (frais durs, contrat existant)")
+    for jump in JUMPS:
+        for days in (1, 3):
+            part = pumps[(pumps["jump"] >= jump) & (pumps["days"] == days)]
+            result = judge(part["net"].to_numpy(), part["ts"].to_numpy(), chain=False)
+            print(show(f"vendre après +{100 * jump:.0f} %, tenir {days} jour(s) · financement moyen sur la durée : "
+                       f"{100 * part['funding'].mean():+.2f} % (pire : {100 * part['funding'].min():+.1f} %)", result, "par trade"))
+            out[f"envolée +{100 * jump:.0f} % | {days} j"] = result
+    for days in (30, 90):
+        part = fresh[fresh["days"] == days]
+        result = judge(part["net"].to_numpy(), part["ts"].to_numpy(), chain=False)
+        print(show(f"vendre une nouvelle cotation, tenir {days} jours · financement moyen sur la durée : "
+                   f"{100 * part['funding'].mean():+.1f} % (pire : {100 * part['funding'].min():+.0f} %)", result, "par trade"))
+        out[f"cotation | {days} j"] = result
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("etude", choices=sorted(STUDIES))
@@ -548,7 +774,8 @@ def main() -> None:
 
 
 STUDIES = {"donnees": donnees, "tendance": tendance, "mouvements": mouvements, "croise": croise,
-           "cotations": cotations, "paire": paire}
+           "cotations": cotations, "paire": paire, "financement": financement, "signal": signal, "heures": heures,
+           "baisse": baisse}
 
 if __name__ == "__main__":
     main()
