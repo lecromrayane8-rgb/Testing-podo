@@ -547,6 +547,49 @@ l'essai continuera de les suivre sur ton PC (14 jours ne jugent pas les unités 
 - Trouvé en route, à trancher : parmi les paires assez échangées de Binance, 15 sont des actions en jetons (NVDAB,
   GOOGLB, SOXLB...) et 4 des monnaies stables récentes ; le filtre du bot ne les reconnaît pas.
 
+## Étape 1 ter — Le contexte autour du signal (proposée le 13/11/2026, en attente d'accord)
+
+La demande, le 13/11 au soir : des bots « intelligents », pas de la technique pure. Lire le graphique (order blocks,
+zones...) ET regarder ce qui se passe en direct : qui achète, qui vend, le volume, la tendance du marché,
+l'actualité, les cryptos qui bougent. C'est le cœur des étapes 4 à 7 du plan ; la proposition est d'en avancer tout
+ce qui peut se tester dès maintenant sur de vraies données, puisque le graphique seul ne paie pas les frais
+(étape 1 bis).
+
+Vérifié le 13/11 : ces données existent, gratuites, avec un historique, et sont lisibles depuis le cloud.
+
+| Ce que tu veux que le bot regarde | Où c'est | Historique |
+|---|---|---|
+| Qui pousse : la part du volume achetée « au marché » (acheteurs pressés contre vendeurs pressés) | Dans chaque bougie Binance | Oui |
+| Le nombre de trades de chaque bougie, le volume | Dans chaque bougie Binance | Oui |
+| Le nombre de comptes acheteurs pour un compte vendeur (tous les traders, et les plus gros) | Archives des contrats à terme, toutes les 5 min | Oui |
+| L'intérêt ouvert (l'argent engagé sur les contrats), le coût de financement | Archives des contrats à terme | Oui |
+| La tendance de l'unité au-dessus, la tendance du Bitcoin | Les bougies qu'on a déjà | Oui |
+| L'humeur du marché (indice peur et avidité) | Déjà sur le site | Oui (un point par jour) |
+| Le carnet d'ordres (les ordres en attente), les liquidations | Seulement en direct | Non : à enregistrer sur ton PC (étape 4) |
+| Les grandes annonces économiques | Un calendrier à brancher | Étape 6 |
+
+Plan court :
+
+1. **Un bot = une lecture du graphique (le déclencheur) + des conditions de contexte (les filtres).** Le bot ne prend
+   son signal que si le contexte est d'accord. Ce n'est pas une IA qui improvise : chaque condition est une règle
+   écrite d'avance, avec un seul seuil.
+2. **Six conditions pour commencer** : les acheteurs poussent (ou les vendeurs, pour une vente) ; l'activité est
+   au-dessus de sa moyenne ; la tendance de l'unité au-dessus va dans le même sens ; le Bitcoin ne va pas contre ; la
+   foule des traders n'est pas déjà toute du même côté ; l'humeur du marché n'est pas à l'extrême.
+3. **La mesure, comme pour la sécurisation** : pour chaque condition, une seule question posée sur des millions de
+   trades réels : « les trades pris quand la condition est vraie font-ils mieux que les autres, frais compris ? »
+   Six questions au lieu de milliers de combinaisons : très peu de place pour la chance.
+4. **Ensuite seulement, les combinaisons** (étape 7) : une lecture du graphique avec la ou les conditions qui ont
+   passé la mesure, jugées sur le test final et à l'essai.
+5. **Sur le site** : la page d'un bot dit quelles conditions étaient remplies à chaque entrée ; l'onglet Stratégies
+   compare « avec la condition » et « sans ».
+
+Dit franchement : ces données sont publiques aussi, donc rien ne garantit qu'elles donnent un avantage ; il est
+possible que la réponse soit encore « non ». Mais c'est la première fois que le bot regardera autre chose que le prix,
+et la mesure dira vite si une condition vaut quelque chose. Choisir les cryptos qui bougent, le bot le fait déjà
+(les 60 plus agitées, revues toutes les 10 minutes). L'étape 2 (gestion du risque) viendrait juste après : elle limite
+les pertes mais ne crée pas d'avantage.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
@@ -627,3 +670,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 13/11/2026 | 0, suite — bots endormis, valeur d'une position, jour d'un trade rattrapé | Faite | `3b234da` |
 | 13/11/2026 | 1 — Sécurisation des gains | Faite : moteur, réglages, labo avec et sans, site, mesures sur de vraies bougies | `3b234da` |
 | 13/11/2026 | 1 bis — La lecture du graphique | Faite : 12 techniques (51 en tout), garanties testées, mesures sur du hasard et sur de vraies bougies ; deux défauts de l'étape 1 corrigés après relecture | `38b843b` |
+| | 1 ter — Le contexte autour du signal (acheteurs et vendeurs, activité, tendances, foule, humeur) | Proposée le 13/11, en attente d'accord | |

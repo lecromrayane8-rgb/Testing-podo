@@ -479,3 +479,12 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   l'étape 2 (gestion du risque). Toujours à trancher par l'utilisateur : exclure les actions en jetons et les
   monnaies stables récentes de l'univers. Pas fait, dit : épaule-tête-épaule, triangles, lignes de tendance ;
   l'actualité et le multi-unités restent pour l'étape 6.
+- 13/11/2026 (soir) : l'utilisateur veut des bots « intelligents » : la lecture du graphique combinée à ce qui se
+  passe en direct (qui achète, qui vend, volume, tendance du marché, actualité). Proposé et EN ATTENTE D'ACCORD :
+  l'étape 1 ter de `PLAN-BOTS.md` (six conditions de contexte, chacune mesurée « avec ou sans » sur les mêmes trades,
+  puis les combinaisons). Vérifié : les bougies Binance donnent le nombre de trades et le volume acheté au marché
+  (champs 9 et 10 de `/api/v3/klines`, que `fetch_ohlcv` ne rend pas) ; `data.binance.vision/data/futures/um/daily/
+  metrics/` donne toutes les 5 min l'intérêt ouvert et le nombre de comptes acheteurs pour un vendeur ; le carnet
+  d'ordres n'a pas d'historique (étape 4). Il a montré un live TikTok d'un « bot d'arbitrage Polymarket » (lien en
+  bio) : dit de ne pas s'en inspirer (chiffres affichés incohérents, gains invraisemblables, autre produit) ; seule la
+  présentation est bonne à prendre, et elle est déjà prévue à l'étape 3.
