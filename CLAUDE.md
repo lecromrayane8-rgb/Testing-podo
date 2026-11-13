@@ -625,3 +625,21 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   indépendant) ; le levier ×2 a multiplié le gain du Bitcoin, pas celui de l'Ether, avec des chutes de −80 % et
   plus ; à ×3 l'Ether est liquidé (19/05/2021), à ×5 les deux (Bitcoin 27/06/2019, Ether 12/03/2020). Dit
   franchement à l'utilisateur. Les comptes à risque sont là pour voir, pas pour être imités ; argent fictif.
+- 13/11/2026 (fin de journée) : l'utilisateur trouve le résultat « pas mal » et fixe LA SUITE, À REPRENDRE À LA
+  PROCHAINE SESSION :
+  1. D'ABORD UNE RELECTURE INDÉPENDANTE (« on fera une lecture indépendante demain, quand la session sera remise à
+     zéro » : sa limite d'utilisation). Une seule relecture groupée, ciblée sur ce qui touche à l'argent et que je
+     suis seul à avoir relu : `tradingbot/trend.py` (l'ordre des événements d'une journée dans `replay`, le levier,
+     les intérêts, la remise au levier, la liquidation, le stop suiveur, le compte fictif et `Feed`),
+     `tests/test_trend.py`, `audit/marches.py` (test du mélange, sorties réunies, témoin) et les chiffres annoncés
+     dans `PLAN-BOTS.md`. Lui dire ce qu'elle trouve avant de corriger quoi que ce soit d'important.
+  2. PLUS TARD, TRAVAILLER ENSEMBLE SUR LE COURT TERME (« voir comment on pourrait être rentable dessus ») : il veut
+     y participer, pas recevoir un verdict. Point de départ à lui rappeler franchement : 15,8 millions de trades
+     mesurés, tout rend les frais. Ce qui n'a PAS encore été mesuré et pourrait changer la donne (des pistes à
+     mesurer, pas des promesses) : les frais eux-mêmes (entrer par ordre limite : 0,02 % au lieu de 0,07 % par
+     ordre ; les bots ne le font qu'à la sécurisation), le financement des contrats à terme encaissé au lieu de
+     payé (position neutre : comptant acheté, contrat vendu ; archives `fundingRate` de Binance), les écarts de
+     prix entre plateformes, et des trades de quelques jours. Commencer par lui demander ses idées à lui.
+  En attendant, rien de nouveau n'est construit : les bots de court terme et les quatre comptes de tendance
+  tournent en argent fictif (j'ai compris « ok, on fait ça » comme « on laisse tourner » ; les compléments, alerte
+  Telegram et leçon de l'École, restent proposés). Pas de nouvelle étape sans son accord.

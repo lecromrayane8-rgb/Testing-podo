@@ -840,6 +840,17 @@ même avec un stop suiveur, un compte à risque (levier ×2) et le compte à ris
 
 Ces comptes sont là pour voir ce que le risque donne et ce qu'il coûte, pas pour être imités.
 
+## La suite décidée le 13/11/2026 au soir
+
+1. **Demain : une relecture indépendante** de ce qui touche à l'argent dans le bot de tendance (le moteur, le levier,
+   la liquidation, le stop suiveur, les mesures). Jusqu'ici, je suis seul à l'avoir relu.
+2. **Plus tard : travailler ensemble sur le court terme**, pour voir comment on pourrait y être rentable. Point de
+   départ honnête : tout ce qui a été mesuré rend les frais. Ce qui reste à mesurer : entrer par ordre limite (frais
+   trois fois plus bas), encaisser le financement des contrats à terme au lieu de le payer, les écarts entre
+   plateformes, des trades de quelques jours. Ce sont des pistes, pas des promesses.
+3. **En attendant** : les bots et les quatre comptes de tendance tournent en argent fictif. Restent proposés :
+   l'alerte Telegram quand le bot de tendance change de position, et une leçon de l'École sur la tendance.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
