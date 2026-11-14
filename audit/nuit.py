@@ -769,7 +769,11 @@ def baisse(args) -> dict:
         result = judge(part["net"].to_numpy(), part["ts"].to_numpy(), chain=False)
         print(show(f"vendre une nouvelle cotation, tenir {days} jours · financement moyen sur la durée : "
                    f"{100 * part['funding'].mean():+.1f} % (pire : {100 * part['funding'].min():+.0f} %)", result, "par trade"))
-        out[f"cotation | {days} j"] = result
+        net = part["net"].to_numpy()
+        print(f"      le risque (description) : résultat médian {100 * np.median(net):+.1f} % · {100 * (net <= -0.5).mean():.0f} % "
+              f"des ventes perdent plus de la moitié de la mise · {100 * (net <= -1).mean():.0f} % sont liquidées (mise perdue)")
+        out[f"cotation | {days} j"] = {**result, "median": float(np.median(net)), "half_lost": float((net <= -0.5).mean()),
+                                       "liquidated": float((net <= -1).mean())}
     return out
 
 

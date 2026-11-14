@@ -381,12 +381,15 @@ def grille(args) -> dict:
       (ce que gagne un compte tenu à moitié-moitié sans rien faire d'autre). Sur un marché sans mémoire, cette
       différence vaut zéro moins les frais : la grille ne gagne quelque chose par elle-même que si les prix reviennent
       vraiment sur leurs pas ;
-    - on montre aussi l'argent composé : la grille, « moitié gardée, moitié en argent, sans y toucher », et tout gardé."""
+    - on montre aussi l'argent composé : la grille, « moitié gardée, moitié en argent, sans y toucher », et tout gardé.
+    Ajouté APRÈS avoir vu les résultats par crypto (donc hors protocole, pour décrire) : la même différence pour les
+    six cryptos réunies, chaque jour la moyenne des six. Une grille qui gagne sur une crypto et pas sur les cinq
+    autres ressemble plus à un hasard qu'à une règle."""
     cache = Path(args.cache)
     ex = vrai.exchange()
     ex.load_markets()
     end = ex.fetch_time() // DAY * DAY
-    out = {}
+    out, together = {}, {}
     print("ÉTUDE 10 — LE BOT DE GRILLE (bougies de 5 minutes depuis 2020)")
     for symbol in GRID_COINS:
         frame = vrai.candles(ex, symbol, "5m", ms(START), end, cache).reset_index(drop=True)
@@ -400,6 +403,7 @@ def grille(args) -> dict:
             for k, (fee, fee_name) in enumerate(GRID_FEES):
                 daily = run["values"][k] / np.concatenate(([1.0], run["values"][k][:-1])) - 1
                 result = judge(daily - 0.5 * move, run["days"])
+                together.setdefault((step, fee_name), []).append(pd.Series(daily - 0.5 * move, index=run["days"]))
                 whole = nuit.compound(daily)
                 out[f"{coin} | cran {100 * step:.1f} % | {fee_name}"] = {
                     **result, "fills": run["fills"], "grid": whole, "idle": idle, "hold": hold}
@@ -407,6 +411,12 @@ def grille(args) -> dict:
                             f"par jour", result, "par jour")
                       + f" · grille ×{whole['total']:.2f} ({100 * whole['worst']:+.0f} %), moitié gardée ×{idle['total']:.2f} "
                         f"({100 * idle['worst']:+.0f} %), tout gardé ×{hold['total']:.2f} ({100 * hold['worst']:+.0f} %)")
+    print("  les six cryptos réunies (hors protocole, ajouté après coup) :")
+    for (step, fee_name), series in together.items():
+        mean = pd.concat(series, axis=1).mean(axis=1)
+        result = judge(mean.to_numpy(), mean.index.to_numpy(), chain=False)
+        out[f"réunies | cran {100 * step:.1f} % | {fee_name}"] = result
+        print(brief(f"réunies · cran de {100 * step:.1f} % · {fee_name}", result, "par jour"))
     return out
 
 
@@ -596,7 +606,9 @@ def ecarts(args) -> dict:
             line += (f"\n      {cost_name} : dépassé {100 * (np.abs(gaps) > cost).mean():.3f} % des minutes · "
                      f"{seen.sum() / GAP_DAYS:.1f} occasions par jour"
                      + (f" · gain à la minute suivante {100 * mean:+.3f} % (de {100 * low:+.3f} à {100 * high:+.3f}) · "
-                        f"{gain.sum() * 1000 / GAP_DAYS:+.2f} $ par jour avec 1 000 $ par ordre" if seen.sum() > 1 else ""))
+                        f"{gain.sum() * 1000 / GAP_DAYS:+.2f} $ par jour avec 1 000 $ par ordre" if len(hours) > 1 else
+                        f" · {gain.sum() * 1000 / GAP_DAYS:+.2f} $ par jour avec 1 000 $ par ordre (trop peu pour une fourchette)"
+                        if seen.any() else ""))
         out[f"{group} | {venue}"] = entry
         print(line)
     return out
