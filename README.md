@@ -261,13 +261,16 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Cinq on
   fait année par année depuis 2018, puis **le test de robustesse** (chaque sortie du marché jugée contre « garder »).
   Verdict du 13/11/2026 sur les vraies bougies : la règle a fait mieux que garder (Bitcoin ×15,8 contre ×6,0, pire
   baisse −50 % contre −77 %), mais aucune ligne n'est « robuste » : argent fictif seulement. Sur huit autres marchés
-  (actions, pétrole, monnaies, 39 à 77 ans), elle n'a jamais fini plus haut que « garder » : une protection, pas une
-  façon de gagner plus. À côté du compte normal, trois comptes fictifs « pour voir » : le même avec un **stop
+  (actions, pétrole, monnaies, 39 à 77 ans), elle n'a jamais fini plus haut que « garder » (avant 1999 elle faisait
+  mieux sur six d'entre eux ; depuis, sur aucun) : une protection, pas une façon de gagner plus. À côté du compte normal, trois comptes fictifs « pour voir » : le même avec un **stop
   suiveur** (le plus haut des 22 derniers jours moins trois bougies moyennes), un compte **à risque** (levier ×2 :
   intérêts sur l'argent emprunté, remise au levier au-delà de 10 % d'écart, liquidation) et le compte à risque avec
   stop. Sur le passé (2018-2026), le stop n'a pas protégé (Bitcoin ×7,5 et −58 % au pire, au lieu de ×15,8 et
   −50 %) ; le levier ×2 a multiplié le gain du Bitcoin (×41,7) mais pas celui de l'Ether (×13,4 contre ×15,7), avec
-  des pires baisses de −80 % et −88 %.
+  des pires baisses de −80 % et −88 %. Ces deux chiffres sont flatteurs : le compte emprunte à un taux fixe, et au
+  vrai coût de l'emprunt il aurait fini vers ×31 et ×9 (relecture indépendante du 14/11/2026). Les mesures de la nuit
+  du 13 au 14/11 (`audit/nuit.py`, `audit/nuit2.py` : version baissière, gros mouvements, grille, financement
+  encaissé, écarts entre plateformes…) sont résumées dans `PLAN-BOTS.md` : rien de tradable ne tient.
 - **Actualité** (`tradingbot/news.py`) : les derniers titres de CoinDesk, Cointelegraph et Decrypt, les cryptos citées
   et ce que leur prix a fait depuis la publication ; l'indice peur et avidité, son année, et ce qui a suivi ses
   extrêmes (une observation, pas une règle). Les bots ne tradent jamais sur les titres.
