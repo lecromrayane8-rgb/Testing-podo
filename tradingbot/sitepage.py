@@ -355,9 +355,9 @@ BODY = """
         <li>Les comptes à risque sont là pour voir ce que le levier coûte, pas pour être imités. Sur le passé, le
           levier ×2 a fait vivre des chutes de −80 % et plus, et sur l'Ether il a fini plus bas que le compte normal.
           À ×3, le compte sur l'Ether aurait été liquidé (mai 2021) ; à ×5, les deux (mesures du 13/11/2026).
-          Et ces comptes sont flattés : leur taux d'emprunt (11 % par an) est une moyenne, alors qu'emprunter coûte
-          presque le double quand le marché monte. Au vrai taux, le compte à risque du Bitcoin aurait fini vers ×31
-          au lieu de ×42, celui de l'Ether vers ×9 au lieu de ×13 (relecture du 14/11/2026).</li>
+          Depuis le 14/11/2026, ces comptes paient le vrai coût de chaque nuit d'emprunt, et non plus un taux fixe
+          de 11 % par an qui les flattait : emprunter coûte presque le double quand le marché monte. Le compte à
+          risque du Bitcoin finit ainsi vers ×31 au lieu de ×42, celui de l'Ether vers ×9 au lieu de ×13.</li>
         <li>Le stop suiveur n'a pas protégé sur le passé : sur le Bitcoin comme sur l'Ether, le compte avec stop a
           fini plus bas que le compte sans, avec une pire baisse plus profonde. Il vend sur des baisses ordinaires
           et rachète plus haut (mesure du 13/11/2026).</li>
@@ -1972,8 +1972,11 @@ JS = r"""
         el('td', {class: 'n'}, usdt(first.hold).replace(' USDT', ''), el('span', {class: 'opt', text: ' USDT'})),
         el('td', {class: 'n ' + cls(first.hold - first.capital), text: pct(first.hold / first.capital - 1)}),
         el('td', {class: 'n opt', text: pct(first.hold_worst, 1)}), el('td', {class: 'n opt mid', text: '—'}), el('td', {class: 'opt', text: '—'})));
-    $(id + 'acc-note').textContent = typo('À risque : le compte emprunte pour tenir le double du compte normal. Il paie des intérêts sur ce '
-      + 'qu\'il emprunte (0,01 % toutes les 8 heures, environ 11 % par an) et il est liquidé, pour toujours, si sa valeur ne couvre plus sa '
+    const cost = c.funding;
+    $(id + 'acc-note').textContent = typo('À risque : le compte emprunte pour tenir le double du compte normal. Il paie chaque nuit le vrai '
+      + 'coût de l\'emprunt, celui que paient les acheteurs à crédit sur le marché ('
+      + (cost && cost.until ? 'connu jusqu\'au ' + fullDay(cost.until) + ' ; cette journée-là : ' + pct(cost.last, 3) + ' ; ' : '')
+      + 'quand il n\'est pas connu : 0,03 % par nuit, environ 11 % par an) et il est liquidé, pour toujours, si sa valeur ne couvre plus sa '
       + 'position. Stop suiveur : si le prix clôture à plus de trois bougies moyennes sous son plus haut des 22 derniers jours (la ligne en '
       + 'pointillés du graphique), le compte vend tout à l\'ouverture suivante ; il revient quand ce n\'est plus le cas. Aujourd\'hui, le stop '
       + (c.stop.allowed ? 'laisse passer' : 'dit de sortir') + ' (ligne à ' + precise(c.stop.line) + ').');

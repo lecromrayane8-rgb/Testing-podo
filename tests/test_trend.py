@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from tradingbot import trend
+from tradingbot import funding_history, trend
 from tradingbot.data import COLUMNS
 from tradingbot.execution import FUTURES
 from tradingbot.robustness import ROBUST
@@ -389,6 +389,149 @@ def test_the_stop_also_takes_a_leveraged_account_out_and_the_accounts_of_the_pag
     assert stop["value"] != normal["value"]
     past = {v.key: trend._past(v, full, trend.SPOT) for v in trend.VARIANTS}
     assert past["stop"]["total"] != past["normal"]["total"] and past["risque_stop"]["total"] != past["risque"]["total"]
+
+
+# --- le vrai coût de l'emprunt -----------------------------------------------------------------------------------------
+
+HOUR = 3_600_000
+LAST = funding_history.FIRST_DAY + (len(funding_history.DAYS["BTC"]) - 1) * DAY  # la dernière journée embarquée
+
+
+def test_a_leveraged_account_pays_the_real_cost_of_each_night_when_it_is_known():
+    closes = [100, 100, 110, 121, 121, 121]  # achat à l'ouverture du jour 3, vente à celle du jour 5
+    nights = np.array([np.nan, np.nan, np.nan, 0.5, 0.001, -0.0005])  # la nuit qui finit à l'ouverture de chaque jour
+    run = trend.replay(days(closes), capital=1000.0, averages=(2,), leverage=2.0, nights=nights)
+    units = 2000 * (1 - FEE) / (110 * (1 + SLIP))
+    # jour 3 : rien n'était emprunté pendant la nuit, le 0,5 ne coûte rien ; jour 4 : 0,1 % de 1 000 ; jour 5 : la nuit
+    # rapporte (financement négatif) 0,05 % de la dette de 1 001
+    assert run.value.tolist() == pytest.approx([1000.0, units * 121 - 1000, units * 121 - 1001,
+                                                units * 121 * (1 - SLIP) * (1 - FEE) - 1001 * (1 - 0.0005)], rel=1e-12)
+    assert run.paid == pytest.approx(1000 * 0.001 - 1001 * 0.0005, rel=1e-12)
+    unknown = trend.replay(days(closes), capital=1000.0, averages=(2,), leverage=2.0, nights=np.full(6, np.nan))
+    fixed = trend.replay(days(closes), capital=1000.0, averages=(2,), leverage=2.0)
+    assert unknown.value.tolist() == fixed.value.tolist() and unknown.paid == fixed.paid  # nuit inconnue : le taux fixe
+    assert trend.replay(days(closes), capital=1000.0, averages=(2,), leverage=2.0,
+                        nights=np.full(6, NIGHT)).value.tolist() == fixed.value.tolist()
+    normal = trend.replay(days(closes), capital=1000.0, averages=(2,), nights=nights)  # sans emprunt, aucun intérêt
+    assert normal.paid == 0.0 and normal.value.tolist() == trend.replay(days(closes), capital=1000.0, averages=(2,)).value.tolist()
+    df, rates = wicked(24, 700), np.random.default_rng(24).normal(0.0004, 0.0006, 700)
+    whole = trend.replay(df, leverage=2.0, stop=True, nights=rates)  # et le passé ne se réécrit toujours pas
+    for k in (250, 480, 699):
+        part = trend.replay(df.iloc[:k], leverage=2.0, stop=True, nights=rates[:k])
+        assert part.orders == [o for o in whole.orders if o["ts"] < df["ts"].iloc[k]] and part.value.tolist() == whole.value[:len(part)].tolist()
+
+
+def test_funding_payments_are_grouped_by_day_and_only_whole_days_count():
+    d = 20_000 * DAY
+    payments = [(d + 5, 0.0009),  # minuit pile (à 5 ms près) : il paie la journée d'avant, qui est incomplète ici
+                (d + 8 * HOUR + 3, 0.0001), (d + 16 * HOUR, 0.0002), (d + 16 * HOUR, 0.0002),  # un doublon ne compte qu'une fois
+                (d + DAY + 40, -0.0004),  # le minuit qui clôt la journée d, daté avec 40 ms de retard
+                (d + DAY + 8 * HOUR, 0.0003), (d + DAY + 16 * HOUR, 0.0003)]  # la journée suivante n'a pas son minuit
+    assert trend.funding_days(payments) == {d: pytest.approx(0.0001 + 0.0002 - 0.0004)}
+    late = [(d + 16 * HOUR, 0.0002), (d + 20 * HOUR, 0.0001), (d + DAY, 0.0001)]  # il manque le début de la journée
+    assert trend.funding_days(late) == {}
+    four = [(d + k * 4 * HOUR, 0.0001) for k in range(1, 6)]  # un contrat réglé toutes les 4 heures, sans son minuit
+    assert trend.funding_days(four) == {} and trend.funding_days(four + [(d + DAY, 0.0002)]) == {d: pytest.approx(0.0007)}
+
+
+class Venue:
+    """Une plateforme factice : ses échéances de financement, par la lecture publique de Binance ou celle d'OKX."""
+
+    def __init__(self, payments, down=False):
+        self.payments, self.down, self.calls = payments, down, 0
+
+    def fapiPublicGetFundingRate(self, params):  # noqa: N802 (le nom de la bibliothèque)
+        self.calls += 1
+        if self.down:
+            raise ConnectionError("pas de réponse")
+        assert params["symbol"] == "BTCUSDT"
+        return [{"fundingTime": str(ts), "fundingRate": str(rate)} for ts, rate in sorted(self.payments)
+                if ts >= params["startTime"]][:params["limit"]]
+
+    def publicGetPublicFundingRateHistory(self, params):  # noqa: N802
+        self.calls += 1
+        if self.down:
+            raise ConnectionError("pas de réponse")
+        assert params["instId"] == "BTC-USDT-SWAP"
+        older = [p for p in sorted(self.payments, reverse=True) if p[0] < int(params.get("after", 10 ** 18))]
+        return {"data": [{"fundingTime": str(ts), "realizedRate": str(rate), "fundingRate": "9"} for ts, rate in older[:2]]}
+
+
+def whole_day(day, rates):
+    return [(day + 8 * HOUR, rates[0]), (day + 16 * HOUR + 7, rates[1]), (day + DAY + 2, rates[2])]
+
+
+def test_the_cost_of_a_night_is_read_once_written_once_and_never_changes(tmp_path):
+    d1, d2, d3 = LAST + DAY, LAST + 2 * DAY, LAST + 3 * DAY  # les trois journées qui suivent l'historique embarqué
+    candles = np.array([LAST + DAY, d1 + DAY, d2 + DAY, d3 + DAY])  # chaque bougie paie la journée de la veille
+    binance = Venue(whole_day(d1, (0.0001, 0.0002, 0.0003)) + whole_day(d2, (0.0004, -0.0001, 0.0)) + whole_day(d3, (0.001, 0.001, 0.001))[:2])
+    okx = Venue(whole_day(d3, (0.002, 0.002, 0.002)), down=True)
+    venues, clock = {"binance": binance, "okx": okx}, [d3 + DAY + 2 * HOUR]  # deux heures après la fin de la journée d3
+    funding = trend.Funding(venues.__getitem__, tmp_path, every=0.0, now=lambda: clock[0])
+    nights, cost = funding.nights("BTC/USDT", candles)
+    history = funding_history.DAYS["BTC"][-1] * funding_history.UNIT
+    assert nights[:3].tolist() == pytest.approx([history, 0.0006, 0.0003], rel=1e-12) and math.isnan(nights[3])  # d3 : pas encore de minuit
+    assert (cost["real"], cost["fixed"], cost["until"], cost["source"], cost["last"]) == (3, 1, d2, "binance", pytest.approx(0.0003))
+    saved = pd.read_csv(funding.path("BTC"))
+    assert saved["ts"].tolist() == [d1, d2] and saved["source"].tolist() == ["binance", "binance"]  # ni l'historique, ni d3
+    binance.payments = whole_day(d1, (0.9, 0.9, 0.9)) + whole_day(d2, (0.9, 0.9, 0.9))  # la plateforme change d'avis : rien ne bouge
+    assert funding.nights("BTC/USDT", candles)[0][:3].tolist() == pytest.approx([history, 0.0006, 0.0003], rel=1e-12)
+    binance.down, okx.down = True, False  # Binance ne répond plus : OKX donne la journée d3, page par page
+    nights, cost = trend.Funding(venues.__getitem__, tmp_path, every=0.0, now=lambda: clock[0]).nights("BTC/USDT", candles)
+    assert nights[3] == pytest.approx(0.006) and cost["source"] == "okx" and cost["error"] is None and okx.calls >= 2
+    assert pd.read_csv(funding.path("BTC"))["source"].tolist() == ["binance", "binance", "okx"]
+    # l'historique embarqué passe toujours avant le fichier, et un autre lancement relit les mêmes nuits au chiffre près
+    funding.path("BTC").write_text(funding.path("BTC").read_text(encoding="utf-8") + f"{LAST},0.5,okx\n", encoding="utf-8")
+    again = trend.Funding(venues.__getitem__, tmp_path, now=lambda: clock[0]).nights("BTC/USDT", candles)[0]
+    assert again.tolist() == nights.tolist() and again[0] == history
+
+
+def test_a_night_nobody_can_price_gets_the_fixed_rate_for_good_after_one_day(tmp_path):
+    d1 = LAST + DAY
+    candles = np.array([d1, d1 + DAY])
+    binance, okx = Venue([], down=True), Venue([], down=True)
+    venues, clock = {"binance": binance, "okx": okx}, [d1 + DAY + 23 * HOUR]  # 23 heures après la fin de la journée
+    funding = trend.Funding(venues.__getitem__, tmp_path, every=0.0, now=lambda: clock[0])
+    nights, cost = funding.nights("BTC/USDT", candles)
+    assert math.isnan(nights[1]) and not funding.path("BTC").exists() and "okx" in cost["error"]  # en attente : rien n'est écrit
+    slow = trend.Funding(venues.__getitem__, tmp_path, every=3600.0, now=lambda: clock[0])
+    slow.nights("BTC/USDT", candles), slow.nights("BTC/USDT", candles)
+    assert binance.calls == 2 and okx.calls == 2  # une plateforme muette n'est pas redemandée à chaque page
+    clock[0] = d1 + 2 * DAY + HOUR  # un jour et une heure après la fin : le taux fixe est écrit, pour de bon
+    nights, cost = funding.nights("BTC/USDT", candles)
+    assert nights[1] == NIGHT and (cost["real"], cost["fixed"]) == (1, 1) and pd.read_csv(funding.path("BTC"))["source"].tolist() == ["fixe"]
+    binance.down, binance.payments = False, whole_day(d1, (0.001, 0.001, 0.001))  # la plateforme revient trop tard
+    assert funding.nights("BTC/USDT", candles)[0][1] == NIGHT
+    assert trend.Funding(venues.__getitem__, tmp_path, now=lambda: clock[0]).nights("BTC/USDT", candles)[0][1] == NIGHT
+    unknown = trend.Funding(venues.__getitem__, tmp_path, now=lambda: clock[0]).nights("SOL/USDT", candles)  # pas de contrat suivi
+    assert np.isnan(unknown[0]).all() and unknown[1]["real"] == 0
+
+
+def test_the_embedded_history_is_whole_and_the_page_charges_it_to_the_leveraged_accounts(tmp_path):
+    btc, eth = funding_history.DAYS["BTC"], funding_history.DAYS["ETH"]
+    assert len(btc) == len(eth) == 2495 and funding_history.FIRST_DAY == 1_577_836_800_000  # du 01/01/2020 au 30/10/2026
+    assert btc[:3] == (-18385, 8440, 18447) and all(isinstance(v, int) for v in btc + eth)  # relevés des archives de Binance
+    assert np.mean(btc) * funding_history.UNIT == pytest.approx(0.000319, abs=2e-6)  # 0,032 % par jour en moyenne
+    assert np.mean(eth) > np.mean(btc) and 0.10 < np.mean(np.array(btc) < 0) < 0.14  # payé par l'emprunteur 7 jours sur 8
+    start = funding_history.FIRST_DAY - 300 * DAY  # un historique à cheval sur le 01/01/2020 : fixe avant, vrai après
+    frames = {"BTC/USDT": days(np.linspace(100, 900, 420), start=start), "ETH/USDT": days(walk(11, 420), start=start)}
+    trend.account_since(tmp_path / "tendance", datetime.fromtimestamp((start + 250 * DAY) / 1000, timezone.utc))
+    funding = trend.Funding({}.__getitem__, tmp_path / "tendance")  # aucune plateforme : tout vient de l'historique
+    data = trend.view(feed_on(tmp_path, DailyExchange(frames, n=420)), tmp_path / "tendance", cache={}, funding=funding)
+    coin = data["coins"][0]
+    assert (coin["funding"]["real"], coin["funding"]["fixed"], coin["funding"]["source"]) == (119, 301, "historique")
+    assert coin["funding"]["until"] == start + 418 * DAY and coin["funding"]["default"] == NIGHT
+    df = frames["BTC/USDT"]
+    by_hand = np.array([btc[k - 301] * funding_history.UNIT if k >= 301 else np.nan for k in range(420)])  # la journée de la veille
+    for key, lever, stop in (("risque", 2.0, False), ("risque_stop", 2.0, True)):
+        past = next(v for v in coin["history"]["variants"] if v["key"] == key)
+        real = trend.replay(df, leverage=lever, stop=stop, nights=by_hand)
+        assert past["paid"] == pytest.approx(real.paid, rel=1e-12) and past["total"] == pytest.approx(real.value[-1] / 1000, rel=1e-12)
+        assert past["paid"] != pytest.approx(trend.replay(df, leverage=lever, stop=stop).paid, rel=1e-3)  # pas le taux fixe
+        account = next(a for a in coin["accounts"] if a["key"] == key)
+        opened = trend.replay(df, start_ts=start + 250 * DAY, leverage=lever, stop=stop, nights=by_hand)
+        assert account["paid"] == pytest.approx(opened.paid, rel=1e-12) and account["value"] == pytest.approx(opened.value[-1], rel=1e-12)
+    assert trend.view(feed_on(tmp_path, DailyExchange(frames, n=420)), tmp_path / "tendance", cache={})["coins"][0]["funding"] is None
 
 
 # --- le test de robustesse : chaque sortie contre « garder » ----------------------------------------------------------

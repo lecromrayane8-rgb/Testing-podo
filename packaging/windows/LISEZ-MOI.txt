@@ -85,7 +85,7 @@ LE SITE DU BOT (http://127.0.0.1:8765, servi par ton ordinateur, pour ton ordina
   de robustesse. À savoir : la règle a moins perdu que « garder » dans les grandes chutes, mais le
   test ne la déclare pas « robuste ». Argent fictif seulement. Quatre comptes fictifs sont montrés
   côte à côte : le compte normal, le même avec un stop suiveur, un compte « à risque » (levier ×2 :
-  il emprunte, paie des intérêts et peut être liquidé) et le compte à risque avec stop. Ils servent
+  il emprunte au vrai coût du marché et peut être liquidé) et le compte à risque avec stop. Ils servent
   à voir ce que le risque donne et ce qu'il coûte : sur le passé, le stop suiveur n'a pas protégé,
   et le levier a fait vivre des chutes de −80 % et plus.
 - Actualité : les derniers titres crypto, ce que le prix des cryptos citées a fait depuis, et

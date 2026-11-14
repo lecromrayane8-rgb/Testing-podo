@@ -170,9 +170,18 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   14/11/2026 : `account_since` ne crée `compte.json` que s'il n'existe pas (un fichier verrouillé ou abîmé lève une
   erreur, rien n'est réécrit : sinon les comptes repartaient de zéro sans le dire) ; `verdict` est bâti d'après les
   chiffres et dit que la porte NE PEUT PAS TRANCHER pour cette règle (sur un avantage fabriqué, elle dit « robuste »
-  1 fois sur 90 : peu de sorties, gains très inégaux) ; `report` compte les ordres avec `count`. À SAVOIR : le
-  taux d'emprunt fixe des comptes à risque (0,03 % par nuit) est flatteur ; au vrai financement, Bitcoin ×31 au lieu
-  de ×41,8 et Ether ×9,0 au lieu de ×13,4 (dit sur l'onglet ; moteur inchangé tant que l'utilisateur n'a pas décidé).
+  1 fois sur 90 : peu de sorties, gains très inégaux) ; `report` compte les ordres avec `count`. LE VRAI COÛT DE
+  L'EMPRUNT (14/11/2026, accord de l'utilisateur) : `replay(nights=)` reçoit le coût de la nuit qui finit à
+  l'ouverture de chaque bougie (NaN ou absent → le taux fixe `FUTURES.funding_rate_8h` × 3 ; négatif → reçu).
+  `Funding` le fournit : `tradingbot/funding_history.py` (fabriqué, à ne pas retoucher : financement d'une journée de
+  BTCUSDT et ETHUSDT sur Binance, du 01/01/2020 au 30/10/2026, en cent-millionièmes), puis une lecture publique par
+  jour (`SOURCES` = Binance `fapiPublicGetFundingRate`, sinon OKX `publicGetPublicFundingRateHistory`, par les
+  méthodes de ccxt, sans clé), gardée dans `data/tendance/financement_<crypto>.csv` ; `funding_days` range les
+  échéances par journée (celle de minuit paie la journée qui finit ; seules les journées complètes comptent) ; une
+  nuit écrite ne change plus ; sans réponse un jour après la fin de la journée (`FUNDING_WAIT_MS`), le taux fixe est
+  écrit pour de bon ; une plateforme muette n'est redemandée qu'une fois par heure. `coin_view(funding=)` →
+  `funding` (jusqu'où le vrai coût est connu, sa dernière valeur, sa source). Sur le passé : à risque ×2, Bitcoin
+  ×31,1 (−81 %) au lieu de ×41,8, Ether ×9,0 (−88 %) au lieu de ×13,4 ; avec stop ×7,2 et ×3,3.
 - `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
   Refait le 06/11/2026 au soir autour de l'essaim (onglet Stratégies ajouté le 07/11, à deux mesures depuis le
   13/11 : « À l'essai » = `trial.ranking`, 30 jours, 7 jours, aujourd'hui, fourchette par journées, verdicts ou
@@ -390,7 +399,9 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   l'ordre au lendemain, les frais au centime, aucun ordre passé ne change quand on ajoute des jours, la relève des
   bougies, le garde-fou « marché sans avantage » ; depuis la relecture du 14/11 : la vente qui ramène un compte à
   son levier quand le prix chute, la bande au prix près des deux côtés, le stop d'un compte à levier, le stop jugé sur
-  la clôture et non sur la mèche, la date de départ jamais réécrite) ; les lectures du graphique dans `tests/test_patterns.py`
+  la clôture et non sur la mèche, la date de départ jamais réécrite ; le vrai coût de l'emprunt : payé au centime, une
+  nuit inconnue ou qui rapporte, les échéances rangées par journée, la lecture écrite une seule fois, le taux fixe après
+  un jour sans réponse, l'historique embarqué) ; les lectures du graphique dans `tests/test_patterns.py`
   (chaque figure sur un graphique dessiné à la main, puis les garanties communes).
 - Les réglages d'une technique sont fixés d'avance, jamais ajustés sur les données. Les frais et le glissement des bots
   sont dans `execution.FUTURES`, comptés dans `fleet.Book` (`_open`, `_fill`, `_secure`, `_close`) et nulle part
@@ -701,3 +712,11 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   À DÉCIDER AVEC L'UTILISATEUR : (a) comptes à risque au vrai financement ou non ; (b) les 18 petits trous de tests ;
   (c) la suite : le court terme ensemble (commencer par lui demander ses idées ; tout ce qui a été mesuré rend les
   frais ou moins). Rien de nouveau n'est branché dans les bots.
+- 14/11/2026 (suite) : l'utilisateur répond « fais la suite, enfin les deux » et demande le lien du ZIP (donné :
+  `releases/download/windows-dev/tradingbot-windows.zip`). (1) FAIT, point de retour `59d0ccb` : les comptes à risque
+  paient le vrai coût de chaque nuit d'emprunt (`trend.Funding`, `funding_history.py`, `replay(nights=)`), cinq tests
+  (17 erreurs simulées sur 17 attrapées), onglet Tendance (la phrase sous les comptes dit jusqu'où le coût est connu).
+  Vérifié sur les vraies bougies : mêmes chiffres que les relecteurs (×31,1 et ×9,0). Depuis le cloud, Binance refuse
+  la lecture en direct (451) et OKX prend le relais ; sur le PC de l'utilisateur, non vérifié : s'il dit que la
+  phrase de l'onglet reste sur une vieille date, aucune des deux plateformes ne répond chez lui. Restent les 18
+  petits trous de tests de la relecture.

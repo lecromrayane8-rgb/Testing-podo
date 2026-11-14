@@ -266,9 +266,10 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Cinq on
   suiveur** (le plus haut des 22 derniers jours moins trois bougies moyennes), un compte **à risque** (levier ×2 :
   intérêts sur l'argent emprunté, remise au levier au-delà de 10 % d'écart, liquidation) et le compte à risque avec
   stop. Sur le passé (2018-2026), le stop n'a pas protégé (Bitcoin ×7,5 et −58 % au pire, au lieu de ×15,8 et
-  −50 %) ; le levier ×2 a multiplié le gain du Bitcoin (×41,7) mais pas celui de l'Ether (×13,4 contre ×15,7), avec
-  des pires baisses de −80 % et −88 %. Ces deux chiffres sont flatteurs : le compte emprunte à un taux fixe, et au
-  vrai coût de l'emprunt il aurait fini vers ×31 et ×9 (relecture indépendante du 14/11/2026). Les mesures de la nuit
+  −50 %) ; le levier ×2 a multiplié le gain du Bitcoin (×31,1) mais pas celui de l'Ether (×9,0 contre ×15,7), avec
+  des pires baisses de −81 % et −88 %. Depuis le 14/11/2026, ces comptes paient le vrai coût de chaque nuit d'emprunt
+  (le financement des contrats à terme : embarqué de 2020 à 2026, puis lu chaque jour), et non plus un taux fixe qui
+  les flattait (×41,8 et ×13,4). Les mesures de la nuit
   du 13 au 14/11 (`audit/nuit.py`, `audit/nuit2.py` : version baissière, gros mouvements, grille, financement
   encaissé, écarts entre plateformes…) sont résumées dans `PLAN-BOTS.md` : rien de tradable ne tient.
 - **Actualité** (`tradingbot/news.py`) : les derniers titres de CoinDesk, Cointelegraph et Decrypt, les cryptos citées

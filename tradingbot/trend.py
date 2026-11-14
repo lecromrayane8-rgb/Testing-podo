@@ -13,8 +13,12 @@ le prix du moment et l'ordre parti à son ouverture.
 Les comptes « à risque » (13/11/2026, demande de l'utilisateur : « prendre des risques », « des stop-loss suiveurs »),
 définis AVANT d'être mesurés et jamais ajustés ensuite :
 - le levier : le compte tient en crypto `LEVERAGE` fois ce que tient le compte normal (×2 : « tout » devient le
-  double de sa valeur). Ce qu'il emprunte coûte le financement des contrats à terme (`FUTURES.funding_rate_8h`,
-  0,01 % toutes les 8 heures, environ 11 % par an), compté chaque jour. Tant qu'il emprunte, il est remis à son
+  double de sa valeur). Ce qu'il emprunte coûte le financement des contrats à terme, compté chaque jour : le VRAI,
+  nuit par nuit, quand il est connu (`Funding` : l'historique embarqué de 2020 à 2026, puis une lecture par jour),
+  sinon `FUTURES.funding_rate_8h` (0,01 % toutes les 8 heures, environ 11 % par an). Jusqu'au 14/11/2026, seul ce taux
+  fixe était compté ; la relecture indépendante a montré qu'il flattait ces comptes (emprunter coûte presque le
+  double quand le marché monte, c'est-à-dire quand le compte emprunte), et l'utilisateur a demandé le vrai coût.
+  Le coût d'une nuit, une fois écrit, ne change plus. Tant qu'il emprunte, il est remis à son
   levier dès qu'il s'en écarte de plus de `BAND` (10 %). Il est liquidé, et vaut alors zéro pour toujours, si sa
   valeur ne couvre plus la marge de maintenance de sa position (`fleet.MAINTENANCE`), au plus bas de la journée ;
 - le stop suiveur : le « chandelier » de Chuck LeBeau avec ses réglages d'origine, le plus haut des 22 derniers jours
@@ -38,6 +42,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import funding_history
 from .backtest import BacktestResult, Trade
 from .broker import atomic_write
 from .data import COLUMNS, ohlcv_to_frame
@@ -50,7 +55,7 @@ log = logging.getLogger(__name__)
 AVERAGES = (50, 100, 200)  # en jours : les trois moyennes de la règle, un tiers du compte chacune
 SYMBOLS = ("BTC/USDT", "ETH/USDT")  # les deux grandes cryptos, les seules où la règle a été mesurée sur trois périodes
 NAMES = {"BTC": "Bitcoin", "ETH": "Ether"}
-TIMEFRAME, DAY_MS = "1d", 86_400_000
+TIMEFRAME, DAY_MS, HOUR_MS = "1d", 86_400_000, 3_600_000
 EARLY_MS = 1_502_928_000_000  # 17/08/2017 : le premier jour de cotation du Bitcoin en USDT sur Binance
 CAPITAL = 1000.0  # l'argent fictif de chaque compte
 SPOT = ExecutionParams()  # au comptant, ordre au marché : 0,10 % de frais et 0,05 % de glissement
@@ -62,6 +67,7 @@ PERIODS = 4  # les sous-périodes du test de robustesse
 LEVERAGE = 2.0  # le compte « à risque » : le double de ce que tient le compte normal
 BAND = 0.10  # un compte qui emprunte est remis à son levier quand il s'en écarte de plus de 10 %
 STOP_DAYS, STOP_ATR = 22, 3.0  # le stop suiveur : le « chandelier » de LeBeau, ses réglages d'origine
+FUNDING_WAIT_MS = DAY_MS  # une nuit dont le vrai coût reste introuvable un jour après sa fin est écrite au taux fixe
 
 
 @dataclass(frozen=True)
@@ -177,10 +183,12 @@ def _trade(cash: float, qty: float, price: float, share: float, ex: ExecutionPar
 
 def replay(df: pd.DataFrame, start_ts: int | None = None, capital: float = CAPITAL, ex: ExecutionParams = SPOT,
            averages: tuple[int, ...] = AVERAGES, leverage: float = 1.0, stop: bool = False,
-           funding_8h: float = FUTURES.funding_rate_8h) -> Run:
+           funding_8h: float = FUTURES.funding_rate_8h, nights=None) -> Run:
     """Rejoue la règle sur des bougies d'un jour (colonnes ts, open, high, low, close). Le compte ouvre au premier jour
     d'ouverture `ts >= start_ts` qui a tout son historique derrière lui (sans `start_ts` : dès que possible). Chaque
-    jour, dans cet ordre : les intérêts de la nuit sur l'argent emprunté ; ce que la clôture de la VEILLE a décidé (la
+    jour, dans cet ordre : les intérêts de la nuit sur l'argent emprunté (`nights` : le coût de la nuit qui finit à
+    l'ouverture de chaque bougie, une valeur par bougie ; sans lui, ou pour une nuit inconnue (NaN), le taux fixe
+    `funding_8h` × 3 ; un coût négatif est reçu par le compte) ; ce que la clôture de la VEILLE a décidé (la
     règle, et le stop suiveur s'il y en a un) s'exécute à l'ouverture ; un compte qui emprunte est liquidé si le plus
     bas du jour ne couvre plus sa marge ; puis le compte est valorisé à la clôture.
     Passé et futur sont séparés : ajouter des bougies ne change aucun ordre déjà passé."""
@@ -204,11 +212,13 @@ def replay(df: pd.DataFrame, start_ts: int | None = None, capital: float = CAPIT
     gate = allows.tolist() if allows is not None else None
     value, level = np.empty(n - first), np.zeros(n - first, dtype=int)
     cash, qty, orders, paid, dead = float(capital), 0.0, [], 0.0, None
-    held, open_gate, aim, night = 0, True, 0.0, 3 * funding_8h  # trois périodes de 8 heures par jour
+    held, open_gate, aim, fixed = 0, True, 0.0, 3 * funding_8h  # trois périodes de 8 heures par jour
+    costs = None if nights is None else np.where(np.isfinite(nights), nights, fixed).tolist()
     for i in range(first, n):
         if dead is None:
             price = opens[i]
             if cash < 0:  # les intérêts de la nuit sur ce que le compte emprunte
+                night = fixed if costs is None else costs[i]
                 paid, cash = paid - cash * night, cash * (1 + night)
             today, today_gate = rule[i - 1], gate is None or gate[i - 1]
             target = leverage * today / parts if today_gate else 0.0
@@ -441,6 +451,121 @@ class Feed:
 
 # --- le compte fictif et la vue du site ----------------------------------------------------------------------------
 
+def funding_days(payments) -> dict[int, float]:
+    """Des échéances de financement (moment en ms, taux) rangées par journée. Le coût d'une journée d'emprunt est la
+    somme de ses échéances, celle de minuit comprise (elle paie la journée qui finit). Seules les journées COMPLÈTES
+    sont rendues : au moins trois échéances, la première dans les 8 premières heures, la dernière à minuit."""
+    days: dict[int, list[tuple[int, float]]] = {}
+    for stamp, rate in payments:
+        stamp = (int(stamp) + HOUR_MS // 2) // HOUR_MS * HOUR_MS  # les plateformes datent avec quelques ms de retard
+        days.setdefault((stamp - 1) // DAY_MS * DAY_MS, []).append((stamp, float(rate)))
+    return {day: sum(rate for _, rate in {stamp: (stamp, rate) for stamp, rate in rows}.values())
+            for day, rows in days.items()
+            if len({stamp for stamp, _ in rows}) >= 3 and min(stamp for stamp, _ in rows) <= day + 8 * HOUR_MS
+            and max(stamp for stamp, _ in rows) == day + DAY_MS}
+
+
+class Funding:
+    """Le vrai coût d'une nuit d'emprunt, pour les comptes à levier : le financement du contrat perpétuel de la crypto.
+    De 2020 à fin octobre 2026, il est embarqué (`funding_history`). Ensuite, il est lu une fois par jour sur une
+    plateforme (Binance, sinon OKX : prix publics, sans clé) et gardé dans `data/tendance/financement_<crypto>.csv`.
+    Une nuit écrite ne change plus jamais : le compte ne réécrit pas son passé. Si aucune plateforme n'a répondu un
+    jour après la fin d'une journée, c'est le taux fixe qui est écrit pour elle, pour de bon ; d'ici là, et pour les
+    nuits d'avant 2020, le rejeu compte le taux fixe."""
+
+    SOURCES = ("binance", "okx")
+
+    def __init__(self, make_exchange, folder: Path, every: float = 3600.0, now=None):
+        self.make_exchange, self.folder, self.every = make_exchange, Path(folder), every
+        self.now = now or (lambda: int(time.time() * 1000))
+        self.exchanges: dict[str, object] = {}
+        self.kept: dict[str, dict[int, tuple[float, str]]] = {}
+        self.tried: dict[str, float] = {}
+        self.errors: dict[str, str] = {}
+        self.lock = threading.Lock()
+
+    def path(self, coin: str) -> Path:
+        return self.folder / f"financement_{coin}.csv"
+
+    def _known(self, coin: str) -> dict[int, tuple[float, str]]:
+        if coin not in self.kept:
+            days = {funding_history.FIRST_DAY + k * DAY_MS: (value * funding_history.UNIT, "historique")
+                    for k, value in enumerate(funding_history.DAYS.get(coin, ()))}
+            try:  # relu au chiffre près ; l'historique embarqué passe toujours avant le fichier
+                saved = pd.read_csv(self.path(coin), float_precision="round_trip")
+                for day, rate, source in saved[["ts", "rate", "source"]].values.tolist():
+                    days.setdefault(int(day), (float(rate), str(source)))
+            except (OSError, ValueError, KeyError):
+                pass
+            self.kept[coin] = days
+        return self.kept[coin]
+
+    def _payments(self, source: str, coin: str, since_ms: int) -> list[tuple[int, float]]:
+        """Les échéances d'un contrat depuis `since_ms`, par une lecture publique (aucune clé, aucun ordre)."""
+        if source not in self.exchanges:
+            self.exchanges[source] = self.make_exchange(source)
+            self.exchanges[source].timeout = 5000  # une plateforme muette ne doit pas bloquer la page longtemps
+        exchange = self.exchanges[source]
+        if source == "binance":
+            rows = exchange.fapiPublicGetFundingRate({"symbol": f"{coin}USDT", "startTime": since_ms, "limit": 1000})
+            return [(int(row["fundingTime"]), float(row["fundingRate"])) for row in rows]
+        out, after = [], None
+        for _ in range(12):  # OKX : cent échéances par page, des plus récentes aux plus anciennes
+            params = {"instId": f"{coin}-USDT-SWAP", "limit": "100", **({"after": str(after)} if after else {})}
+            rows = exchange.publicGetPublicFundingRateHistory(params).get("data") or []
+            out += [(int(row["fundingTime"]), float(row.get("realizedRate") or row["fundingRate"])) for row in rows]
+            if not rows or min(int(row["fundingTime"]) for row in rows) <= since_ms:
+                break
+            after = min(int(row["fundingTime"]) for row in rows)
+        return out
+
+    def _complete(self, coin: str, known: dict, wanted: list[int]) -> None:
+        """Cherche les journées qui manquent ; écrit ce qui est trouvé, et le taux fixe pour celles qui ont trop tardé."""
+        clock = time.monotonic()
+        if clock - self.tried.get(coin, -math.inf) < self.every:
+            return
+        self.tried[coin], fresh = clock, {}
+        for source in self.SOURCES:
+            missing = [day for day in wanted if day not in fresh]
+            if not missing:
+                break
+            try:
+                days = funding_days(self._payments(source, coin, min(missing)))
+                fresh.update({day: (days[day], source) for day in missing if day in days})
+                self.errors.pop(coin, None)
+            except Exception as exc:  # une plateforme qui ne répond pas : on essaie la suivante
+                self.errors[coin] = f"{source} : {type(exc).__name__}"
+        fixed = 3 * FUTURES.funding_rate_8h
+        fresh.update({day: (fixed, "fixe") for day in wanted
+                      if day not in fresh and self.now() - (day + DAY_MS) > FUNDING_WAIT_MS})
+        if fresh:
+            known.update(fresh)
+            rows = sorted((day, rate, source) for day, (rate, source) in known.items() if source != "historique")
+            atomic_write(self.path(coin), pd.DataFrame(rows, columns=["ts", "rate", "source"]).to_csv(index=False))
+
+    def nights(self, symbol: str, ts) -> tuple[np.ndarray, dict]:
+        """Pour chaque bougie d'un jour, le coût de la nuit qui finit à son ouverture : le financement de la journée
+        de la veille (NaN quand il n'est pas connu : le rejeu prend le taux fixe). Et ce que la page en dit."""
+        coin, ts = symbol.split("/")[0], np.asarray(ts, dtype="int64")
+        with self.lock:
+            known = self._known(coin)
+            if coin in funding_history.DAYS:
+                end = funding_history.FIRST_DAY + (len(funding_history.DAYS[coin]) - 1) * DAY_MS
+                wanted = [int(day) - DAY_MS for day in ts if end < int(day) - DAY_MS and int(day) - DAY_MS not in known]
+                if wanted:
+                    try:
+                        self._complete(coin, known, wanted)
+                    except OSError as exc:  # le fichier ne s'écrit pas : on continue avec ce qui est en mémoire
+                        self.errors[coin] = f"fichier : {type(exc).__name__}"
+            got = [known.get(int(day) - DAY_MS) for day in ts]
+            real = [(int(day) - DAY_MS, item) for day, item in zip(ts, got) if item and item[1] != "fixe"]
+            summary = {"real": len(real), "fixed": len(got) - len(real),
+                       "until": real[-1][0] if real else None, "last": real[-1][1][0] if real else None,
+                       "source": real[-1][1][1] if real else None, "default": 3 * FUTURES.funding_rate_8h,
+                       "error": self.errors.get(coin)}
+            return np.array([item[0] if item else math.nan for item in got], dtype=float), summary
+
+
 def account_since(folder: Path, now: datetime | None = None) -> int:
     """Le moment où le compte fictif a été créé (ms), écrit une fois dans `compte.json` et plus jamais changé : le
     compte ouvre à l'ouverture du jour suivant, pour ne rien devoir à un prix déjà passé.
@@ -484,9 +609,9 @@ def _ready(df: pd.DataFrame | None) -> bool:
     return df is not None and len(df) > max(AVERAGES) + 1
 
 
-def _account(variant: Variant, df: pd.DataFrame, since_ms: int, ex: ExecutionParams) -> dict:
+def _account(variant: Variant, df: pd.DataFrame, since_ms: int, ex: ExecutionParams, nights=None) -> dict:
     """Un compte fictif depuis sa création : sa valeur, sa pire baisse, ce qu'il a payé, ses derniers ordres."""
-    run = replay(df, start_ts=since_ms, ex=ex, leverage=variant.leverage, stop=variant.stop)
+    run = replay(df, start_ts=since_ms, ex=ex, leverage=variant.leverage, stop=variant.stop, nights=nights)
     started = bool(len(run))
     return {"key": variant.key, "name": variant.name, "short": variant.short, "leverage": variant.leverage,
             "stop": variant.stop, "since": since_ms, "started": started, "capital": run.capital,
@@ -500,18 +625,20 @@ def _account(variant: Variant, df: pd.DataFrame, since_ms: int, ex: ExecutionPar
             "count": len(run.orders), "orders": [_order(o) for o in run.orders][::-1][:ORDERS_SHOWN]}
 
 
-def _past(variant: Variant, df: pd.DataFrame, ex: ExecutionParams) -> dict:
+def _past(variant: Variant, df: pd.DataFrame, ex: ExecutionParams, nights=None) -> dict:
     """Ce que ce compte aurait fait sur tout l'historique : ce que devient 1, la pire baisse, ce que ça a coûté."""
-    run = replay(df, ex=ex, leverage=variant.leverage, stop=variant.stop)
+    run = replay(df, ex=ex, leverage=variant.leverage, stop=variant.stop, nights=nights)
     years = len(run) / 365
     return {"key": variant.key, "name": variant.name, "short": variant.short, **growth(run.value, run.capital),
             "orders_per_year": len(run.orders) / years if years else 0.0, "paid": float(run.paid),
             "costs": float(sum(o["cost"] for o in run.orders)), "liquidated": run.dead}
 
 
-def coin_view(symbol: str, candles: Candles, since_ms: int, ex: ExecutionParams = SPOT) -> dict:
+def coin_view(symbol: str, candles: Candles, since_ms: int, ex: ExecutionParams = SPOT,
+              funding: Funding | None = None) -> dict:
     """Ce que le site montre pour une crypto : où en est la règle, ses comptes fictifs (normal, avec stop suiveur, à
-    risque, à risque avec stop) et l'histoire année par année."""
+    risque, à risque avec stop) et l'histoire année par année. Avec `funding`, les comptes à levier paient le vrai
+    coût de chaque nuit d'emprunt ; sans lui, le taux fixe."""
     coin = symbol.split("/")[0]
     out = {"symbol": symbol, "coin": coin, "name": NAMES.get(coin, coin), "error": candles.error, "live": candles.live,
            "asof": candles.asof, "parts": len(AVERAGES)}
@@ -522,7 +649,8 @@ def coin_view(symbol: str, candles: Candles, since_ms: int, ex: ExecutionParams 
     close = df["close"].to_numpy(dtype=float)
     marks = thresholds(close[:-1] if candles.live else close)
     price = float(close[-1])
-    accounts = [_account(variant, df, since_ms, ex) for variant in VARIANTS]
+    nights, cost = funding.nights(symbol, df["ts"]) if funding is not None else (None, None)
+    accounts = [_account(variant, df, since_ms, ex, nights) for variant in VARIANTS]
     line = stop_line(df["high"], df["low"], close)
     years = len(whole) / 365
     return _clean({
@@ -532,12 +660,12 @@ def coin_view(symbol: str, candles: Candles, since_ms: int, ex: ExecutionParams 
         "averages": [{"days": n, "threshold": mark, "above": bool(mark is not None and price > mark),
                       "gap": price / mark - 1 if mark else None} for n, mark in zip(AVERAGES, marks)],
         "account": accounts[0], "accounts": accounts,
-        "stop": {"line": float(line[-1]), "allowed": bool(not price < line[-1])},
+        "stop": {"line": float(line[-1]), "allowed": bool(not price < line[-1])}, "funding": cost,
         "history": {"from": int(whole.ts[0]), "to": int(whole.ts[-1]), "years": years,
                     "rule": growth(whole.value, whole.capital), "hold": growth(whole.hold, whole.capital),
                     "orders": len(whole.orders), "orders_per_year": len(whole.orders) / years if years else 0.0,
                     "inside": float((whole.level / whole.parts).mean()), "by_year": by_year(whole),
-                    "variants": [_past(variant, df, ex) for variant in VARIANTS]},
+                    "variants": [_past(variant, df, ex, nights) for variant in VARIANTS]},
     })
 
 
@@ -567,12 +695,12 @@ def closed_frames(got: dict[str, Candles]) -> dict[str, pd.DataFrame]:
 
 
 def view(feed: Feed, folder: Path, ex: ExecutionParams = SPOT, symbols: tuple[str, ...] = SYMBOLS,
-         cache: dict | None = None) -> dict:
+         cache: dict | None = None, funding: Funding | None = None) -> dict:
     """La page « Tendance » : une fiche par crypto, puis le test de robustesse (refait seulement quand un jour finit ;
     sans `cache`, la page vient sans lui : c'est la commande `robustesse --tendance` qui le donne)."""
     since_ms = account_since(folder)
     got = {symbol: feed.get(symbol) for symbol in symbols}
-    out = {"coins": [coin_view(symbol, candles, since_ms, ex) for symbol, candles in got.items()],
+    out = {"coins": [coin_view(symbol, candles, since_ms, ex, funding) for symbol, candles in got.items()],
            "averages": list(AVERAGES), "cost": ex.fee_rate + ex.slippage, "capital": CAPITAL,
            "exchange": feed.exchange_id, "since": since_ms, "robustness": None}
     if cache is not None:

@@ -849,6 +849,8 @@ même avec un stop suiveur, un compte à risque (levier ×2) et le compte à ris
 | Normal, avec stop suiveur | ×7,5 (−58 %) | ×7,9 (−68 %) |
 | À risque : levier ×2 | ×41,8 (−80 %) | ×13,4 (−88 %) |
 | À risque ×2, avec stop suiveur | ×9,9 (−84 %) | ×4,9 (−96 %) |
+| *Depuis le 14/11 : à risque ×2, au vrai coût de l'emprunt* | *×31,1 (−81 %)* | *×9,0 (−88 %)* |
+| *Depuis le 14/11 : à risque ×2 avec stop, au vrai coût* | *×7,2 (−85 %)* | *×3,3 (−96 %)* |
 
 1. **Le stop suiveur n'a pas protégé.** Dans les quatre cas, le compte avec stop finit plus bas que le compte sans,
    avec une pire baisse plus profonde. Il vend sur des baisses ordinaires et rachète plus haut ; la règle des moyennes
@@ -946,7 +948,7 @@ Seize relecteurs : six qui relisent ou recalculent chacun une partie, sans conna
 
 | Trouvé | Conséquence | Fait |
 |---|---|---|
-| Les comptes à risque empruntent à un taux fixe trop doux (0,03 % par nuit) | Au vrai taux : Bitcoin ×31 au lieu de ×41,8, Ether ×9 au lieu de ×13,4 | Dit sur l'onglet et ici. **Le moteur n'est pas changé : à décider avec toi** |
+| Les comptes à risque empruntent à un taux fixe trop doux (0,03 % par nuit) | Au vrai taux : Bitcoin ×31 au lieu de ×41,8, Ether ×9 au lieu de ×13,4 | Fait le 14/11 avec ton accord : les comptes à levier paient le vrai coût de chaque nuit (voir plus bas) |
 | 29 défauts simulés sur 118 passaient les tests, tous dans les comptes à risque et avec stop | Une erreur future aurait pu passer inaperçue (le code d'aujourd'hui est juste) | Quatre tests ajoutés : les 11 défauts qui changeaient un chiffre des comptes sont maintenant attrapés ; 18 petits restent à couvrir |
 | Le test de robustesse du bot de tendance dit « non » même sur un avantage fabriqué (1 « oui » sur 90) | Son « non » ne prouve pas que c'est de la chance : il ne peut pas trancher | Le verdict affiché le dit maintenant |
 | La date de départ du compte fictif était réécrite à la moindre erreur de lecture du fichier | Les comptes seraient repartis de zéro sans le dire | Corrigé et testé |
@@ -960,11 +962,43 @@ Seize relecteurs : six qui relisent ou recalculent chacun une partie, sans conna
 ### Ce qui reste à décider avec toi
 
 1. **Les comptes à risque** : les laisser au taux fixe (c'est écrit sur l'onglet qu'il est flatteur), ou faire lire au
-   bot le vrai financement de Binance pour qu'ils affichent ×31 et ×9.
+   bot le vrai financement de Binance pour qu'ils affichent ×31 et ×9. *Décidé le 14/11 (« fais les deux ») : fait,
+   voir la section suivante.*
 2. **Les 18 petits trous de tests** qui restent (bornes exactes, chiffres affichés du compte fictif, seuil de la porte) :
    aucun ne déplace d'argent aujourd'hui.
 3. **La suite** : le court terme ensemble, comme tu l'as demandé. Point de départ : rien de ce qui a été mesuré ne
    rapporte ; il reste tes idées à toi.
+
+## Les comptes à risque au vrai coût de l'emprunt (14/11/2026, fait)
+
+Ton accord du 14/11. Point de retour : `59d0ccb`.
+
+**Ce qui change.** Un compte à levier emprunte pour tenir le double du compte normal. Jusqu'ici il payait un taux fixe
+(0,03 % par nuit, environ 11 % par an). Il paie maintenant le vrai coût de chaque nuit : le financement du contrat à
+terme de la crypto, c'est-à-dire ce que paient réellement ceux qui achètent à crédit. Pourquoi : ce coût monte quand
+le marché monte, donc justement quand le compte emprunte ; le taux fixe l'ignorait et flattait ces comptes.
+
+**D'où vient le chiffre.** De 2020 à fin octobre 2026, il est embarqué dans le bot (`tradingbot/funding_history.py`,
+tiré des archives publiques de Binance) : pas besoin d'internet. Ensuite, le bot le lit une fois par jour (Binance,
+sinon OKX ; lecture publique, sans clé) et le garde dans `data/tendance/financement_BTC.csv`. Une nuit écrite ne
+change plus jamais. Si aucune plateforme n'a répondu un jour après la fin d'une journée, le taux fixe est écrit pour
+elle, pour de bon. Avant 2020 : le taux fixe.
+
+**Ce que ça donne sur le passé** (05/03/2018 → 12/11/2026) : à risque ×2, Bitcoin ×31,1 (−81 %) au lieu de ×41,8 ;
+Ether ×9,0 (−88 %) au lieu de ×13,4. Avec stop : ×7,2 et ×3,3. Les comptes normaux ne changent pas (ils n'empruntent
+pas). Ce sont exactement les chiffres que deux relecteurs avaient calculés de leur côté.
+
+**Comment le vérifier sur le site.** Onglet Tendance, tableau « ce que chaque compte aurait fait » : la ligne
+« Risque ×2 » du Bitcoin affiche environ ×31. Sous le tableau des comptes, la phrase dit jusqu'à quelle date le vrai
+coût est connu et combien il valait ce jour-là.
+
+**À surveiller.** Tes comptes fictifs n'empruntent pas en ce moment (la règle est dehors) : rien ne bouge pour eux
+tant que le prix reste sous ses moyennes. Si la phrase de l'onglet reste bloquée sur une vieille date, c'est que ni
+Binance ni OKX ne répondent depuis ton PC : dis-le-moi.
+
+**Les tests.** Cinq de plus (48 pour le bot de tendance) : le coût payé au centime, une nuit inconnue, une nuit qui
+rapporte, le rangement des échéances par journée, la lecture écrite une seule fois, le taux fixe après un jour sans
+réponse, l'historique embarqué. 17 erreurs simulées sur 17 sont attrapées.
 
 ## Étape 2 — Gestion du risque
 
@@ -1062,3 +1096,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 13/11/2026 | Les comptes à risque du bot de tendance (levier ×2, stop suiveur) | Fait : quatre comptes fictifs côte à côte, définis avant d'être mesurés. Sur le passé, le stop suiveur n'a pas protégé ; le levier ×2 a aidé le Bitcoin, pas l'Ether, avec des chutes de −80 % et plus | `701905e` |
 | 14/11/2026 | La nuit de recherche (`audit/nuit.py`, `audit/nuit2.py`) | Faite : environ 330 façons de faire, protocoles enregistrés avant calcul. Rien de tradable ne tient au-dessus d'un simple placement ; suivre un gros mouvement est nettement perdant ; la version baissière n'ajoute rien | `effb7d2` |
 | 14/11/2026 | La relecture indépendante (seize relecteurs) | Faite : aucune erreur dans la logique de l'argent du bot de tendance ; quatre tests ajoutés, trois petits défauts corrigés, mes mesures corrigées et refaites. Reste à décider : le taux d'emprunt des comptes à risque | `cdec71f` |
+| 14/11/2026 | Les comptes à risque au vrai coût de l'emprunt | Fait : le moteur compte le vrai financement de chaque nuit (historique embarqué 2020-2026, puis lu chaque jour), cinq tests, onglet Tendance. Bitcoin ×31,1 au lieu de ×41,8, Ether ×9,0 au lieu de ×13,4 | `59d0ccb` |

@@ -649,6 +649,7 @@ class Site:
         self.fleet_stopped = False  # arrêtés à la main : le site ne les relance plus tout seul
         # Le bot de tendance : ses bougies d'un jour, sa page (refaite toutes les 10 s au plus), son test de robustesse.
         self.trend_feed = trend.Feed(make_exchange, self.exchange_id, data_dir / trend.FOLDER)
+        self.trend_funding = trend.Funding(make_exchange, data_dir / trend.FOLDER)  # le vrai coût des nuits d'emprunt
         self.trend_cache: dict = {}
         self.trend_page: tuple[float, dict | None] = (-math.inf, None)
         self.trend_lock = threading.Lock()
@@ -772,7 +773,8 @@ class Site:
         with self.trend_lock:
             at, page = self.trend_page
             if page is None or time.monotonic() - at >= 10:
-                page = trend.view(self.trend_feed, self.data_dir() / trend.FOLDER, cache=self.trend_cache)
+                page = trend.view(self.trend_feed, self.data_dir() / trend.FOLDER, cache=self.trend_cache,
+                                  funding=self.trend_funding)
                 self.trend_page = (time.monotonic(), page)
             return page
 

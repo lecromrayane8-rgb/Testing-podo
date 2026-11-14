@@ -152,7 +152,7 @@ def cmd_backtest(s: Settings, args: argparse.Namespace) -> None:
 def cmd_trend(s: Settings, args: argparse.Namespace) -> None:
     """Le bot de tendance, en argent fictif : où en est la règle, son compte, son histoire année par année."""
     folder = s.data_dir / trend.FOLDER
-    data = trend.view(trend.Feed(make_exchange, s.exchange, folder), folder)
+    data = trend.view(trend.Feed(make_exchange, s.exchange, folder), folder, funding=trend.Funding(make_exchange, folder))
     print(trend.report(data))
     if not any(c["ready"] for c in data["coins"]):
         raise ValueError("Aucun historique reçu pour la règle de tendance : vérifie ta connexion internet.")
