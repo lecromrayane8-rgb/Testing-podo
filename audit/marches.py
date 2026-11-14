@@ -35,7 +35,22 @@ AJOUTÉ APRÈS LES PREMIERS RÉSULTATS, HORS PROTOCOLE (pour comprendre, pas pou
 - « ce qui mange l'avantage » : la même règle sans le jour de retard, puis avec des frais presque nuls (0,03 % par
   ordre). Le verdict reste celui du protocole : frais du bot, ordre au lendemain.
 
+CORRIGÉ APRÈS LA RELECTURE INDÉPENDANTE DU 14/11/2026 (hors protocole : ajouté en connaissant les résultats) :
+- le test du mélange mélangeait aussi les 200 jours d'avant l'ouverture du compte : « garder » ne finissait donc pas
+  pareil sur le vrai marché et sur ses mélanges, contrairement à ce que dit le point 3 (sur Binance, où ces 200 jours
+  ont beaucoup monté, cela jouait contre la règle). Seules les journées d'après l'ouverture sont maintenant mélangées ;
+- `--debut` et `--fin` mesurent une partie de l'histoire seulement : la relecture a montré que les tendances
+  exploitées viennent toutes d'avant 1999 (le milieu des séries de 1971 à 2026) ;
+- un second témoin, « sans tendance mais avec la même hausse de fond » (les vraies journées dans le désordre) : sortir
+  d'un marché qui monte coûte la hausse en plus des frais, ce que le témoin sans hausse ne montre pas ;
+- la porte dit combien de lignes négatives le sont NETTEMENT (fourchette entière sous zéro) ;
+- NON CORRIGÉ ICI, à savoir : l'argent dehors ne rapporte rien (point 2). Ce n'est pas « pareil pour la règle et pour
+  garder » : la règle est dehors 33 à 54 % du temps. Deux relecteurs ont refait le Nasdaq avec les taux des bons du
+  Trésor : la règle y passe devant « garder » dès que l'argent dehors rapporte plus de 3,2 % par an (les dividendes,
+  que « garder » touche tout le temps, jouent dans l'autre sens). Le moteur du bot ne compte pas d'intérêts.
+
     python audit/marches.py --sortie marches.json          # --melanges 1000 --coeurs N --csv-dir dossier
+    python audit/marches.py --fin 1998-12-31 ; python audit/marches.py --debut 1999-01-01
 
 `--csv-dir` : des fichiers « Date,Open,High,Low,Close » donnés à la main (or, S&P 500…), mesurés à part avec leurs
 vrais prix d'ouverture. Rien n'est lu sur une plateforme d'échange sauf les prix publics de Binance ; rien n'est écrit
@@ -155,10 +170,12 @@ def measure(job: tuple) -> dict:
     rng = np.random.default_rng(seed)
     steps = np.diff(np.log(close))
     path = lambda moves: close[0] * np.exp(np.concatenate(([0.0], np.cumsum(moves))))  # noqa: E731
+    opened = max(trend.AVERAGES) - (0 if late else 1)  # le prix auquel le compte ouvre : on ne mélange que la suite
+    mix = lambda: np.concatenate((steps[:opened], rng.permutation(steps[opened:])))  # noqa: E731
     base = trend.replay(frame(ts, close, late))
     finals, worsts = np.empty(shuffles), np.empty(shuffles)
     for k in range(shuffles):
-        mixed = trend.replay(frame(ts, path(rng.permutation(steps)), late))
+        mixed = trend.replay(frame(ts, path(mix()), late))
         finals[k], worsts[k] = mixed.value[-1], trend.worst(mixed.value, mixed.capital)
     real_final = float(base.value[-1])
     out["shuffle"] = {"n": shuffles, "real": real_final / base.capital, "median": float(np.median(finals)) / base.capital,
@@ -169,6 +186,8 @@ def measure(job: tuple) -> dict:
     # Le témoin : des marchés tirés au hasard, sans tendance ni dérive, aussi longs et aussi agités que le vrai.
     out["witness"] = [exit_logs(frame(ts, path(rng.normal(0.0, steps.std(), len(steps))), late))
                       for _ in range(WITNESSES)]
+    # Le second témoin : les vraies journées dans le désordre (plus de tendance, mais la même hausse de fond).
+    out["witness_drift"] = [exit_logs(frame(ts, path(mix()), late)) for _ in range(WITNESSES)]
     # Hors protocole : ce qui mange l'avantage (le jour de retard, puis les frais).
     finish = lambda late_, ex: trend.replay(frame(ts, close, late_), ex=ex)  # noqa: E731
     out["what_if"] = {name_: {"total": float(r.value[-1] / r.capital), "worst": trend.worst(r.value, r.capital)}
@@ -201,6 +220,10 @@ def day(ms: int) -> str:
     return pd.Timestamp(int(ms), unit="ms", tz="UTC").strftime("%d/%m/%Y")
 
 
+def stamp(text: str) -> int:
+    return int(pd.Timestamp(text, tz="UTC").timestamp() * 1000)
+
+
 def show(row: dict, net: float) -> None:
     pct = lambda x: f"{100 * x:+.0f} %"  # noqa: E731
     rule, hold, mix = row["rule"], row["hold"], row["shuffle"]
@@ -223,15 +246,22 @@ def main() -> None:
     parser.add_argument("--coeurs", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     parser.add_argument("--cache", default=vrai.CACHE)
     parser.add_argument("--csv-dir", help="dossier de fichiers Date,Open,High,Low,Close à mesurer à part")
+    parser.add_argument("--debut", help="ne garder que les jours à partir de cette date (AAAA-MM-JJ)")
+    parser.add_argument("--fin", help="ne garder que les jours jusqu'à cette date (AAAA-MM-JJ)")
     parser.add_argument("--sortie")
     args = parser.parse_args()
     cache = Path(args.cache) / "marches"
     jobs = []
     for seed, (key, name, series, invert, always, group) in enumerate(MARKETS):
         ts, values = fred(series, cache)
+        keep = (ts >= (stamp(args.debut) if args.debut else ts[0])) & (ts <= (stamp(args.fin) if args.fin else ts[-1]))
+        ts, values = ts[keep], values[keep]
+        if len(ts) < 3 * max(trend.AVERAGES):
+            print(f"{name} : trop peu de jours sur cette période ({len(ts)})")
+            continue
         jobs.append((key, name, group, ts, 1 / values if invert else values, not always, args.melanges, 1000 + seed, None))
     feed = trend.Feed(lambda _id: vrai.exchange(), "binance", cache / "binance")
-    for seed, (key, name, symbol, group) in enumerate(BINANCE):
+    for seed, (key, name, symbol, group) in enumerate([] if args.debut or args.fin else BINANCE):
         got = feed.get(symbol)
         if got.df is None:
             print(f"{name} : pas de bougies ({got.error})")
@@ -265,6 +295,9 @@ def main() -> None:
     print(trend.robustness_report(gate).split("\n\n")[0])
     robust = [r.market for r in gate if r.verdict == ROBUST]
     print(f"Lignes « robustes » : {len(robust)} sur {len(gate)}" + (f" ({', '.join(robust)})" if robust else ""))
+    below = [r for r in gate if not r.expectancy_pct > 0]
+    print(f"Lignes négatives : {len(below)} sur {len(gate)}, dont {sum(r.ci_high < 0 for r in below)} nettement "
+          f"(toute la fourchette sous zéro)")
     exits = pooled(main_rows, "exits")
     witness = [pooled([{"w": r["witness"][k]} for r in main_rows], "w") for k in range(WITNESSES)]
     combined = stouffer([r["shuffle"]["p"] for r in main_rows])
@@ -283,6 +316,9 @@ def main() -> None:
     print(f"Le témoin (marchés au hasard, sans tendance), refait {WITNESSES} fois : {100 * np.mean(means):+.2f} % par sortie en "
           f"moyenne (de {100 * min(means):+.2f} à {100 * max(means):+.2f}) ; attendu : les frais d'une sortie, "
           f"{100 * EXIT_COST:+.2f} % ; sa fourchette les contient {held} fois sur {WITNESSES}.")
+    drift = [pooled([{"w": r["witness_drift"][k]} for r in main_rows], "w")["mean"] for k in range(WITNESSES)]
+    print(f"Le second témoin (les vraies journées dans le désordre : même hausse de fond, plus de tendance), refait "
+          f"{WITNESSES} fois : {100 * np.mean(drift):+.2f} % par sortie (de {100 * min(drift):+.2f} à {100 * max(drift):+.2f}).")
     print("\n=== HORS PROTOCOLE : CE QUI MANGE L'AVANTAGE (ce que devient 1, pire baisse) ===")
     labels = (("protocole", "protocole"), ("sans_retard", "sans le jour de retard"),
               ("sans_retard_frais_bas", "sans retard, frais 0,03 %"), ("garder", "garder"))
@@ -294,7 +330,8 @@ def main() -> None:
         above = sum(r["what_if"][k]["total"] > r["what_if"]["garder"]["total"] for r in main_rows)
         print(f"  {title} : la règle finit plus haut que « garder » sur {above} marchés sur {len(main_rows)}")
     if args.sortie:
-        report = {"markets": [{k: v for k, v in r.items() if k not in ("exits", "witness")} for r in rows],
+        report = {"markets": [{k: v for k, v in r.items() if k not in ("exits", "witness", "witness_drift")} for r in rows],
+                  "witness_drift": drift,
                   "gate": [r.__dict__ for r in gate], "pooled": exits, "witness": witness, "stouffer": combined,
                   "exit_cost": EXIT_COST,
                   "better": better, "safer": safer, "net": net}

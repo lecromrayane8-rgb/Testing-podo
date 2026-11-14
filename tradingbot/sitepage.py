@@ -344,7 +344,8 @@ BODY = """
         <li>Ailleurs, elle n'a pas fait mieux que garder. Sur huit autres marchés (actions américaines et
           japonaises, pétrole, cinq monnaies ; 39 à 77 ans de prix), la même règle n'a jamais fini plus haut que
           « acheter et garder », frais compris. Sur les actions, elle a divisé les pires chutes par deux en rapportant
-          moins. C'est une protection, pas une façon de gagner plus (mesure du 13/11/2026).</li>
+          moins. Avant 1999, elle faisait mieux que garder sur six de ces huit marchés ; depuis, sur aucun.
+          C'est une protection, pas une façon de gagner plus (mesures du 13 et du 14/11/2026).</li>
         <li>Au moins trois sorties sur quatre sont perdantes, de peu le plus souvent : le prix repart, le bot rachète
           un peu plus cher. C'est le prix de la protection, et il faut l'accepter pour suivre la règle.</li>
         <li>Les frais comptent : à 0,50 % par ordre au lieu de 0,15 %, le résultat du Bitcoin depuis 2018 passe
@@ -353,7 +354,10 @@ BODY = """
           réel, il faudrait un bot allumé à cette heure-là.</li>
         <li>Les comptes à risque sont là pour voir ce que le levier coûte, pas pour être imités. Sur le passé, le
           levier ×2 a fait vivre des chutes de −80 % et plus, et sur l'Ether il a fini plus bas que le compte normal.
-          À ×3, le compte sur l'Ether aurait été liquidé (mai 2021) ; à ×5, les deux (mesures du 13/11/2026).</li>
+          À ×3, le compte sur l'Ether aurait été liquidé (mai 2021) ; à ×5, les deux (mesures du 13/11/2026).
+          Et ces comptes sont flattés : leur taux d'emprunt (11 % par an) est une moyenne, alors qu'emprunter coûte
+          presque le double quand le marché monte. Au vrai taux, le compte à risque du Bitcoin aurait fini vers ×31
+          au lieu de ×42, celui de l'Ether vers ×9 au lieu de ×13 (relecture du 14/11/2026).</li>
         <li>Le stop suiveur n'a pas protégé sur le passé : sur le Bitcoin comme sur l'Ether, le compte avec stop a
           fini plus bas que le compte sans, avec une pire baisse plus profonde. Il vend sur des baisses ordinaires
           et rachète plus haut (mesure du 13/11/2026).</li>

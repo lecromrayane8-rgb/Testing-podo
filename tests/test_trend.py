@@ -259,7 +259,13 @@ def test_the_trailing_stop_sits_three_average_candles_under_the_high_of_the_last
     assert line[30] == pytest.approx(101 - 3 * (21 * 2 + 11) / 22)  # le jour de la chute : une bougie de 11
     allows = trend.stop_allows(high, low, closes)
     assert allows[:30].all() and not allows[30:51].any()  # sous la ligne : dehors, tant que l'ancien sommet compte
+    # le jour 51, les 22 derniers jours (30 à 51) ne voient plus l'ancien sommet : 91 − 3 × (21 × 2 + 11) / 22 = 83,77
+    assert line[50] == pytest.approx(101 - 3 * 53 / 22) and line[51] == pytest.approx(91 - 3 * 53 / 22) and allows[51]
     assert allows[52:].all() and line[59] == pytest.approx(91 - 3 * 2)  # 22 jours plus tard, la ligne est redescendue
+    wick_low = low.copy()  # une mèche qui passe sous la ligne (95) alors que la clôture reste au-dessus : le stop ne dit rien
+    wick_low[25] = 80.0
+    assert trend.stop_line(high, wick_low, closes)[25] == pytest.approx(101 - 3 * (21 * 2 + 21) / 22)  # 92,41
+    assert wick_low[25] < 92.41 < closes[25] and trend.stop_allows(high, wick_low, closes)[:30].all()
     assert trend.stop_allows(high[:5], low[:5], closes[:5]).all()  # pas assez de jours : le stop ne dit rien
     wild = walk(21, 400)
     h, lo = wild * 1.02, wild * 0.97
@@ -278,8 +284,12 @@ def test_the_stop_takes_the_account_out_at_the_next_open_and_brings_it_back_when
     assert [(o["ts"] // DAY, o["side"], o["why"]) for o in stopped.orders][:2] == [(2, "achat", "regle"), (41, "vente", "stop")]
     back = stopped.orders[2]
     allows = trend.stop_allows(df["high"], df["low"], df["close"])
-    first_ok = int(np.flatnonzero(allows[41:])[0]) + 41  # la première clôture que le stop laisse passer après la chute
-    assert first_ok > 50 and (back["ts"] // DAY, back["side"], back["why"]) == (first_ok + 1, "achat", "stop")
+    # Refait à la main. Le jour 40 ouvre à 103,9 et clôture à 85 : bougie de 18,9. Tant qu'il est dans les 22 derniers
+    # jours (jusqu'au jour 61), la ligne vaut 103,9 − 3 × (21 × 0,1 + 18,9) / 22 = 101,04 : dehors. Le jour 62, les 22
+    # jours vont de 41 à 62 : plus haut 87,2, bougies de 0,1, ligne à 86,9 sous la clôture de 87,2 : le stop laisse passer.
+    first_ok = 62
+    assert not allows[40:62].any() and allows[62] and int(np.flatnonzero(allows[41:])[0]) + 41 == first_ok
+    assert (back["ts"] // DAY, back["side"], back["why"]) == (first_ok + 1, "achat", "stop")
     assert back["price"] == df["open"].iloc[first_ok + 1] and (back["from"], back["to"]) == (0, 1)
     out = slice(41 - 2, first_ok + 1 - 2)  # le compte ouvre au jour 2 : du jour 41 au jour first_ok, il ne tient rien
     assert stopped.level[out].sum() == 0 and stopped.level[first_ok + 1 - 2] == 1 and plain.level[out].sum() > 0
@@ -322,6 +332,63 @@ def test_the_four_accounts_are_the_same_rule_with_or_without_leverage_and_stop()
     assert (runs["stop"].level <= runs["normal"].level).all()  # le stop ne fait jamais tenir plus que la règle
     assert {o["why"] for o in runs["risque_stop"].orders} <= {"regle", "stop", "levier", "liquidation"}
     assert {o["why"] for o in runs["normal"].orders} == {"regle"}
+
+
+def test_a_borrowing_account_sells_when_a_fall_pushes_its_leverage_beyond_the_band():
+    closes, opens = [100, 100, 110, 121, 125, 130], [100, 100, 100, 110, 100, 125]  # le jour 4 ouvre en chute, à 100
+    run = trend.replay(days(closes, opens), capital=1000.0, averages=(2,), leverage=2.0)
+    # le jour 5 rouvre à 125 (+25 %) : la position ne fait plus que 2,5 / 1,5 = 1,67 fois le compte, il rachète
+    assert [(o["ts"] // DAY, o["side"], o["why"]) for o in run.orders] == [
+        (3, "achat", "regle"), (4, "vente", "levier"), (5, "achat", "levier")]
+    units, debt = 2000 * (1 - FEE) / (110 * (1 + SLIP)), 1000 * (1 + NIGHT)
+    value = units * 100 - debt  # à l'ouverture du jour 4 : 815,16 à lui pour 1 815,46 de position, soit un levier de 2,23
+    assert units * 100 / value == pytest.approx(2.2271, abs=1e-4) and units * 100 / value - 2 > 2 * trend.BAND
+    sale = run.orders[1]  # il vend ce qui dépasse le double de sa valeur : 185,14 de cryptos, au prix d'ouverture
+    assert sale["amount"] == pytest.approx(units * 100 - 2 * value, rel=1e-12) and sale["amount"] == pytest.approx(185.14, abs=0.01)
+    assert sale["units"] == pytest.approx(sale["amount"] / 100, rel=1e-12) and sale["qty"] == pytest.approx(units - sale["units"])
+    assert sale["cash"] == pytest.approx(-debt + sale["units"] * 100 * (1 - SLIP) * (1 - FEE), rel=1e-12)  # la dette baisse d'autant
+    assert sale["qty"] * 100 / sale["value"] == pytest.approx(2.0, abs=0.002) and run.dead is None
+
+
+def test_the_band_is_exactly_one_tenth_of_the_leverage_on_both_sides():
+    units, debt = 2000 * (1 - FEE) / (110 * (1 + SLIP)), 1000 * (1 + NIGHT)
+    # levier = position / (position − dette) : il vaut 1,8 quand la position vaut 2,25 dettes, 2,2 quand elle en vaut 11/6
+    high, low = 2.25 * debt / units, 11 / 6 * debt / units
+    assert (high, low) == (pytest.approx(123.98, abs=0.01), pytest.approx(101.02, abs=0.01))
+
+    def fourth_day(price):
+        df = days([100, 100, 110, 121, price], opens=[100, 100, 100, 110, price])
+        return trend.replay(df, capital=1000.0, averages=(2,), leverage=2.0).orders[1:]
+
+    assert fourth_day(high * 0.9999) == [] and fourth_day(low * 1.0001) == []  # juste dans la bande : aucun ordre
+    (more,), (less,) = fourth_day(high * 1.0001), fourth_day(low * 0.9999)  # juste dehors : remis à ×2
+    assert (more["side"], more["why"], less["side"], less["why"]) == ("achat", "levier", "vente", "levier")
+    price = high * 1.0001
+    spent = 2 * (units * price - debt) - units * price  # ce qui manque pour tenir le double de sa valeur
+    assert more["amount"] == pytest.approx(spent, rel=1e-12)
+    assert more["units"] == pytest.approx(spent * (1 - FEE) / (price * (1 + SLIP)), rel=1e-12)  # frais et glissement payés
+    assert more["cash"] == pytest.approx(-debt - spent, rel=1e-12)
+
+
+def test_the_stop_also_takes_a_leveraged_account_out_and_the_accounts_of_the_page_use_it():
+    closes = np.concatenate([100 + 0.1 * np.arange(40), 85 + 0.1 * np.arange(40)])  # la série du test du stop
+    df = days(closes)
+    risky = trend.replay(df, averages=(2,), leverage=2.0)
+    both = trend.replay(df, averages=(2,), leverage=2.0, stop=True)
+    # sans stop, la règle rachète dès le jour 42 ; avec, le compte à levier reste dehors jusqu'au jour 63, comme le normal
+    assert [(o["ts"] // DAY, o["side"], o["why"]) for o in both.orders] == [
+        (2, "achat", "regle"), (41, "vente", "stop"), (63, "achat", "stop")]
+    assert [(o["ts"] // DAY, o["side"]) for o in risky.orders][:3] == [(2, "achat"), (41, "vente"), (42, "achat")]
+    assert both.orders[2]["amount"] == pytest.approx(2 * both.orders[1]["value"], rel=1e-12)  # il revient au double
+    assert both.level[41 - 2:63 - 2].sum() == 0 and risky.level[42 - 2:63 - 2].min() == 1 and both.value[-1] != risky.value[-1]
+    # les comptes de la page et de l'historique : celui « avec stop » est bien rejoué avec son stop
+    full = days(np.concatenate([walk(31, 260), closes * walk(31, 260)[-1] / 100]))
+    since = int(full["ts"].iloc[205])
+    normal, stop = (trend._account(v, full, since, trend.SPOT) for v in trend.VARIANTS[:2])
+    assert {o["why"] for o in normal["orders"]} == {"regle"} and "stop" in {o["why"] for o in stop["orders"]}
+    assert stop["value"] != normal["value"]
+    past = {v.key: trend._past(v, full, trend.SPOT) for v in trend.VARIANTS}
+    assert past["stop"]["total"] != past["normal"]["total"] and past["risque_stop"]["total"] != past["risque"]["total"]
 
 
 # --- le test de robustesse : chaque sortie contre « garder » ----------------------------------------------------------
@@ -449,8 +516,25 @@ def test_the_account_start_is_written_once_and_never_moves(tmp_path):
     first = trend.account_since(tmp_path, datetime(2026, 11, 14, 15, 2, tzinfo=timezone.utc))
     assert first == int(datetime(2026, 11, 14, 15, 2, tzinfo=timezone.utc).timestamp() * 1000)
     assert trend.account_since(tmp_path, datetime(2027, 1, 1, tzinfo=timezone.utc)) == first
-    (tmp_path / trend.ACCOUNT_FILE).write_text("{abîmé", encoding="utf-8")  # illisible : un nouveau compte, daté d'aujourd'hui
-    assert trend.account_since(tmp_path, datetime(2027, 1, 1, tzinfo=timezone.utc)) > first
+
+
+def test_an_account_file_that_cannot_be_read_is_never_overwritten(tmp_path, monkeypatch):
+    trend.account_since(tmp_path, datetime(2026, 11, 14, 15, 2, tzinfo=timezone.utc))
+    path = tmp_path / trend.ACCOUNT_FILE
+    written, read = path.read_text(encoding="utf-8"), type(path).read_text
+
+    def locked(self, *args, **kwargs):  # un antivirus ou un dossier synchronisé qui verrouille le fichier un instant
+        raise PermissionError("fichier verrouillé")
+
+    monkeypatch.setattr(type(path), "read_text", locked)
+    with pytest.raises(PermissionError):
+        trend.account_since(tmp_path, datetime(2027, 3, 1, tzinfo=timezone.utc))
+    monkeypatch.setattr(type(path), "read_text", read)
+    assert path.read_text(encoding="utf-8") == written  # rien n'a été réécrit : le compte garde sa date
+    path.write_text("{abîmé", encoding="utf-8")
+    with pytest.raises(ValueError, match="illisible"):
+        trend.account_since(tmp_path, datetime(2027, 3, 1, tzinfo=timezone.utc))
+    assert path.read_text(encoding="utf-8") == "{abîmé"  # un fichier abîmé non plus : l'erreur se voit, rien n'est effacé
 
 
 def page(tmp_path, exchange):
@@ -521,8 +605,11 @@ def test_the_page_says_when_the_history_is_too_short_or_the_platform_silent(tmp_
 def test_the_console_report_tells_the_same_story_as_the_page(tmp_path):
     start = trend.EARLY_MS
     frames = {"BTC/USDT": days(walk(14, 900, drift=0.002), start=start), "ETH/USDT": days(walk(15, 900), start=start)}
-    trend.account_since(tmp_path / "tendance", datetime.fromtimestamp((start + 700 * DAY) / 1000, timezone.utc))
-    text = trend.report(page(tmp_path, DailyExchange(frames, n=900)))
+    trend.account_since(tmp_path / "tendance", datetime.fromtimestamp((start + 250 * DAY) / 1000, timezone.utc))
+    data = page(tmp_path, DailyExchange(frames, n=900))
+    text = trend.report(data)
+    account = data["coins"][0]["account"]  # un compte ancien : plus d'ordres que la page n'en montre
+    assert account["count"] > trend.ORDERS_SHOWN == len(account["orders"]) and f"{account['count']} ordre(s)" in text
     for words in ("Bitcoin à", "Ether à", "moyenne  50 jours : à dépasser ce soir", "Compte fictif depuis le", "acheter et garder",
                   "pire baisse", "Argent fictif : aucun ordre ne part sur une plateforme", "robustesse --tendance",
                   "Les autres comptes fictifs : Normal + stop", "Risque ×2 + stop", "À risque : levier ×2 : ×"):

@@ -336,10 +336,14 @@ def verdict(rows: list[RobustnessRow]) -> str:
         return (f"{len(robust)} ligne(s) sur {len(rows)} sont « robustes » : {', '.join(robust)}. Le seuil tient déjà compte "
                 "du nombre de lignes. Avant tout argent réel : plusieurs semaines de compte fictif, puis un essai en mode "
                 "test sur une plateforme agréée. Les performances passées ne garantissent rien.")
-    positive = sum(r.expectancy_pct > 0 for r in rows)
-    return (f"Aucune des {len(rows)} lignes n'est « robuste » : {positive} sur {len(rows)} sont positives, mais leur fourchette "
-            "contient zéro. La règle a fait mieux que « acheter et garder » sur cette période ; rien ne prouve que ce "
-            "n'est pas la chance de quelques grandes chutes évitées. Argent fictif seulement.")
+    positive = sum(r.expectancy_pct > 0 for r in rows)  # une ligne positive = plus de cryptos à la fin qu'en gardant
+    if not positive:
+        return (f"Aucune des {len(rows)} lignes n'est « robuste », et aucune n'est positive : sur cette période, sortir du "
+                "marché sous la moyenne a laissé moins de cryptos que de les garder. Argent fictif seulement.")
+    return (f"Aucune des {len(rows)} lignes n'est « robuste ». Sur cette période, sortir du marché sous la moyenne a laissé "
+            f"plus de cryptos que de les garder pour {positive} ligne(s) sur {len(rows)}, mais pas assez nettement pour le "
+            "seuil (durci par le nombre de lignes). Ce test ne peut pas trancher entre un avantage et de la chance : il y "
+            "a peu de sorties, et presque tout vient de quelques grandes chutes évitées. Argent fictif seulement.")
 
 
 def robustness_report(rows: list[RobustnessRow]) -> str:
@@ -439,17 +443,24 @@ class Feed:
 
 def account_since(folder: Path, now: datetime | None = None) -> int:
     """Le moment où le compte fictif a été créé (ms), écrit une fois dans `compte.json` et plus jamais changé : le
-    compte ouvre à l'ouverture du jour suivant, pour ne rien devoir à un prix déjà passé."""
+    compte ouvre à l'ouverture du jour suivant, pour ne rien devoir à un prix déjà passé.
+    Le fichier n'est créé que s'il n'existe pas. S'il existe mais ne se lit pas (verrouillé un instant par un
+    antivirus ou un dossier synchronisé, ou abîmé), rien n'est réécrit et l'erreur remonte : une date de départ écrasée
+    ferait repartir les comptes de zéro sans le dire."""
     path = Path(folder) / ACCOUNT_FILE
     try:
-        since = datetime.fromisoformat(json.loads(path.read_text(encoding="utf-8"))["since"])
-        return int(since.timestamp() * 1000)
-    except (OSError, ValueError, KeyError, TypeError):
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         now = now or datetime.now(timezone.utc)
         atomic_write(path, json.dumps({"since": now.isoformat(timespec="seconds"), "capital": CAPITAL,
                                        "regle": f"moyennes {', '.join(map(str, AVERAGES))} jours"},
                                       ensure_ascii=False, indent=1))
         return int(now.timestamp() * 1000)
+    try:
+        return int(datetime.fromisoformat(json.loads(text)["since"]).timestamp() * 1000)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"La date de départ du compte fictif ({path}) est illisible : rien n'a été réécrit. Supprimer ce "
+                         "fichier fait repartir les comptes d'aujourd'hui.") from exc
 
 
 def _clean(value):
@@ -608,7 +619,7 @@ def report(data: dict) -> str:
             lines.append(f"  Compte fictif depuis le {_day(acc['start'])} : {acc['value']:,.2f} USDT pour "
                          f"{acc['capital']:,.0f} au départ ({pct(acc['value'] / acc['capital'] - 1)}) ; acheter et "
                          f"garder : {acc['hold']:,.2f} ({pct(acc['hold'] / acc['capital'] - 1)}) ; "
-                         f"{len(acc['orders'])} ordre(s).")
+                         f"{acc['count']} ordre(s).")
             lines.append("  Les autres comptes fictifs : " + " · ".join(
                 f"{a['short']} {a['value']:,.2f}" + (" (liquidé)" if a["liquidated"] else "") for a in c["accounts"][1:]))
         else:
