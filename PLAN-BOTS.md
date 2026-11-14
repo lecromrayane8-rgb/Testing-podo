@@ -1000,6 +1000,41 @@ Binance ni OKX ne répondent depuis ton PC : dis-le-moi.
 rapporte, le rangement des échéances par journée, la lecture écrite une seule fois, le taux fixe après un jour sans
 réponse, l'historique embarqué. 17 erreurs simulées sur 17 sont attrapées.
 
+## Court terme, la suite : « acheter le creux » (14/11/2026, mesuré, rien de construit)
+
+Ta réponse du 14/11 : « fais la suite ». La nuit avait laissé une seule piste qu'on peut vraiment jouer avec un simple
+achat : acheter une crypto à l'heure qui suit une chute d'au moins 10 % en une heure. Avant d'en faire quoi que ce
+soit, je l'ai refaite, sans rien y changer, sur une période jamais regardée (2017-2019, 84 cryptos), avec les frais
+d'un achat au comptant. Fixé avant le calcul aussi (`4ca30cd`) : séparer les chutes « du marché » (le Bitcoin perd au
+moins 2 % dans la même heure) des chutes « de la crypto seule ». Outil : `audit/nuit2.py creux`.
+
+| Acheter après −10 % en une heure, revendre 4 heures après | 2017-2019 | 2020-2023 | 2024-2026 | Verdict |
+|---|---|---|---|---|
+| Toutes les chutes | +0,6 % (60 trades) | +1,1 % (2 354) | +0,4 % (2 543) | piste |
+| **Quand tout le marché chute en même temps** | +1,4 % (de −1,9 à +4,7 ; 40) | +3,8 % (de +1,1 à +6,6 ; 1 160) | +3,0 % (de +0,7 à +5,3 ; 798) | piste, nette sur deux périodes |
+| Quand la crypto chute seule | −0,9 % (20) | −1,6 % (1 194) | −0,9 % (1 745) | rien : à ne pas acheter |
+
+**Ce qui va dans son sens.** Positif sur les trois périodes, y compris avec des frais durs (0,30 % par ordre : +1,1 %,
++3,5 %, +2,7 %). Plus le Bitcoin chute fort, plus le rebond est grand (Bitcoin à −3 % : +1,5 %, +4,9 %, +3,9 %).
+Entrer une heure plus tard reste positif. Et l'idée a un sens : quand tout le monde vend de force, celui qui achète
+est payé pour ça. Une crypto qui chute seule, elle, continue de chuter.
+
+**Ce qui la fragilise** (cherché exprès, hors protocole) :
+- comptée par ÉPISODE (une heure de krach = un seul pari sur un panier), elle gagne une fois sur deux : 19, 102 et 25
+  épisodes, +3,1 %, +0,9 % et +2,3 % par épisode, et seule la période du milieu est (de justesse) au-dessus de zéro ;
+- le résultat repose sur quelques très gros krachs qui ont rebondi : en 2024-2026, trois krachs font 74 % des trades ;
+- le pire épisode perd 18 % et 20 % en quatre heures ;
+- pendant un krach, on n'obtient pas le prix affiché : avec 1 % de frais par ordre, il reste −0,3 %, +2,1 % et +1,3 % ;
+- il y a environ 16 épisodes par an : l'argent attend presque tout le temps.
+
+**Ce que ça veut dire.** C'est la première piste de court terme qui a une logique et qui se joue avec un simple
+achat. Ce n'est pas une preuve : trop peu d'épisodes, et un gain porté par quelques journées. Elle ne va dans aucun
+bot pour l'instant.
+
+**Ce que je te propose (à approuver)** : un petit compte fictif « acheteur de krach », à côté des autres, qui applique
+exactement cette règle en direct et note chaque épisode avec les prix du moment. Avant de le construire, je ferais
+relire cette mesure par un relecteur indépendant, comme pour le reste.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
@@ -1097,3 +1132,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 14/11/2026 | La nuit de recherche (`audit/nuit.py`, `audit/nuit2.py`) | Faite : environ 330 façons de faire, protocoles enregistrés avant calcul. Rien de tradable ne tient au-dessus d'un simple placement ; suivre un gros mouvement est nettement perdant ; la version baissière n'ajoute rien | `effb7d2` |
 | 14/11/2026 | La relecture indépendante (seize relecteurs) | Faite : aucune erreur dans la logique de l'argent du bot de tendance ; quatre tests ajoutés, trois petits défauts corrigés, mes mesures corrigées et refaites. Reste à décider : le taux d'emprunt des comptes à risque | `cdec71f` |
 | 14/11/2026 | Les comptes à risque au vrai coût de l'emprunt | Fait : le moteur compte le vrai financement de chaque nuit (historique embarqué 2020-2026, puis lu chaque jour), cinq tests, onglet Tendance. Bitcoin ×31,1 au lieu de ×41,8, Ether ×9,0 au lieu de ×13,4 | `59d0ccb` |
+| 14/11/2026 | Court terme : « acheter le creux » sur trois périodes | Mesuré (`audit/nuit2.py creux`) : positif sur les trois périodes quand tout le marché chute, net sur deux ; mais un épisode sur deux perd et quelques gros krachs font le résultat. Piste, rien de construit | `4ca30cd` |

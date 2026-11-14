@@ -382,7 +382,9 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   Trésor à 3 mois, FRED `DTB3`, fourchette par trimestres), `heure` (gros mouvements à l'heure), `contrats` puis
   `retombee` (la même chose sur les bougies des contrats eux-mêmes, archives `futures/um/monthly/klines`), `grille`,
   `peur` (indice d'alternative.me), `ecarts` (OKX, KuCoin, Gate contre Binance, à la minute), `passif` (chaque
-  transaction de trois journées, archives `aggTrades` des contrats), `volatilite` (indice DVOL de Deribit).
+  transaction de trois journées, archives `aggTrades` des contrats), `volatilite` (indice DVOL de Deribit),
+  `anciennes` puis `creux` (« acheter le creux » d'une chute d'une heure sur trois périodes, 2017-2019 comprise,
+  chutes du marché et chutes d'une crypto seule séparées ; à la fin, le compte par épisode et les frais de panique).
   `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
@@ -719,4 +721,12 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   Vérifié sur les vraies bougies : mêmes chiffres que les relecteurs (×31,1 et ×9,0). Depuis le cloud, Binance refuse
   la lecture en direct (451) et OKX prend le relais ; sur le PC de l'utilisateur, non vérifié : s'il dit que la
   phrase de l'onglet reste sur une vieille date, aucune des deux plateformes ne répond chez lui. Restent les 18
-  petits trous de tests de la relecture.
+  petits trous de tests de la relecture.  (2) COURT TERME, LA SUITE (sans idée de sa part : « fais la suite ») : la seule piste jouable de la nuit, « acheter
+  le creux », refaite sur une troisième période (2017-2019), protocole enregistré avant calcul (`4ca30cd`). Acheter
+  après −10 % en une heure et revendre 4 h après, QUAND LE BITCOIN PERD AU MOINS 2 % DANS LA MÊME HEURE : +1,4 %
+  (40 trades, pas net), +3,8 % (net), +3,0 % (net), encore positif à 0,30 % par ordre ; quand la crypto chute seule :
+  négatif sur les trois périodes. MAIS, par épisode (une heure de krach = un pari) : 19, 102 et 25 épisodes, un sur
+  deux perdant, +3,1 %, +0,9 %, +2,3 % avec des fourchettes qui contiennent zéro sauf une, pire épisode −20 %, trois
+  krachs = 74 % des trades de 2024-2026. Donc « piste », rien de construit. PROPOSÉ, EN ATTENTE D'ACCORD : un compte
+  fictif « acheteur de krach » qui note les épisodes en direct, après une relecture indépendante de cette mesure.
+  Leçon : compter par épisode, pas par trade, quand beaucoup de trades viennent de la même heure.

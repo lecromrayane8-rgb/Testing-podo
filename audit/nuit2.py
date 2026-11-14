@@ -971,7 +971,8 @@ def anciennes(args) -> None:
     jobs = []
     for symbol in pairs(cache):
         path = cache / f"{symbol.replace('/', '-')}-1h.pkl"
-        if path.exists() and int(pd.read_pickle(path)["ts"].iloc[0]) <= ms(START) + HOUR:
+        frame = pd.read_pickle(path) if path.exists() else None
+        if frame is not None and len(frame) and int(frame["ts"].iloc[0]) <= ms(START) + HOUR:  # cotée avant 2020
             jobs.append((symbol, "1h", trend.EARLY_MS, ms(START), cache))
     done = failed = rows = 0
     with ThreadPoolExecutor(args.fils) as pool:
@@ -1003,7 +1004,11 @@ def creux(args) -> dict:
     - fixé d'avance aussi : la même mesure en séparant les chutes « du marché » (le Bitcoin perd au moins 2 % dans la
       même heure) des chutes « de la crypto seule » (le Bitcoin perd moins de 2 %), pour savoir laquelle rebondit ;
     - on décrit le risque : le pire trade et la part des trades qui perdent plus de 20 %.
-    18 façons de faire (2 seuils × 3 durées × toutes, marché, seule) à deux niveaux de frais."""
+    18 façons de faire (2 seuils × 3 durées × toutes, marché, seule) à deux niveaux de frais.
+    Ajouté APRÈS avoir vu les résultats (hors protocole, pour chercher ce qui ferait tomber la piste « chute du
+    marché, −10 %, revente 4 heures ») : le compte par ÉPISODE (une heure de krach = un seul pari sur un panier, quel
+    que soit le nombre de cryptos), l'entrée une heure plus tard, des frais de panique (1 % par ordre), d'autres
+    seuils pour le Bitcoin (−1 %, −3 %), et ce que fait le Bitcoin lui-même pendant ces 4 heures."""
     cache = Path(args.cache)
     bitcoin = pd.read_pickle(cache / "BTC-USDT-1h.pkl")
     market = pd.Series(bitcoin["close"].to_numpy(dtype=float), index=bitcoin["ts"].to_numpy(dtype="int64")).pct_change()
@@ -1011,9 +1016,14 @@ def creux(args) -> dict:
     for symbol in pairs(cache):
         path = cache / f"{symbol.replace('/', '-')}-1h.pkl"
         if path.exists():
-            rows += [row for row in hour_events(symbol, pd.read_pickle(path).reset_index(drop=True))
-                     if row[2] == "chute" and row[4] == 1 and row[3] >= 0.10]
-    table = pd.DataFrame(rows, columns=["symbol", "ts", "direction", "move", "side", *EXITS])
+            frame = pd.read_pickle(path).reset_index(drop=True)
+            stamps, opens, closes = (frame[name].to_numpy() for name in ("ts", "open", "close"))
+            for row in hour_events(symbol, frame):
+                if row[2] == "chute" and row[4] == 1 and row[3] >= 0.10:
+                    k = int(np.searchsorted(stamps, row[1]))  # l'heure d'entrée ; une heure plus tard : k + 1
+                    late = closes[k + 3] / opens[k + 1] - 1 if k + 3 < len(closes) and stamps[k + 3] - stamps[k] == 3 * HOUR else math.nan
+                    rows.append((*row, late))
+    table = pd.DataFrame(rows, columns=["symbol", "ts", "direction", "move", "side", *EXITS, "late"])
     table["market"] = market.reindex(table["ts"].to_numpy() - HOUR).to_numpy()  # le Bitcoin pendant l'heure de la chute
     cuts = (("2017-2019", trend.EARLY_MS, ms(START)), ("2020-2023", ms(START), ms(CUT)), ("2024-2026", ms(CUT), 2 ** 62))
     first = table[table["move"] == 0.10]
@@ -1044,6 +1054,32 @@ def creux(args) -> dict:
                     print(f"  [{verdict:>5}] {kind} · après −{100 * move:.0f} % · revente {exit_name} · {line}"
                           + (f" · pire trade {100 * net.min():+.0f} %, {100 * (net < -0.2).mean():.1f} % perdent plus de 20 %"
                              if len(net) else ""))
+    print("\n--- ce qui pourrait faire tomber la piste « chute du marché, −10 %, revente 4 heures » (hors protocole) ---")
+    part = table[(table["move"] == 0.10) & (table["market"] <= -MARKET_FALL)]
+    close = pd.Series(bitcoin["close"].to_numpy(dtype=float), index=bitcoin["ts"].to_numpy(dtype="int64"))
+    opened = pd.Series(bitcoin["open"].to_numpy(dtype=float), index=bitcoin["ts"].to_numpy(dtype="int64"))
+    for name, a, b in cuts:
+        sub = part[(part["ts"] >= a) & (part["ts"] < b)]
+        net = sub["4 h"] - 2 * SPOT
+        episodes = net.groupby(sub["ts"]).agg(["mean", "size"])  # une heure de krach = un pari sur un panier
+        hours = episodes.index.to_numpy()
+        m = nuit.bounds(episodes["mean"].to_numpy(), hours)
+        own = (close.reindex(hours + 3 * HOUR).to_numpy() / opened.reindex(hours).to_numpy() - 1)
+        months = len(set(nuit.month_of(hours)))
+        top = episodes["size"].nlargest(3).sum() / max(1, episodes["size"].sum())
+        out[f"épisodes | {name}"] = {**m, "months": months, "top3": float(top), "worst": float(episodes["mean"].min()),
+                                     "bitcoin": float(np.nanmean(own)), "late": float((sub["late"] - 2 * SPOT).mean()),
+                                     "panic": float((sub["4 h"] - 0.02).mean())}
+        print(f"  {name} : {len(episodes)} épisodes sur {months} mois ({episodes['size'].median():.0f} cryptos par épisode en médiane ; "
+              f"les 3 plus gros = {100 * top:.0f} % des trades) · par épisode {100 * m['mean']:+.2f} % "
+              f"({100 * m['low']:+.2f} à {100 * m['high']:+.2f}), {100 * m['wins']:.0f} % gagnants, pire {100 * episodes['mean'].min():+.1f} % · "
+              f"entrée une heure plus tard {100 * (sub['late'] - 2 * SPOT).mean():+.2f} % par trade · frais de panique (1 % par "
+              f"ordre) {100 * (sub['4 h'] - 0.02).mean():+.2f} % · le Bitcoin seul sur ces 4 heures {100 * np.nanmean(own):+.2f} %")
+    for level in (0.01, 0.03):
+        other = table[(table["move"] == 0.10) & (table["market"] <= -level)]
+        print(f"  avec un Bitcoin à −{100 * level:.0f} % ou pire : " + " · ".join(
+            f"{name} {100 * (other.loc[(other['ts'] >= a) & (other['ts'] < b), '4 h'] - 2 * SPOT).mean():+.2f} % "
+            f"(n={((other['ts'] >= a) & (other['ts'] < b)).sum()})" for name, a, b in cuts))
     return out
 
 
