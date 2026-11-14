@@ -12,7 +12,10 @@ LA MÉTHODE, LA MÊME POUR TOUTES LES ÉTUDES :
 - Le verdict, le même partout : « TIENT » = positif avec une fourchette à 95 % toute positive sur la période de
   recherche ET sur celle de confirmation (la fourchette compare les mois entre eux : `risk.clustered_bounds`) ;
   « piste » = positif en moyenne sur les deux périodes, sans cette netteté ; « rien » sinon. Exiger la netteté deux
-  fois laisse passer moins d'un essai au hasard sur mille : on peut donc essayer beaucoup de règles.
+  fois laisse passer moins d'un essai au hasard sur mille : on peut donc essayer beaucoup de règles. Une « piste »,
+  elle, ne se distingue PAS du hasard : une règle sans aucun avantage en obtient une près d'une fois sur quatre.
+- « TIENT » veut dire « nettement au-dessus de zéro », pas « mieux que de l'argent simplement placé » : pour une
+  règle qui immobilise de l'argent (le portage), il faut encore la comparer à un placement sans risque (`nuit2.py`).
 - Des frais réalistes, à deux niveaux : ceux des bots (0,07 % par ordre sur les contrats à terme, 0,15 % au
   comptant) et des frais « durs » pour les petites cryptos (0,30 % par ordre : sur une crypto qui s'envole, on
   n'obtient pas le prix affiché).
@@ -22,6 +25,16 @@ LA MÉTHODE, LA MÊME POUR TOUTES LES ÉTUDES :
   millions de pour cent. Chaque paire est donc coupée en morceaux continus (`pieces`), traités comme des cryptos
   différentes ; une position ouverte à la suspension sort au dernier prix connu. (Trouvé pendant la nuit : le premier
   passage des études 1, 2, 4 et 5 comptait ces reprises ; elles ont été refaites.)
+
+CORRIGÉ APRÈS LA RELECTURE INDÉPENDANTE DU 14/11/2026 (seize relecteurs ; tout ce qui suit a été refait) :
+- le financement de minuit était rangé une fois sur deux dans la mauvaise journée (les archives le datent quelques
+  millisecondes après minuit) : `daily_funding` ramène maintenant chaque échéance à l'heure ronde ;
+- l'étude 1 remettait chaque soir la vente à découvert à sa part, sans le dire ni payer ces ordres : elle donne
+  maintenant aussi le compte tenu comme le bot (un ordre seulement quand la part décidée change), et les deux
+  chiffres sont annoncés ; le panier paie désormais aussi l'ordre de sortie d'une crypto qui quitte la liste ;
+- une « piste » sur une série de journées exige en plus que l'argent composé ait monté sur les deux périodes (une
+  moyenne positive peut cacher un compte qui fond) ;
+- l'étude 3 annonçait une moyenne par an sur toute la période (+8,4 %) : elle donne maintenant chaque période.
 
     python audit/nuit.py donnees                 # télécharge le financement de tous les contrats (une fois)
     python audit/nuit.py tendance | mouvements | croise | cotations | paire | financement | heures
@@ -51,7 +64,7 @@ from tradingbot import trend  # noqa: E402
 from tradingbot.execution import FUTURES  # noqa: E402
 from tradingbot.risk import clustered_bounds  # noqa: E402
 
-DAY = trend.DAY_MS
+DAY, HOUR = trend.DAY_MS, 3_600_000
 START, CUT = "2020-01-01", "2024-01-01"  # avant la coupure : on cherche ; après : on confirme
 PERP = FUTURES.fee_rate + FUTURES.slippage  # un ordre sur un contrat à terme, frais des bots : 0,07 %
 SPOT = trend.SPOT.fee_rate + trend.SPOT.slippage  # un ordre au comptant : 0,15 %
@@ -142,7 +155,8 @@ def daily_funding(contract: str, cache: Path) -> pd.Series | None:
     rates = funding(contract, cache)
     if rates is None or not len(rates):
         return None
-    return rates.groupby((rates.index - 1) // DAY * DAY).sum()
+    stamp = (rates.index.to_numpy(dtype="int64") + HOUR // 2) // HOUR * HOUR  # les archives ont quelques ms de retard
+    return rates.groupby((stamp - 1) // DAY * DAY).sum()
 
 
 def daily_frames(cache: Path) -> dict[str, pd.DataFrame]:
@@ -209,7 +223,7 @@ def judge(values, index, cut: int = ms(CUT), chain: bool = True) -> dict:
         out[name] = {**bounds(values[mask], index[mask]), **(compound(values[mask]) if chain else {})}
     a, b = out["recherche"], out["confirmation"]
     clear = lambda m: m["n"] > 0 and m["low"] == m["low"] and m["low"] > 0  # noqa: E731
-    positive = lambda m: m["n"] > 0 and m["mean"] > 0  # noqa: E731
+    positive = lambda m: m["n"] > 0 and m["mean"] > 0 and m.get("total", 2.0) > 1  # noqa: E731
     out["verdict"] = "TIENT" if clear(a) and clear(b) else "piste" if positive(a) and positive(b) else "rien"
     return out
 
@@ -245,6 +259,34 @@ def trend_days(close: np.ndarray, fund_next: np.ndarray, kind: str, cost: float 
     return out
 
 
+def trend_account(close: np.ndarray, fund_next: np.ndarray, kind: str, cost: float = SPOT) -> np.ndarray:
+    """La même variante, tenue comme le bot tient ses positions : un ordre seulement quand la part décidée change, au
+    prix de la clôture ; entre deux ordres, le nombre de pièces ne bouge pas (une vente à découvert qui gagne pèse de
+    moins en moins dans le compte, une vente qui perd de plus en plus). Le financement d'une vente est versé sur sa
+    valeur du jour. Le résultat de chaque jour ; un compte tombé à zéro y reste."""
+    level = trend.levels(close).astype(float)
+    share = np.where(level >= 0, KINDS[kind](np.maximum(level, 0)), 0.0)
+    out = np.full(len(close), np.nan)
+    cash, coins, held = 1.0, 0.0, 0.0
+    for t in range(len(close) - 1):
+        if level[t] < 0:
+            continue
+        before = cash + coins * close[t]
+        if before <= 0:
+            out[t] = 0.0
+            continue
+        if share[t] != held:
+            target = share[t] * before / close[t]
+            cash += (coins - target) * close[t] - abs(target - coins) * close[t] * cost
+            coins, held = target, share[t]
+        cash += max(-coins, 0.0) * close[t] * fund_next[t]
+        after = cash + coins * close[t + 1]
+        if after <= 0:  # une vente à découvert que la hausse a emportée : tout est perdu
+            cash, coins, after = 0.0, 0.0, 0.0
+        out[t] = after / before - 1
+    return out
+
+
 def next_funding(index: np.ndarray, contract: str | None, cache: Path) -> np.ndarray:
     """Pour chaque jour t, le financement encaissé par un vendeur pendant le jour t+1 (0 quand il est inconnu)."""
     rates = daily_funding(contract, cache) if contract else None
@@ -264,7 +306,11 @@ def tendance(args) -> dict:
     - marchés : le Bitcoin et l'Ether depuis 2018 ; puis un panier : chaque jour, les 20 cryptos les plus échangées
       (connues la veille), un vingtième du compte chacune, chacune avec sa propre règle ;
     - en plus, pour le Bitcoin et l'Ether, le test du mélange (1 000 fois les mêmes journées dans le désordre) : la
-      variante finit-elle plus haut sur le vrai marché que sur ses mélanges ?"""
+      variante finit-elle plus haut sur le vrai marché que sur ses mélanges ?
+    Ajouté après la relecture du 14/11 : le calcul ci-dessus ramène la position à sa part CHAQUE soir (sans payer ces
+    ordres), ce que le protocole ne disait pas. Pour une vente à découvert, cela change beaucoup le résultat. On
+    donne donc aussi le compte « tenu comme le bot » (`trend_account` : un ordre seulement quand la part change). Les
+    deux façons sont défendables ; une conclusion ne vaut que si elle tient dans les deux."""
     cache, out = Path(args.cache), {"majors": {}, "basket": {}}
     print("ÉTUDE 1 — LA RÈGLE DE TENDANCE DANS LES DEUX SENS (frais 0,15 % par changement, financement réel pour les ventes)")
     for symbol in trend.SYMBOLS:
@@ -288,10 +334,14 @@ def tendance(args) -> dict:
                 mixed.append(compound(d[np.isfinite(d)])["total"])
             result["shuffle"] = {"real": real, "median": float(np.median(mixed)), "beats": float((real > np.array(mixed)).mean())}
             whole = compound(days[np.isfinite(days)])
-            print(show(kind, result))
+            kept = trend_account(close, fund, kind)
+            kept_result, kept_whole = judge(kept, ts), compound(kept[np.isfinite(kept)])
+            print(show(f"{kind} · remise à sa part chaque soir", result))
             print(f"      tout : ×{whole['total']:.2f} (pire baisse {100 * whole['worst']:+.0f} %) · mieux que "
                   f"{100 * result['shuffle']['beats']:.1f} % des mélanges (médiane des mélanges ×{result['shuffle']['median']:.2f})")
-            out["majors"][f"{symbol} {kind}"] = {**result, "whole": whole}
+            print(show(f"{kind} · tenue comme le bot (un ordre quand la part change)", kept_result))
+            print(f"      tout : ×{kept_whole['total']:.2f} (pire baisse {100 * kept_whole['worst']:+.0f} %)")
+            out["majors"][f"{symbol} {kind}"] = {**result, "whole": whole, "kept": {**kept_result, "whole": kept_whole}}
     frames = daily_frames(cache)
     member, _ = longterm.universe(frames, 20)
     index = member.index.to_numpy(dtype="int64")
@@ -313,7 +363,9 @@ def tendance(args) -> dict:
             days = trend_days(close, fund, kind)
             # la crypto n'est tenue que les jours où elle fait partie des 20 ; en sortir ou y entrer coûte un ordre
             share = np.where(trend.levels(close) >= 0, KINDS[kind](np.maximum(trend.levels(close).astype(float), 0)), 0.0)
-            edge = np.abs(np.diff(np.concatenate(([False], inside)).astype(float))) * np.abs(share) * SPOT
+            enters = inside & ~np.concatenate(([False], inside[:-1]))  # un ordre pour entrer dans la liste…
+            leaves = inside & ~np.concatenate((inside[1:], [False]))  # …et un pour en sortir, payé le dernier jour tenu
+            edge = (enters.astype(float) + leaves.astype(float)) * np.abs(share) * SPOT
             totals[kind][where[ready]] += (days[ready] - edge[ready]) / 20
     live = counted > 0
     print(show("le panier simplement gardé (les 20, à parts égales)", judge(hold_total[live], index[live])))
@@ -554,6 +606,17 @@ CARRY_IN, CARRY_OUT = SPOT + PERP, SPOT + PERP  # ouvrir : acheter au comptant e
 CAPITAL = 1.5  # pour 1 tenu de chaque côté : 1 d'achat au comptant et 0,5 de marge pour le contrat vendu
 
 
+def by_period(values: np.ndarray, index: np.ndarray) -> dict:
+    """Le résultat moyen par an de chaque période (la moyenne des deux en cacherait la baisse)."""
+    return {name: float(values[mask].mean() * 365) if mask.any() else math.nan
+            for name, mask in (("recherche", index < ms(CUT)), ("confirmation", index >= ms(CUT)),
+                               ("douze derniers mois", index >= index[-1] - 365 * DAY))}
+
+
+def yearly(values: np.ndarray, index: np.ndarray) -> str:
+    return " · ".join(f"{name} {100 * value:+.1f} %" for name, value in by_period(values, index).items())
+
+
 def financement(args) -> dict:
     """ENCAISSER LE FINANCEMENT SANS PARIER SUR LE PRIX (le « portage neutre »).
     Le principe : acheter une crypto au comptant et vendre le même montant en contrat à terme. Que le prix monte ou
@@ -594,8 +657,9 @@ def financement(args) -> dict:
         always[np.flatnonzero(live)[0]] -= costs[0] / CAPITAL
         result = judge(always[live], index[live])
         print(show(f"A. toujours, moitié Bitcoin moitié Ether · {100 * (majors[live] < 0).mean().mean():.0f} % des jours payés au lieu d'encaissés", result))
-        out[f"A | {cost_name}"] = {**result, "yearly": float(always[live].mean() * 365)}
-        print(f"      en moyenne : {100 * always[live].mean() * 365:+.1f} % par an sur le capital")
+        out[f"A | {cost_name}"] = {**result, "yearly": by_period(always[live], index[live])}
+        print(f"      par an sur le capital : {yearly(always[live], index[live])} (un seul ordre, à l'ouverture : les frais "
+              f"n'y changent presque rien ; le compte complet est dans nuit2.py portage)")
         signal = majors.rolling(7).mean().shift(1)  # connu le matin : les 7 jours d'avant
         inside = (signal > 0).astype(float)
         turn = inside.diff().abs().fillna(inside)
@@ -604,8 +668,8 @@ def financement(args) -> dict:
         ok = live & signal.notna().all(axis=1).to_numpy()
         result = judge(when[ok], index[ok])
         print(show(f"B. seulement quand ça paie · dedans {100 * inside[ok].mean().mean():.0f} % du temps", result))
-        print(f"      en moyenne : {100 * when[ok].mean() * 365:+.1f} % par an sur le capital")
-        out[f"B | {cost_name}"] = {**result, "yearly": float(when[ok].mean() * 365)}
+        print(f"      par an sur le capital : {yearly(when[ok], index[ok])}")
+        out[f"B | {cost_name}"] = {**result, "yearly": by_period(when[ok], index[ok])}
         week = pd.to_datetime(index, unit="ms", utc=True)
         monday = week.dayofweek == 0
         past = table.rolling(7, min_periods=7).mean().shift(1).where(member.reindex(columns=table.columns))
@@ -625,8 +689,8 @@ def financement(args) -> dict:
         result = judge(best_days[ok], index[ok])
         print(show(f"C. les 5 mieux payés de la semaine · {100 * held[ok].sum(axis=1).mean():.0f} % du capital occupé en moyenne · "
                    f"{held[ok].gt(0).any().sum()} cryptos tenues au moins une semaine", result))
-        print(f"      en moyenne : {100 * best_days[ok].mean() * 365:+.1f} % par an sur le capital")
-        out[f"C | {cost_name}"] = {**result, "yearly": float(best_days[ok].mean() * 365)}
+        print(f"      par an sur le capital : {yearly(best_days[ok], index[ok])}")
+        out[f"C | {cost_name}"] = {**result, "yearly": by_period(best_days[ok], index[ok])}
     return out
 
 

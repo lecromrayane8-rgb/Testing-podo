@@ -34,6 +34,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import marches  # noqa: E402
 import nuit  # noqa: E402
 import vrai  # noqa: E402
 from nuit import ARCHIVE, CUT, DAY, HARD, PERP, SPOT, START, judge, listing, ms, session, show  # noqa: E402
@@ -139,6 +140,21 @@ def carry_account(frame: pd.DataFrame, rates: pd.Series, cost_spot: float, cost_
             "rebalances": len(turns), "liquidations": liquidations, "traded": traded}
 
 
+def riskless(index: np.ndarray, cache: Path) -> np.ndarray:
+    """Ce que rapporte chaque jour de l'argent simplement placé en dollars : le bon du Trésor américain à 3 mois
+    (FRED, série DTB3, en % par an), au dernier taux connu. C'est le repère d'une règle qui immobilise de l'argent."""
+    days, rate = marches.fred("DTB3", cache / "marches")
+    return pd.Series(rate / 100 / 365, index=days).reindex(index, method="ffill").to_numpy()
+
+
+def quarters(values: np.ndarray, index: np.ndarray) -> tuple[float, float, float]:
+    """La moyenne et sa fourchette à 95 % en comparant les TRIMESTRES entre eux : le financement vit par régimes de
+    plusieurs mois, deux mois qui se suivent se ressemblent, et la fourchette par mois est donc trop étroite."""
+    stamps = pd.to_datetime(index, unit="ms", utc=True)
+    table = pd.DataFrame({"g": stamps.year * 4 + (stamps.month - 1) // 3, "v": values}).groupby("g")["v"].agg(["count", "sum"])
+    return clustered_bounds(list(zip(table["count"], table["sum"])))
+
+
 def portage(args) -> dict:
     """LE PORTAGE DU FINANCEMENT AVEC SES VRAIS COMPTES (suite de l'étude 3, la seule qui « tient »).
     L'étude 3 supposait que le montant tenu reste égal à 1 pour 1,5 de capital, tous les jours, sans rien payer. En
@@ -154,7 +170,11 @@ def portage(args) -> dict:
     - frais : 0,15 % au comptant et 0,07 % sur le contrat (ceux des bots), puis 0,30 % des deux côtés (« durs ») ;
     - on donne aussi le compte SANS remise à l'équilibre, pour voir quand la vente aurait été liquidée ;
     - ce qui n'est toujours PAS compté : l'écart de prix entre le contrat et le comptant (le contrat est pris au prix
-      du comptant), le risque que la plateforme fasse défaut, les impôts."""
+      du comptant), le risque que la plateforme fasse défaut, les impôts.
+    Ajouté après la relecture indépendante du 14/11 (les relecteurs l'ont mesuré, je l'ai refait ici) : « TIENT »
+    compare à zéro, or l'argent du portage rapporterait quelque chose sans rien faire. On juge donc aussi le résultat
+    MOINS le bon du Trésor américain à 3 mois (FRED, DTB3), année par année, avec une fourchette qui compare les
+    trimestres (les mois se ressemblent trop d'un mois au suivant pour être comptés comme indépendants)."""
     cache = Path(args.cache)
     frames, rates = {}, {}
     for symbol, contract in (("BTC/USDT", "BTCUSDT"), ("ETH/USDT", "ETHUSDT")):
@@ -177,12 +197,21 @@ def portage(args) -> dict:
         print(show(f"avec ses vrais comptes, {name} · remises à l'équilibre : "
                    + ", ".join(f"{s.split('/')[0]} {runs[s]['rebalances']}" for s in frames) + " · liquidations : "
                    + ", ".join(f"{s.split('/')[0]} {len(runs[s]['liquidations'])}" for s in frames), result))
-        line = []
+        line, placed = [], riskless(index, cache)
         for year in sorted(set(years)):
-            gain = float(np.prod(1 + days[years == year]) - 1)
-            out[name]["yearly"][int(year)] = gain
-            line.append(f"{year} : {100 * gain:+.1f} %")
+            gain, safe = float(np.prod(1 + days[years == year]) - 1), float(np.prod(1 + placed[years == year]) - 1)
+            out[name]["yearly"][int(year)] = {"carry": gain, "riskless": safe}
+            line.append(f"{year} : {100 * gain:+.1f} % (placé : {100 * safe:+.1f} %)")
         print("      par année, sur le capital : " + " · ".join(line))
+        extra = judge(days - placed, index)
+        out[name]["extra"] = extra
+        print(show("le même compte MOINS de l'argent simplement placé (bon du Trésor à 3 mois)", extra))
+        for label, mask in (("recherche", index < ms(CUT)), ("confirmation", index >= ms(CUT)),
+                            ("depuis le 01/01/2025", index >= ms("2025-01-01")), ("douze derniers mois", index >= index[-1] - 365 * DAY)):
+            mean, low, high = quarters((days - placed)[mask], index[mask])
+            out[name][f"extra | {label}"] = {"mean": float(mean * 365), "low": float(low * 365), "high": float(high * 365)}
+            print(f"      {label} : écart avec l'argent placé {100 * mean * 365:+.1f} % par an "
+                  f"(de {100 * low * 365:+.1f} à {100 * high * 365:+.1f}, en comparant les trimestres)")
     for symbol in frames:
         alone = carry_account(frames[symbol], rates[symbol], SPOT, PERP, rebalance=False)
         when = nuit.longterm_day(alone["liquidations"][0]) if alone["liquidations"] else "jamais"
