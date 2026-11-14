@@ -14,6 +14,8 @@ volatilité) n'ont que quelques jours ou quelques dizaines de mois de données :
 
     python audit/nuit2.py donnees      # bougies d'une heure de toutes les paires depuis 2020, 5 minutes de six cryptos
     python audit/nuit2.py portage | heure | grille | peur | ecarts | passif | volatilite
+    python audit/nuit2.py contrats     # bougies d'une heure de tous les contrats perpétuels (archives), une fois
+    python audit/nuit2.py retombee     # la suite de l'étude « heure » : la vente après une envolée, sur le contrat
 """
 from __future__ import annotations
 
@@ -34,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import nuit  # noqa: E402
 import vrai  # noqa: E402
-from nuit import ARCHIVE, CUT, DAY, HARD, PERP, SPOT, START, judge, ms, session, show  # noqa: E402
+from nuit import ARCHIVE, CUT, DAY, HARD, PERP, SPOT, START, judge, listing, ms, session, show  # noqa: E402
 from tradingbot.data import make_exchange  # noqa: E402
 from tradingbot.execution import FUTURES  # noqa: E402
 from tradingbot.fleet import MAINTENANCE  # noqa: E402
@@ -779,6 +781,153 @@ def volatilite(args) -> dict:
     return out
 
 
+# --- suite de l'étude 9 : la retombée après une envolée, sur le contrat ------------------------------------------------
+
+CONTRACT_KLINES = "data/futures/um/monthly/klines/{c}/1h/"
+GEARING = 3.0
+
+
+def _contract_job(args) -> tuple[str, int | str]:
+    contract, folder = args
+    path = folder / f"{contract}-1h.pkl"
+    if path.exists():
+        return contract, len(pd.read_pickle(path))
+    try:
+        _, files = listing(CONTRACT_KLINES.format(c=contract))
+        parts = []
+        for key in sorted(k for k in files if k.endswith(".zip")):
+            raw = session().get(ARCHIVE + key, timeout=120).content
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                body = archive.read(archive.namelist()[0])
+            parts.append(pd.read_csv(io.BytesIO(body), header=None, skiprows=0 if body[:1].isdigit() else 1,
+                                     usecols=[0, 1, 2, 3, 4, 7], names=["ts", "open", "high", "low", "close", "money"]))
+        if not parts:
+            return contract, "aucun fichier"
+        table = pd.concat(parts)
+        stamp = table["ts"].to_numpy(dtype="int64")
+        table["ts"] = np.where(stamp > 1e14, stamp // 1000, stamp).astype(np.int64)
+        table = table[~table["ts"].duplicated()].sort_values("ts").reset_index(drop=True)
+        table.to_pickle(path)
+        return contract, len(table)
+    except Exception as exc:  # un contrat qui ne répond pas : dit, et ignoré
+        return contract, f"{type(exc).__name__} {str(exc)[:60]}"
+
+
+def contrats(args) -> None:
+    """Les bougies d'une heure de tous les contrats perpétuels en USDT (archives mensuelles de Binance)."""
+    cache = Path(args.cache)
+    folder = cache / "contrats"
+    folder.mkdir(parents=True, exist_ok=True)
+    names = sorted(p.stem for p in (cache / "financement").glob("*.pkl"))
+    done = failed = rows = 0
+    with ThreadPoolExecutor(args.fils) as pool:
+        for k, (contract, result) in enumerate(pool.map(_contract_job, [(c, folder) for c in names]), 1):
+            if isinstance(result, str):
+                failed += 1
+                print(f"  {contract} : {result}", flush=True)
+            else:
+                done, rows = done + 1, rows + result
+            if k % 100 == 0:
+                print(f"  {k}/{len(names)} contrats · {rows / 1e6:.1f} millions de bougies", flush=True)
+    print(f"contrats : {done} gardés ({rows / 1e6:.1f} millions de bougies d'une heure), {failed} sans réponse", flush=True)
+
+
+def contract_events(contract: str, frame: pd.DataFrame, rates: pd.Series) -> list[tuple]:
+    """Les envolées d'une heure d'un contrat, et ce que rapporte la vente à l'ouverture de l'heure suivante : la
+    baisse du prix, le financement versé pendant la durée, et la plus forte montée en route."""
+    rows, ts = [], frame["ts"].to_numpy(dtype="int64")
+    paid_at = (rates.index.to_numpy(dtype="int64") + MINUTE // 2) // MINUTE * MINUTE  # l'échéance, à la minute
+    paid = np.concatenate(([0.0], np.cumsum(rates.to_numpy(dtype=float))))
+    edges = [0, *(np.flatnonzero(np.diff(ts) != HOUR) + 1).tolist(), len(ts)]
+    for a, b in zip(edges[:-1], edges[1:]):
+        if b - a < USUAL + 2:
+            continue
+        part = frame.iloc[a:b]
+        closes, money = part["close"].to_numpy(dtype=float), part["money"].to_numpy(dtype=float)
+        usual = pd.Series(money).rolling(USUAL).mean().shift(1).to_numpy()
+        jump = np.concatenate(([0.0], closes[1:] / closes[:-1] - 1))
+        with np.errstate(invalid="ignore"):
+            base = (money >= nuit.SURGE * usual) & (usual >= nuit.MIN_MONEY / 24)
+        base[-1] = False
+        o, h, c = (part[name].tolist() for name in ("open", "high", "close"))
+        stamps, last = ts[a:b], b - a - 1
+        for move in MOVES:
+            taken = -QUIET - 1
+            for at in np.flatnonzero(base & (jump >= move)).tolist():
+                if at - taken < QUIET:
+                    continue
+                taken = at
+                entry, start = o[at + 1], int(stamps[at + 1])
+                for hours in HOURS:
+                    end = min(at + hours, last)
+                    first = np.searchsorted(paid_at, start, side="right")  # échéances après l'entrée…
+                    after = np.searchsorted(paid_at, int(stamps[end]) + HOUR, side="left")  # …et avant la sortie
+                    funding = float(paid[after] - paid[first])
+                    rows.append((contract, start, move, hours, -(c[end] / entry - 1), funding,
+                                 max(h[at + 1:end + 1]) / entry - 1))
+    return rows
+
+
+def retombee(args) -> dict:
+    """LA RETOMBÉE APRÈS UNE ENVOLÉE D'UNE HEURE, SUR LE CONTRAT (suite de l'étude 9).
+    L'étude 9 trouve, sur les prix au comptant, que vendre à découvert après une hausse d'au moins 10 % en une heure
+    « tient ». Mais on ne peut vendre à découvert que sur un contrat à terme : son prix n'est pas celui du comptant
+    (après une envolée, il est souvent déjà plus bas), le contrat n'existe pas pour toutes les cryptos, et le vendeur
+    paie ou touche le financement. Cette suite refait la mesure sur ce qu'on peut vraiment traiter.
+    Protocole, fixé avant le calcul :
+    - tous les contrats perpétuels en USDT de Binance, retirés compris, bougies d'une heure du contrat lui-même
+      (archives), de 2020 à fin octobre 2026 ;
+    - l'envolée : une heure du contrat qui clôture à +5 %, +10 % ou +20 % de la précédente, avec un volume d'au moins
+      3 fois sa moyenne des 7 jours d'avant, sur un contrat qui a échangé au moins 1 million de dollars par jour en
+      moyenne ces 7 jours ; une seule entrée par contrat et par 24 heures ;
+    - la vente : à l'ouverture de l'heure suivante ; le rachat : à la clôture 1, 4 ou 24 heures après l'envolée (les
+      trois sorties qui tiennent au comptant) ;
+    - le résultat : la baisse du prix du contrat, plus chaque financement versé entre la vente et le rachat (le vrai,
+      à l'heure de son échéance), moins deux ordres à 0,07 % (frais des bots), puis à 0,30 % (« durs ») ;
+    - sans levier, une vente dont le prix double est liquidée (−100 %) ; avec un levier de 3 (l'utilisateur veut du
+      levier), elle l'est dès que le prix monte de 30 % : on donne le résultat moyen et la part des mises perdues ;
+    - on décrit le risque : le pire trade, la part des trades qui perdent plus de 20 %, et le résultat année par année.
+    9 façons de faire (3 seuils × 3 durées) à deux niveaux de frais. Verdict comme partout : net sur les deux périodes."""
+    cache = Path(args.cache)
+    rows, read = [], 0
+    for path in sorted((cache / "contrats").glob("*-1h.pkl")):
+        contract = path.name[:-len("-1h.pkl")]
+        rates = nuit.funding(contract, cache)
+        frame = pd.read_pickle(path)
+        if rates is None or len(frame) <= USUAL + 2:
+            continue
+        read += 1
+        rows += contract_events(contract, frame, rates)
+    table = pd.DataFrame(rows, columns=["contract", "ts", "move", "hours", "fall", "funding", "top"])
+    first = table[(table["move"] == MOVES[0]) & (table["hours"] == HOURS[0])]
+    print(f"SUITE DE L'ÉTUDE 9 — LA RETOMBÉE, SUR LE CONTRAT : {read} contrats lus · {len(first)} envolées d'au moins 5 % en "
+          f"une heure avec un volume triplé ({(first['ts'] < ms(CUT)).sum()} avant 2024, {(first['ts'] >= ms(CUT)).sum()} depuis)")
+    out = {}
+    for cost, cost_name in ((PERP, "frais des bots (0,07 % par ordre)"), (HARD, "frais durs (0,30 % par ordre)")):
+        print(f"\n--- {cost_name} ---")
+        for move in MOVES:
+            for hours in HOURS:
+                part = table[(table["move"] == move) & (table["hours"] == hours)]
+                net = part["fall"].to_numpy() + part["funding"].to_numpy() - 2 * cost
+                top, stamps = part["top"].to_numpy(), part["ts"].to_numpy()
+                plain = np.where(top >= 1.0, -1.0, np.maximum(net, -1.0))
+                geared = np.where(top >= 0.9 / GEARING, -1.0, np.maximum(GEARING * net, -1.0))
+                result = judge(plain, stamps, chain=False)
+                years = pd.to_datetime(stamps, unit="ms", utc=True).year
+                yearly = {int(y): float(plain[years == y].mean()) for y in sorted(set(years))}
+                out[f"{cost_name} | {100 * move:.0f} % | {hours} h"] = {
+                    **result, "funding": float(part["funding"].mean()), "worst": float(plain.min()),
+                    "below_20": float((plain < -0.2).mean()), "geared": float(geared.mean()),
+                    "geared_lost": float((geared <= -1).mean()), "yearly": yearly}
+                print(brief(f"vendre après +{100 * move:.0f} % · rachat {hours} h après", result)
+                      + f" · financement moyen {100 * part['funding'].mean():+.3f} % · pire trade {100 * plain.min():+.0f} %, "
+                        f"{100 * (plain < -0.2).mean():.1f} % perdent plus de 20 % · levier ×{GEARING:.0f} : "
+                        f"{100 * geared.mean():+.2f} % par trade, {100 * (geared <= -1).mean():.1f} % de mises perdues")
+                if result["verdict"] != "rien":
+                    print("        par année : " + " · ".join(f"{y} : {100 * v:+.2f} %" for y, v in yearly.items()))
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("etude", choices=sorted(STUDIES))
@@ -794,7 +943,7 @@ def main() -> None:
 
 
 STUDIES = {"donnees": donnees, "portage": portage, "heure": heure, "grille": grille, "peur": peur, "ecarts": ecarts,
-           "passif": passif, "volatilite": volatilite}
+           "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee}
 
 if __name__ == "__main__":
     main()
