@@ -17,6 +17,11 @@ LA MÉTHODE, LA MÊME POUR TOUTES LES ÉTUDES :
   comptant) et des frais « durs » pour les petites cryptos (0,30 % par ordre : sur une crypto qui s'envole, on
   n'obtient pas le prix affiché).
 - Le résultat en argent composé (ce que devient 1), avec la pire baisse en route : une moyenne peut cacher une ruine.
+- Une cotation interrompue n'est pas un mouvement du prix. Quand une paire est suspendue puis reprend (jeton remplacé
+  par un autre, prix divisé : LUNA en mai 2022, COCOS, DREP…), la reprise ressemble à une variation de plusieurs
+  millions de pour cent. Chaque paire est donc coupée en morceaux continus (`pieces`), traités comme des cryptos
+  différentes ; une position ouverte à la suspension sort au dernier prix connu. (Trouvé pendant la nuit : le premier
+  passage des études 1, 2, 4 et 5 comptait ces reprises ; elles ont été refaites.)
 
     python audit/nuit.py donnees                 # télécharge le financement de tous les contrats (une fois)
     python audit/nuit.py tendance | mouvements | croise | cotations | paire | financement | heures
@@ -145,6 +150,13 @@ def daily_frames(cache: Path) -> dict[str, pd.DataFrame]:
     ex = vrai.exchange()
     ex.load_markets()
     return longterm.load(ex, ms(START), ex.fetch_time() // DAY * DAY, cache)
+
+
+def pieces(frame: pd.DataFrame) -> list[pd.DataFrame]:
+    """Une paire coupée en morceaux continus : une reprise de cotation n'est jamais lue comme une variation du prix."""
+    ts = frame["ts"].to_numpy(dtype="int64")
+    edges = [0, *(np.flatnonzero(np.diff(ts) != DAY) + 1).tolist(), len(ts)]
+    return [frame.iloc[a:b].reset_index(drop=True) for a, b in zip(edges[:-1], edges[1:])]
 
 
 def major(symbol: str, cache: Path) -> pd.DataFrame:
@@ -286,7 +298,7 @@ def tendance(args) -> dict:
     print(f"\nLe panier : chaque jour les 20 cryptos les plus échangées, un vingtième chacune ({len(frames)} paires lues)")
     totals = {kind: np.zeros(len(index)) for kind in KINDS}
     hold_total, counted = np.zeros(len(index)), np.zeros(len(index))
-    for symbol, frame in frames.items():
+    for symbol, frame in ((s, part) for s, whole in frames.items() for part in pieces(whole)):
         if symbol not in member.columns or not member[symbol].any() or len(frame) <= max(trend.AVERAGES):
             continue
         ts, close = frame["ts"].to_numpy(dtype="int64"), frame["close"].to_numpy(dtype=float)
@@ -373,7 +385,7 @@ def mouvements(args) -> dict:
     cache = Path(args.cache)
     frames = daily_frames(cache)
     rows = []
-    for symbol, frame in frames.items():
+    for symbol, frame in ((s, part) for s, whole in frames.items() for part in pieces(whole)):
         closes = frame["close"].to_numpy(dtype=float)
         money = (frame["close"] * frame["volume"]).to_numpy(dtype=float)
         ts = frame["ts"].to_numpy(dtype="int64")
@@ -428,11 +440,13 @@ def croise(args) -> dict:
     member, _ = longterm.universe(frames, 50)
     close = pd.DataFrame({s: f.set_index("ts")["close"] for s, f in frames.items()}).sort_index().reindex(member.index)
     move = close.pct_change(fill_method=None).shift(-1)  # du soir t au soir t+1
+    quoted = close.notna().astype(int)
     index = close.index.to_numpy(dtype="int64")
     print("ÉTUDE 4 — ACHETER LES PERDANTES, VENDRE LES GAGNANTES (les 50 cryptos les plus échangées de chaque jour)")
     out = {}
     for look in (1, 3, 7, 28):
-        past = (close / close.shift(look) - 1).where(member)
+        whole = quoted.rolling(look + 1).sum() == look + 1  # cotée sans interruption sur toute la durée
+        past = (close / close.shift(look) - 1).where(member & whole)
         rank = past.rank(axis=1, ascending=True).to_numpy()
         count = past.notna().sum(axis=1).to_numpy()[:, None]
         enough = count >= 30
@@ -468,7 +482,7 @@ def cotations(args) -> dict:
     bitcoin = frames["BTC/USDT"].set_index("ts")["close"]
     first_day = int(bitcoin.index[0])
     rows = []
-    for symbol, frame in frames.items():
+    for symbol, frame in ((s, pieces(whole)[0]) for s, whole in frames.items()):
         ts = frame["ts"].to_numpy(dtype="int64")
         if ts[0] < first_day + 60 * DAY:
             continue
@@ -708,7 +722,7 @@ def baisse(args) -> dict:
     cache = Path(args.cache)
     frames = daily_frames(cache)
     out, pumps, fresh = {}, [], []
-    for symbol, frame in frames.items():
+    for symbol, frame, opening in ((s, part, k == 0) for s, whole in frames.items() for k, part in enumerate(pieces(whole))):
         contract = contract_of(symbol, cache)
         rates = daily_funding(contract, cache) if contract else None
         if rates is None or len(frame) < 40:
@@ -735,7 +749,7 @@ def baisse(args) -> dict:
                     paid = float(got[at + 1:at + days + 1].sum())
                     pumps.append({"ts": int(ts[at]), "jump": float(jump[at]), "days": days, "net": result, "funding": paid})
         known = np.flatnonzero(np.isfinite(got))
-        if len(known) and ts[0] >= ms(START) + 60 * DAY and known[0] <= 30:  # contrat ouvert dans le mois de la cotation
+        if opening and len(known) and ts[0] >= ms(START) + 60 * DAY and known[0] <= 30:  # contrat ouvert dans le mois
             for days in (30, 90):
                 result = short(int(known[0]), days)
                 if result is not None:
