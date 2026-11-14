@@ -685,6 +685,8 @@ En argent composé (ce que devient 1 placé au début), avec la pire baisse en r
   des chutes, elle ne fabrique pas une hausse qui n'existe pas.
 - **Le levier sur cette règle (Bitcoin, 2018-2026)** : ×1 → ×15,5 (−50 %) ; ×2 → ×37 (−80 %) ; ×3 → ×22 (−93 %) ;
   ×5 → liquidé en route. Le levier aide un peu une règle qui marche, puis il la détruit.
+  *Corrigé le 14/11 (relecture) : ces chiffres venaient d'un premier calcul qui n'existe plus. Ceux du moteur du bot
+  sont plus bas dans ce fichier : ×2 → ×41,8 au taux d'emprunt fixe (×31 au vrai taux), ×3 → ×19,1 (−93 %).*
 
 Dit franchement : c'est le passé d'un seul actif, et −50 % en route reste très dur à vivre. Rien ne garantit la suite.
 Mais c'est la seule chose, de tout ce qui a été mesuré depuis le début, qui tient sur plusieurs périodes séparées.
@@ -778,17 +780,26 @@ marché que sur presque tous ses mélanges.
    quatre (surtout les actions : deux fois moins profonde), plus grande sur quatre (les monnaies).
 2. **Les tendances existent pourtant.** Les huit tests du mélange réunis excluent le hasard, et trois marchés sont nets
    à eux seuls. Sur le Nasdaq mélangé, la règle finit à ×10 ; sur le vrai, à ×139. Elle capte donc quelque chose de réel.
+   *Corrigé le 14/11 (relecture) : c'est vrai sur toute la durée, mais tout vient d'AVANT 1999. Avant 1999, la règle
+   finit plus haut que « garder » sur 6 marchés sur 8 et le hasard est exclu ; depuis 1999, sur 0 sur 8, et le hasard
+   seul donne ce résultat 46 fois sur 100. Il fallait écrire « les tendances ont existé », pas « existent ».*
 3. **Ce qui mange l'avantage : le temps passé dehors pendant que le marché monte, et les frais** (une trentaine
    d'ordres par an). Hors protocole, pour comprendre : sans le jour de retard, la règle passe devant « garder » sur 2
    marchés sur 8 ; avec en plus des frais de professionnel (0,03 % par ordre), sur 6 sur 8.
 4. **La porte du projet** : 0 ligne « robuste » sur 24, 21 « perd de l'argent ». Toutes les sorties réunies font
    −0,20 % contre « garder » (de −0,47 à +0,06) ; sur des marchés sans tendance, la même mesure rend les frais
    (−0,31 % en moyenne sur 20 essais, pour −0,30 % attendus).
+   *Corrigé le 14/11 (relecture) : 21 lignes sont négatives, mais 4 seulement le sont nettement (toute la fourchette
+   sous zéro). Et le bon repère « sans tendance » garde la hausse de fond du marché : il fait −0,52 % par sortie. Les
+   vraies sorties (−0,20 %) font donc mieux qu'un marché sans tendance, sans faire aussi bien que « garder ».*
 5. **Les cryptos.** Sur les 9 ans de bougies du bot (Binance), le test du mélange n'est pas net : mieux que 94,8 %
    des mélanges pour le Bitcoin, 96,0 % pour l'Ether. Sur les prix de Coinbase, plus longs (Bitcoin depuis 2015, Ether
    depuis 2016), la règle bat « garder » (×383 contre ×254, pire baisse −63 % contre −84 % ; ×743 contre ×297,
    −61 % contre −94 %) et le test est net (99,7 % et 99,9 %). C'est le même actif vu d'ailleurs : pas une preuve
    de plus. L'or en jetons (6 ans, pour information) : ×1,70 contre ×2,23.
+   *Corrigé le 14/11 (relecture) : mon test mélangeait aussi les 200 jours d'avant l'ouverture du compte, qui ont
+   beaucoup monté sur Binance, ce qui jouait contre la règle. Refait sans ce défaut : mieux que 99,7 % des mélanges
+   pour le Bitcoin (net) et 99,2 % pour l'Ether (presque).*
 
 ### Ce que ça veut dire
 
@@ -797,7 +808,16 @@ marché que sur presque tous ses mélanges.
 - **Elle n'a battu « garder » que sur les cryptos**, parce que leurs chutes ont été énormes (−77 % à −94 %) et
   fréquentes. Si les cryptos deviennent un marché plus calme, il faut s'attendre au résultat des actions : des chutes
   moins dures, et moins de gain que « garder ».
+  *Corrigé le 14/11 (relecture) : la profondeur des chutes n'explique rien, puisque le pétrole (−94 %), le Nikkei
+  (−82 %) et le Nasdaq (−78 %) ont chuté autant et que la règle y a perdu contre « garder ». Ce qui compte : sur les
+  cryptos, ces chutes sont revenues plusieurs fois en neuf ans. Et « que sur les cryptos » ne vaut que pour le total :
+  avant 1999, la règle gagnait sur 6 marchés sur 8.*
 - **Les frais décident, encore une fois.** Le bot de tendance reste en argent fictif.
+- *Ajouté le 14/11 (relecture) : dans ma mesure, l'argent sorti du marché ne rapporte rien. Ce n'est pas neutre, car
+  la règle est dehors un tiers à la moitié du temps. Deux relecteurs ont refait le Nasdaq avec les taux des bons du
+  Trésor : la règle y passe devant « garder » dès que l'argent dehors rapporte plus de 3,2 % par an (les dividendes,
+  que « garder » touche tout le temps, jouent dans l'autre sens). « Sur aucun des huit » vaut donc pour de l'argent
+  qui dort à 0 %. La décision ne change pas : argent fictif.*
 
 ## Les comptes à risque du bot de tendance (13/11/2026, fait)
 
@@ -835,6 +855,11 @@ même avec un stop suiveur, un compte à risque (levier ×2) et le compte à ris
    fait déjà, plus lentement, le travail d'un stop. Un calcul indépendant donne les mêmes chiffres.
 2. **Le levier ×2 n'est pas « deux fois mieux ».** Il a multiplié le gain du Bitcoin par 2,6, mais sur l'Ether il a
    fini plus bas que le compte normal. Dans les deux cas, il a fait vivre une chute de −80 % ou pire.
+   *Corrigé le 14/11 (relecture) : ces comptes sont flattés. Ils empruntent à un taux fixe (0,03 % par nuit, 11 % par
+   an), alors que le vrai financement vaut presque le double quand le marché monte, c'est-à-dire justement quand le
+   compte emprunte. Au vrai taux : Bitcoin ×31 au lieu de ×41,8 (le gain est multiplié par 2,0, pas 2,6), Ether ×9,0
+   au lieu de ×13,4. Et « sur l'Ether il finit plus bas » dépend du jour de départ : ouvert entre mi-2018 et 2021, le
+   compte ×2 finit un peu au-dessus du normal. Ce qui ne change jamais : la chute de −88 % en route.*
 3. **Plus de levier, c'est la ruine.** À ×3, le compte sur l'Ether est liquidé (19/05/2021) ; à ×5, les deux
    (Bitcoin le 27/06/2019, Ether le 12/03/2020).
 
@@ -844,12 +869,102 @@ Ces comptes sont là pour voir ce que le risque donne et ce qu'il coûte, pas po
 
 1. **Demain : une relecture indépendante** de ce qui touche à l'argent dans le bot de tendance (le moteur, le levier,
    la liquidation, le stop suiveur, les mesures). Jusqu'ici, je suis seul à l'avoir relu.
+   *Faite le 14/11 : voir « La relecture indépendante du 14/11/2026 » plus bas.*
 2. **Plus tard : travailler ensemble sur le court terme**, pour voir comment on pourrait y être rentable. Point de
    départ honnête : tout ce qui a été mesuré rend les frais. Ce qui reste à mesurer : entrer par ordre limite (frais
    trois fois plus bas), encaisser le financement des contrats à terme au lieu de le payer, les écarts entre
    plateformes, des trades de quelques jours. Ce sont des pistes, pas des promesses.
 3. **En attendant** : les bots et les quatre comptes de tendance tournent en argent fictif. Restent proposés :
    l'alerte Telegram quand le bot de tendance change de position, et une leçon de l'École sur la tendance.
+
+## La nuit de recherche du 13 au 14/11/2026 (faite)
+
+Ta demande : « cette nuit, tu vas tourner, faire toutes les stratégies possibles… pousse l'effort au max », avec la
+version baissière. Tout a été mesuré hors des bots (`audit/nuit.py` puis `audit/nuit2.py`) : rien n'a changé dans les
+bots à cause de ces mesures.
+
+**La méthode, la même pour tout** : de vrais prix de Binance ; des règles fixées d'avance, écrites et enregistrées dans
+git avant le premier calcul ; deux périodes (on cherche avant le 01/01/2024, on confirme après) ; « TIENT » = nettement
+positif sur les deux ; « piste » = positif en moyenne sur les deux, sans netteté (une règle sans aucun avantage
+obtient « piste » une fois sur quatre) ; « rien » sinon. Environ 330 façons de faire ont été jugées.
+
+| Idée | Ce que ça donne | Verdict |
+|---|---|---|
+| **La version baissière de la règle de tendance** (vendre à découvert quand le prix est sous ses moyennes) | Bitcoin depuis 2018 : la vente seule finit entre ×0,46 et ×0,90 selon la façon de la tenir ; « hausse et baisse » entre ×8 et ×17, contre ×15,8 pour la hausse seule. Ether : ×0,34 à ×0,48 ; ×7,8 à ×10,7 contre ×15,8. Panier des 20 plus échangées : ×0,48 | rien : le côté baissier n'ajoute rien de fiable |
+| **Suivre un gros mouvement** (ton idée), à la journée : acheter après +20 % avec un volume triplé (4 434 journées) | −1,2 % puis −1,3 % par trade à 1 jour ; pas mieux à 3 ou 7 jours, ni avec un stop suiveur | rien |
+| **Suivre un gros mouvement à l'heure près** : acheter à l'heure qui suit une hausse de 10 % en une heure (10 200 fois) | −1,4 % à 1 heure, −2,3 % à 4 heures, −3,0 % à 24 heures ; avec un stop suiveur de 5 % : −1,9 % ; avec un levier ×16 : −29 % par trade | rien, et nettement : on achète le sommet |
+| **Parier sur la retombée** (vendre après la hausse de 10 % en une heure) | Sur les prix au comptant : +1,9 % puis +1,7 % en 4 heures. Mais on ne peut vendre que sur un contrat : sur les contrats eux-mêmes, financement compris, entre −0,7 % et +0,5 % selon la durée ; avec un levier ×3, 6 à 18 % des mises perdues en entier | rien : l'effet n'existe que là où on ne peut pas le jouer (avant 2024, 4 135 envolées sur 6 066 étaient sur des cryptos sans contrat) |
+| **Acheter le creux** après une chute de 10 % ou 20 % en une heure | +1,2 % puis +0,5 % en 4 heures, fourchettes très larges | piste, pas plus |
+| **Encaisser le financement** sans parier sur le prix (acheter au comptant, vendre le contrat ; Bitcoin et Ether) | Positif 89 % des jours. Par an sur le capital, avec ses vrais comptes : 2020 +16 %, 2021 +26 %, 2022 +1 %, 2023 +5,5 %, 2024 +9 %, 2025 +3,3 %, 2026 +1,3 % (dix mois) | TIENT contre zéro, MAIS ne bat plus un simple placement sans risque : +9,3 % par an de mieux en 2020-2023, +0,3 % en 2024-2026, −1,4 % depuis 2025 |
+| **Les contrats les mieux payés** (les 5 plus hauts financements de la semaine) | +10 % par an en 2020-2023, +2 % en 2024-2026, +0,1 % sur douze mois | piste, en train de s'éteindre |
+| **Vendre les nouvelles cotations** (493 cryptos arrivées depuis 2020 : 3 sur 4 font moins bien que le Bitcoin) | Tenue 30 jours, financement et frais durs compris : +5,6 % puis +12 % par vente ; gain médian +28 %, mais 13 % des ventes sont liquidées (mise perdue) | piste, très risquée |
+| **Acheter les perdantes, vendre les gagnantes** (et l'inverse), 50 cryptos, sur 1 à 28 jours | l'élan sur 7 jours : ×18 avant 2024, ×0,48 depuis | rien |
+| **Le bot de grille** (acheter un cran plus bas, revendre un cran plus haut ; six grandes cryptos) | Par elle-même, la grille ne gagne rien : zéro moins les frais sur Bitcoin, Ether, BNB. Un petit plus sur Solana avec des crans de 5 %, pas sur les six réunies. C'est une demi-position : Bitcoin ×4,3 (pire baisse −49 %) contre ×9,5 (−77 %) en gardant tout | rien (une exception sur 48 essais) |
+| **Peur et avidité** : acheter quand tout le monde a peur | Pire que de choisir ses jours au hasard. L'inverse (rester dedans quand l'indice est à l'avidité) fait ×14 contre ×6,7 en gardant : c'est la règle de tendance sous un autre nom | rien pour la peur ; piste pour l'avidité |
+| **Écarts de prix entre plateformes** (Binance contre OKX, KuCoin, Gate ; 7 jours, minute par minute) | Écart habituel : 0,01 % sur les grandes cryptos, 0,03 % sur les petites. Quand il dépasse les frais, il a disparu à la minute suivante : −0,1 % à −0,3 % par essai | rien |
+| **Poser des ordres au lieu de les prendre** (gagner l'écart entre acheteurs et vendeurs ; 20 millions d'ordres servis) | L'avance d'un ordre qui attend (0,002 % à 0,03 %) a disparu au bout de 5 secondes ; les frais d'un ordre limite (0,02 %) la dépassent sur 11 contrats sur 12 | impossible aux frais d'un particulier |
+| **Vendre des options** (la prime de volatilité, 68 périodes de 30 jours) | Le marché craint plus de mouvement qu'il n'y en a 3 fois sur 4, mais le vendeur gagne +1,9 % puis +0,03 % par mois, avec un mois à −44 % | piste au mieux, risque énorme |
+| **Les heures de la semaine**, **le financement comme signal**, **l'écart Ether/Bitcoin** | aucune régularité qui survive à la seconde période | rien |
+
+### Ce que ça veut dire, dit franchement
+
+1. **Aucune façon de trader ne ressort.** Sur environ 330 essais, rien de tradable ne tient sur les deux périodes
+   au-dessus d'un simple placement. C'est la même réponse que les 15,8 millions de trades du court terme, par un
+   chemin différent.
+2. **Ton idée (entrer sur un gros mouvement, avec stop suiveur et levier) est la plus nettement perdante de la nuit** :
+   quand une crypto a pris 10 % en une heure, le mouvement est fait. Et l'inverse (parier sur la retombée) ne se joue
+   pas : les envolées qui retombent le plus sont celles des cryptos qu'on ne peut pas vendre à découvert.
+3. **La version baissière ne rend pas la règle « plus jouable ».** Vendre le Bitcoin sous ses moyennes n'a rien gagné
+   en neuf ans, alors que le marché a connu deux grandes chutes : les rebonds mangent le gain.
+4. **Les deux revenus « de structure » existent, mais ils se sont éteints.** Le financement payait 16 à 26 % par an
+   en 2020-2021 ; il paie moins qu'un placement sans risque en dollars depuis 2025. Trop de monde le fait.
+5. **Ce qui a le mieux tenu reste simple** : garder du Bitcoin en sortant quand il passe sous ses moyennes (le bot de
+   tendance), ou n'en tenir que la moitié (ce que fait une grille). Ce sont des façons de moins chuter, pas des
+   façons de gagner plus.
+
+### Trois erreurs de ma part pendant la nuit, corrigées
+
+- Une paire suspendue puis reprise (LUNA en mai 2022, COCOS, DREP) était lue comme une hausse de plusieurs millions
+  de pour cent : chaque paire est maintenant coupée en morceaux continus, et les études touchées ont été refaites.
+- L'effet « retombée » de l'étude à l'heure semblait net. Je l'ai refait sur les contrats avant de l'annoncer : il
+  disparaît. Leçon : un effet mesuré sur un prix qu'on ne peut pas traiter n'est pas un résultat.
+- La relecture a trouvé trois défauts dans mes mesures de la nuit (ci-dessous) : tous corrigés, tout a été refait.
+
+## La relecture indépendante du 14/11/2026 (faite)
+
+Seize relecteurs : six qui relisent ou recalculent chacun une partie, sans connaître mes conclusions, puis dix
+« contradicteurs » chargés de démonter chaque défaut important trouvé. Tous les défauts importants ont été confirmés.
+
+### Ce qui est solide
+
+- **Le moteur du bot de tendance : aucune erreur dans la logique de l'argent.** Deux recalculs écrits à part, sans
+  mon code, retrouvent les quatre comptes, les liquidations et les ordres jour par jour, au milliardième près.
+- Tous les chiffres annoncés du bot de tendance et du portage se retrouvent. Aucun regard vers le futur n'a été
+  trouvé, ni dans le moteur, ni dans les mesures.
+
+### Ce qu'elle a trouvé, et ce que j'en ai fait
+
+| Trouvé | Conséquence | Fait |
+|---|---|---|
+| Les comptes à risque empruntent à un taux fixe trop doux (0,03 % par nuit) | Au vrai taux : Bitcoin ×31 au lieu de ×41,8, Ether ×9 au lieu de ×13,4 | Dit sur l'onglet et ici. **Le moteur n'est pas changé : à décider avec toi** |
+| 29 défauts simulés sur 118 passaient les tests, tous dans les comptes à risque et avec stop | Une erreur future aurait pu passer inaperçue (le code d'aujourd'hui est juste) | Quatre tests ajoutés : les 11 défauts qui changeaient un chiffre des comptes sont maintenant attrapés ; 18 petits restent à couvrir |
+| Le test de robustesse du bot de tendance dit « non » même sur un avantage fabriqué (1 « oui » sur 90) | Son « non » ne prouve pas que c'est de la chance : il ne peut pas trancher | Le verdict affiché le dit maintenant |
+| La date de départ du compte fictif était réécrite à la moindre erreur de lecture du fichier | Les comptes seraient repartis de zéro sans le dire | Corrigé et testé |
+| Autres marchés : les tendances exploitées viennent toutes d'avant 1999 | « Les tendances existent » était trop fort | Mesuré avec l'outil (avant 1999 : 6 marchés sur 8 ; depuis : 0 sur 8), phrases corrigées plus haut |
+| Autres marchés : l'argent dehors ne rapporte rien dans ma mesure | Avec les taux des bons du Trésor, la règle passe devant « garder » sur le Nasdaq | Dit plus haut et dans l'outil ; pas mesuré par l'outil (le moteur ne compte pas d'intérêts) |
+| Le portage « tient » contre zéro, pas contre de l'argent simplement placé | Depuis 2025 il rapporte moins qu'un bon du Trésor | Mesuré et ajouté au tableau |
+| La vente à découvert de l'étude 1 était remise à sa part chaque soir, sans le dire | Bitcoin, vente seule : ×0,46 ou ×0,90 selon la façon de la tenir | Les deux comptes sont maintenant donnés |
+| Le financement de minuit était rangé une fois sur deux dans la mauvaise journée | Aucun verdict ne change | Corrigé, études refaites |
+| « Piste » était trop généreux (une moyenne positive peut cacher un compte qui fond) | Une « piste » de moins | Corrigé |
+
+### Ce qui reste à décider avec toi
+
+1. **Les comptes à risque** : les laisser au taux fixe (c'est écrit sur l'onglet qu'il est flatteur), ou faire lire au
+   bot le vrai financement de Binance pour qu'ils affichent ×31 et ×9.
+2. **Les 18 petits trous de tests** qui restent (bornes exactes, chiffres affichés du compte fictif, seuil de la porte) :
+   aucun ne déplace d'argent aujourd'hui.
+3. **La suite** : le court terme ensemble, comme tu l'as demandé. Point de départ : rien de ce qui a été mesuré ne
+   rapporte ; il reste tes idées à toi.
 
 ## Étape 2 — Gestion du risque
 
@@ -945,3 +1060,5 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 13/11/2026 | Le bot de tendance (argent fictif) | Fait : moteur et tests de l'argent, onglet « Tendance », porte `robustesse --tendance` (verdict : pas robuste, argent fictif seulement), outil de mesure sur le même moteur | `95db6b4` |
 | 13/11/2026 | La règle de tendance sur d'autres marchés (option A) | Fait : huit marchés, 39 à 77 ans, protocole enregistré avant le calcul. La règle ne bat « garder » sur aucun ; les tendances sont réelles mais les frais et le temps dehors mangent l'avantage. Une protection, pas un gain | `fe44aec` |
 | 13/11/2026 | Les comptes à risque du bot de tendance (levier ×2, stop suiveur) | Fait : quatre comptes fictifs côte à côte, définis avant d'être mesurés. Sur le passé, le stop suiveur n'a pas protégé ; le levier ×2 a aidé le Bitcoin, pas l'Ether, avec des chutes de −80 % et plus | `701905e` |
+| 14/11/2026 | La nuit de recherche (`audit/nuit.py`, `audit/nuit2.py`) | Faite : environ 330 façons de faire, protocoles enregistrés avant calcul. Rien de tradable ne tient au-dessus d'un simple placement ; suivre un gros mouvement est nettement perdant ; la version baissière n'ajoute rien | `effb7d2` |
+| 14/11/2026 | La relecture indépendante (seize relecteurs) | Faite : aucune erreur dans la logique de l'argent du bot de tendance ; quatre tests ajoutés, trois petits défauts corrigés, mes mesures corrigées et refaites. Reste à décider : le taux d'emprunt des comptes à risque | `cdec71f` |

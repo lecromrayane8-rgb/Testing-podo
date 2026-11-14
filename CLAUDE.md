@@ -166,7 +166,13 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   (plus haut des 22 derniers jours moins 3 moyennes simples de l'amplitude vraie), `stop_allows` (clôture sous la
   ligne → tout vendu à l'ouverture suivante ; retour quand une clôture repasse au-dessus). Sans levier ni stop, le
   compte normal est inchangé (ses tests au centime près). `coin_view` : `accounts` (les quatre), `history.variants`,
-  `stop` ; `chart_view` : la ligne du stop en pointillés. Tests : `tests/test_trend.py`.
+  `stop` ; `chart_view` : la ligne du stop en pointillés. Tests : `tests/test_trend.py`. Depuis la relecture du
+  14/11/2026 : `account_since` ne crée `compte.json` que s'il n'existe pas (un fichier verrouillé ou abîmé lève une
+  erreur, rien n'est réécrit : sinon les comptes repartaient de zéro sans le dire) ; `verdict` est bâti d'après les
+  chiffres et dit que la porte NE PEUT PAS TRANCHER pour cette règle (sur un avantage fabriqué, elle dit « robuste »
+  1 fois sur 90 : peu de sorties, gains très inégaux) ; `report` compte les ordres avec `count`. À SAVOIR : le
+  taux d'emprunt fixe des comptes à risque (0,03 % par nuit) est flatteur ; au vrai financement, Bitcoin ×31 au lieu
+  de ×41,8 et Ether ×9,0 au lieu de ×13,4 (dit sur l'onglet ; moteur inchangé tant que l'utilisateur n'a pas décidé).
 - `tradingbot/webapp.py` + `sitepage.py` : le site du bot (`main.py site`, http://127.0.0.1:8765, stdlib seulement).
   Refait le 06/11/2026 au soir autour de l'essaim (onglet Stratégies ajouté le 07/11, à deux mesures depuis le
   13/11 : « À l'essai » = `trial.ranking`, 30 jours, 7 jours, aujourd'hui, fourchette par journées, verdicts ou
@@ -350,7 +356,24 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   contre « garder » par décennie, le test du mélange (les mêmes journées dans le désordre, 1 000 fois : la règle
   exploite-t-elle de vraies tendances ?), la porte du projet, les sorties réunies année par année, un témoin sans
   tendance refait 20 fois ; hors protocole : l'effet du jour de retard et des frais ; `--csv-dir` pour des fichiers
-  fournis à la main (or, S&P 500).
+  fournis à la main (or, S&P 500). Corrigé après la relecture du 14/11 (hors protocole, dit dans l'en-tête) : le
+  mélange ne touche plus les 200 jours d'avant l'ouverture du compte, `--debut` et `--fin` mesurent une partie de
+  l'histoire, un second témoin garde la hausse de fond, la porte compte les lignes NETTEMENT négatives.
+  `nuit.py` puis `nuit2.py` (nuit du 13 au 14/11/2026) : « toutes les stratégies possibles », chaque protocole dans
+  la docstring de son étude et enregistré avant son calcul ; deux périodes (avant et après le 01/01/2024), verdict
+  `judge` : « TIENT » = fourchette à 95 % (par mois, `clustered_bounds`) toute positive sur les deux, « piste » =
+  moyenne et argent composé positifs sur les deux (une règle sans avantage y arrive une fois sur quatre), « rien ».
+  `nuit.py` : `donnees` (financement de tous les contrats, archives mensuelles `fundingRate`, 924 contrats),
+  `tendance` (la règle dans les deux sens : `trend_days` = part remise chaque soir, `trend_account` = tenue comme
+  le bot), `mouvements` (journées à +20 %), `croise`, `cotations`, `paire`, `financement` (le portage), `signal`,
+  `heures`, `baisse` (ventes avec le vrai financement) ; `pieces` coupe une paire à chaque interruption de
+  cotation (LUNA 2022) ; `daily_funding` ramène chaque échéance à l'heure ronde (les archives ont quelques ms de
+  retard). `nuit2.py` : `donnees` (bougies d'une heure de toutes les paires depuis 2020, 23 millions), `portage`
+  (le portage avec ses vrais comptes : marge, remises à l'équilibre, liquidation ; jugé aussi contre le bon du
+  Trésor à 3 mois, FRED `DTB3`, fourchette par trimestres), `heure` (gros mouvements à l'heure), `contrats` puis
+  `retombee` (la même chose sur les bougies des contrats eux-mêmes, archives `futures/um/monthly/klines`), `grille`,
+  `peur` (indice d'alternative.me), `ecarts` (OKX, KuCoin, Gate contre Binance, à la minute), `passif` (chaque
+  transaction de trois journées, archives `aggTrades` des contrats), `volatilite` (indice DVOL de Deribit).
   `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
@@ -365,7 +388,9 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `tests/test_fleet.py` (moteur : stop, objectif, levier, frais, financement, liquidation) et `tests/test_swarm.py`
   (parité direct/backtest, reprise, re-tests, classement) ; le bot de tendance dans `tests/test_trend.py` (la règle,
   l'ordre au lendemain, les frais au centime, aucun ordre passé ne change quand on ajoute des jours, la relève des
-  bougies, le garde-fou « marché sans avantage ») ; les lectures du graphique dans `tests/test_patterns.py`
+  bougies, le garde-fou « marché sans avantage » ; depuis la relecture du 14/11 : la vente qui ramène un compte à
+  son levier quand le prix chute, la bande au prix près des deux côtés, le stop d'un compte à levier, le stop jugé sur
+  la clôture et non sur la mèche, la date de départ jamais réécrite) ; les lectures du graphique dans `tests/test_patterns.py`
   (chaque figure sur un graphique dessiné à la main, puis les garanties communes).
 - Les réglages d'une technique sont fixés d'avance, jamais ajustés sur les données. Les frais et le glissement des bots
   sont dans `execution.FUTURES`, comptés dans `fleet.Book` (`_open`, `_fill`, `_secure`, `_close`) et nulle part
@@ -390,7 +415,10 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   (Remote Control). Vu le 13/11 au soir : l'environnement « Ray » est en accès réseau libre. `fred.stlouisfed.org`
   répond sans clé (`/graph/fredgraph.csv?id=SERIE` : séries d'un jour officielles). Refusent les robots : `stooq.com`
   (vérification du navigateur), `prices.lbma.org.uk` (403) ; l'or n'est plus chez FRED : pas de longue série de l'or
-  sans un fichier donné par l'utilisateur.
+  sans un fichier donné par l'utilisateur. Vu le 14/11 : répondent aussi, sans clé, `api.alternative.me` (indice
+  peur et avidité), `www.deribit.com/api/v2/public` (indice DVOL), et par ccxt OKX, KuCoin, Gate, Coinbase, Kraken,
+  Bitget, MEXC (Bybit refuse : 403) ; `data.binance.vision/data/futures/um/` donne `monthly/klines/<contrat>/1h/`,
+  `monthly/fundingRate/` et `daily/aggTrades/` ; FRED `DTB3` = le bon du Trésor à 3 mois (le repère sans risque).
 - Branche de travail : `claude/trading-bot`.
 - Plateforme (recherche du 04/11/2026, presse de fin juin 2026, statut actuel non confirmé) : Binance n'avait pas
   l'agrément MiCA au 30/06/2026 et a arrêté le trading pour les clients français (retraits seulement). En paper, ses
@@ -579,7 +607,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   est une loterie (×1,15 à ×18,6, −90 % en route). CE QUI TIENT : Bitcoin et Ether gardés, et mieux encore la règle
   « au-dessus de sa moyenne 50, 100 et 200 jours, un tiers chacune » : Bitcoin ×15,5 (pire baisse −50 %) contre
   ×6,2 (−77 %) de 2018 à 2026, mieux que garder sur les trois périodes dont 2018-2019 jamais vue ; levier ×2 → ×37
-  mais −80 %, ×5 → liquidé. Leçons : sur une période qui baisse, les ventes à découvert « gagnent » sans
+  mais −80 %, ×5 → liquidé (chiffres d'un premier calcul, remplacés par ceux du moteur : ×41,8 au taux fixe, ×31 au
+  vrai financement). Leçons : sur une période qui baisse, les ventes à découvert « gagnent » sans
   mérite (comparer au marché) ; une moyenne par semaine cache la casse d'un portefeuille très agité (toujours
   regarder l'argent composé et la pire baisse).
 - 13/11/2026 (nuit) : l'utilisateur demande pourquoi le court terme « marche chez les autres » et vise 2 000 € par
@@ -643,3 +672,32 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   En attendant, rien de nouveau n'est construit : les bots de court terme et les quatre comptes de tendance
   tournent en argent fictif (j'ai compris « ok, on fait ça » comme « on laisse tourner » ; les compléments, alerte
   Telegram et leçon de l'École, restent proposés). Pas de nouvelle étape sans son accord.
+- 14/11/2026 (nuit du 13 au 14, session autonome) : demande de l'utilisateur : « cette nuit, tu vas tourner, faire
+  toutes les stratégies possibles… si je te dis pas les choses, tu le fais pas… pousse l'effort au max », avec la
+  version baissière. FAIT, hors des bots (`audit/nuit.py`, `audit/nuit2.py`, environ 330 façons de faire, protocoles
+  enregistrés avant calcul). RÉSULTATS : (1) version baissière de la règle de tendance : rien (Bitcoin, vente seule
+  ×0,46 à ×0,90 selon la façon de la tenir ; hausse et baisse ×8 à ×17 contre ×15,8 en hausse seule ; Ether moins
+  bien dans tous les cas) ; (2) son idée « entrer sur un gros mouvement, stop suiveur, levier » : la plus nettement
+  perdante (après +10 % en une heure, acheter fait −1,4 % à 1 h, −2,3 % à 4 h, −3,0 % à 24 h ; levier ×16 : −29 %
+  par trade) ; (3) parier sur la retombée « tient » sur les prix au comptant (+1,9 % en 4 h) mais PAS sur les
+  contrats, les seuls qu'on peut vendre (−0,7 % à +0,5 %, 6 à 18 % des mises perdues à ×3) : l'effet vit sur les
+  cryptos sans contrat ; (4) le portage du financement (acheter au comptant, vendre le contrat) est le seul
+  « TIENT », mais contre zéro : 2020 +16 %, 2021 +26 %, 2022 +1 %, 2023 +5,5 %, 2024 +9 %, 2025 +3,3 %, 2026 +1,3 % ;
+  contre un bon du Trésor : +9,3 % par an en 2020-2023, +0,3 % en 2024-2026, −1,4 % depuis 2025 ; (5) pistes sans
+  netteté : vendre les nouvelles cotations 30 jours (+5,6 % puis +12 %, 13 % de ventes liquidées), acheter le creux
+  d'une chute d'une heure, suivre l'avidité (la tendance sous un autre nom) ; (6) rien : grille (zéro moins les
+  frais par elle-même), peur extrême, écarts entre plateformes (disparus à la minute suivante), ordres passifs
+  (impossible aux frais d'un particulier), options (piste au mieux, un mois à −44 %), heures, perdantes/gagnantes,
+  écart Ether/Bitcoin. LA RELECTURE INDÉPENDANTE (seize relecteurs, tous les défauts importants confirmés) : aucune
+  erreur dans la logique de l'argent du bot de tendance (deux recalculs écrits à part : mêmes chiffres) ; trouvé :
+  taux d'emprunt des comptes à risque flatteur (×31 et ×9 au vrai taux), 29 défauts simulés sur 118 non attrapés
+  par les tests (11 corrigés par quatre tests, 18 petits restent), porte incapable de trancher, date du compte
+  réécrite sur une erreur de lecture (corrigé), « les tendances existent » trop fort (tout vient d'avant 1999 :
+  6 marchés sur 8 avant, 0 sur 8 depuis), argent dehors à 0 % pas neutre (Nasdaq), portage jugé contre zéro, vente
+  à découvert remise chaque soir sans le dire, financement de minuit mal daté, « piste » trop généreuse : mes
+  outils sont corrigés et les études refaites. Leçons de méthode : un effet mesuré sur un prix qu'on ne peut pas
+  traiter n'est pas un résultat ; « tient » doit se juger contre de l'argent simplement placé, pas contre zéro ;
+  une cotation interrompue n'est pas un mouvement ; couper l'histoire en deux avant d'écrire « ça existe ».
+  À DÉCIDER AVEC L'UTILISATEUR : (a) comptes à risque au vrai financement ou non ; (b) les 18 petits trous de tests ;
+  (c) la suite : le court terme ensemble (commencer par lui demander ses idées ; tout ce qui a été mesuré rend les
+  frais ou moins). Rien de nouveau n'est branché dans les bots.
