@@ -16,6 +16,8 @@ volatilité) n'ont que quelques jours ou quelques dizaines de mois de données :
     python audit/nuit2.py portage | heure | grille | peur | ecarts | passif | volatilite
     python audit/nuit2.py contrats     # bougies d'une heure de tous les contrats perpétuels (archives), une fois
     python audit/nuit2.py retombee     # la suite de l'étude « heure » : la vente après une envolée, sur le contrat
+    python audit/nuit2.py anciennes    # bougies d'une heure de 2017 à 2019 des paires qui existaient déjà, une fois
+    python audit/nuit2.py creux        # « acheter le creux » refait sur cette troisième période
 """
 from __future__ import annotations
 
@@ -38,6 +40,7 @@ import marches  # noqa: E402
 import nuit  # noqa: E402
 import vrai  # noqa: E402
 from nuit import ARCHIVE, CUT, DAY, HARD, PERP, SPOT, START, judge, listing, ms, session, show  # noqa: E402
+from tradingbot import trend  # noqa: E402
 from tradingbot.data import make_exchange  # noqa: E402
 from tradingbot.execution import FUTURES  # noqa: E402
 from tradingbot.fleet import MAINTENANCE  # noqa: E402
@@ -957,6 +960,93 @@ def retombee(args) -> dict:
     return out
 
 
+# --- suite de l'étude 9 : « acheter le creux » sur une troisième période ---------------------------------------------
+
+MARKET_FALL = 0.02  # le Bitcoin perd au moins 2 % dans la même heure : la chute est celle du marché, pas de la crypto
+
+
+def anciennes(args) -> None:
+    """Les bougies d'une heure du 17/08/2017 au 31/12/2019, pour les paires qui existaient déjà au 01/01/2020."""
+    cache = Path(args.cache)
+    jobs = []
+    for symbol in pairs(cache):
+        path = cache / f"{symbol.replace('/', '-')}-1h.pkl"
+        if path.exists() and int(pd.read_pickle(path)["ts"].iloc[0]) <= ms(START) + HOUR:
+            jobs.append((symbol, "1h", trend.EARLY_MS, ms(START), cache))
+    done = failed = rows = 0
+    with ThreadPoolExecutor(args.fils) as pool:
+        for symbol, result in pool.map(_candles_job, jobs):
+            if isinstance(result, str):
+                failed += 1
+                print(f"  {symbol} : {result}", flush=True)
+            else:
+                done, rows = done + 1, rows + result
+    print(f"anciennes bougies : {done} paires ({rows / 1e6:.1f} millions de bougies d'une heure avant 2020), {failed} sans réponse",
+          flush=True)
+
+
+def creux(args) -> dict:
+    """ACHETER LE CREUX, SUR UNE TROISIÈME PÉRIODE (suite de l'étude 9).
+    Dans l'étude 9, acheter à l'heure qui suit une chute d'au moins 10 % en une heure est la seule « piste » qu'on
+    peut vraiment jouer (un simple achat au comptant) : +1,2 % puis +0,5 % en 4 heures, sans netteté. Avant d'en
+    faire quoi que ce soit, la même règle, sans rien y changer, sur une période jamais regardée.
+    Protocole, fixé avant le calcul :
+    - la période nouvelle : du 17/08/2017 au 31/12/2019, les paires USDT de Binance qui existaient alors, bougies
+      d'une heure ; les deux autres périodes sont celles de l'étude 9 (2020-2023 et 2024-2026) ;
+    - exactement les définitions de l'étude 9 (`hour_events`, `after_move`) : une chute d'au moins 10 % ou 20 % en une
+      heure, volume triplé, 1 million de dollars échangés par jour, une entrée par crypto et par 24 heures, achat à
+      l'ouverture de l'heure suivante, revente 1, 4 ou 24 heures après la chute ;
+    - les frais : c'est un achat au comptant, donc 0,15 % par ordre (ceux du bot au comptant, plus lourds que les
+      0,07 % de l'étude 9), puis 0,30 % (« durs ») ;
+    - le verdict demande maintenant TROIS périodes : « TIENT » = fourchette à 95 % toute positive sur les trois ;
+      « piste » = positif en moyenne sur les trois ; « rien » sinon ;
+    - fixé d'avance aussi : la même mesure en séparant les chutes « du marché » (le Bitcoin perd au moins 2 % dans la
+      même heure) des chutes « de la crypto seule » (le Bitcoin perd moins de 2 %), pour savoir laquelle rebondit ;
+    - on décrit le risque : le pire trade et la part des trades qui perdent plus de 20 %.
+    18 façons de faire (2 seuils × 3 durées × toutes, marché, seule) à deux niveaux de frais."""
+    cache = Path(args.cache)
+    bitcoin = pd.read_pickle(cache / "BTC-USDT-1h.pkl")
+    market = pd.Series(bitcoin["close"].to_numpy(dtype=float), index=bitcoin["ts"].to_numpy(dtype="int64")).pct_change()
+    rows = []
+    for symbol in pairs(cache):
+        path = cache / f"{symbol.replace('/', '-')}-1h.pkl"
+        if path.exists():
+            rows += [row for row in hour_events(symbol, pd.read_pickle(path).reset_index(drop=True))
+                     if row[2] == "chute" and row[4] == 1 and row[3] >= 0.10]
+    table = pd.DataFrame(rows, columns=["symbol", "ts", "direction", "move", "side", *EXITS])
+    table["market"] = market.reindex(table["ts"].to_numpy() - HOUR).to_numpy()  # le Bitcoin pendant l'heure de la chute
+    cuts = (("2017-2019", trend.EARLY_MS, ms(START)), ("2020-2023", ms(START), ms(CUT)), ("2024-2026", ms(CUT), 2 ** 62))
+    first = table[table["move"] == 0.10]
+    print("SUITE DE L'ÉTUDE 9 — ACHETER LE CREUX, SUR TROIS PÉRIODES · chutes d'au moins 10 % en une heure : "
+          + " · ".join(f"{name} : {((first['ts'] >= a) & (first['ts'] < b)).sum()}" for name, a, b in cuts)
+          + f" · dont chutes du marché (Bitcoin à −2 % ou pire) : {100 * (first['market'] <= -MARKET_FALL).mean():.0f} %")
+    kinds = (("toutes les chutes", pd.Series(True, index=table.index)),
+             ("chute du marché", table["market"] <= -MARKET_FALL), ("chute de la crypto seule", table["market"] > -MARKET_FALL))
+    out = {}
+    for cost, cost_name in ((SPOT, "frais du bot au comptant (0,15 % par ordre)"), (HARD, "frais durs (0,30 % par ordre)")):
+        print(f"\n--- {cost_name} ---")
+        for kind, mask in kinds:
+            for move in (0.10, 0.20):
+                for exit_name in EXITS[:3]:
+                    part = table[mask & (table["move"] == move)]
+                    net, stamps = part[exit_name].to_numpy(dtype=float) - 2 * cost, part["ts"].to_numpy()
+                    periods = {name: nuit.bounds(net[(stamps >= a) & (stamps < b)], stamps[(stamps >= a) & (stamps < b)])
+                               for name, a, b in cuts}
+                    clear = all(m["n"] > 1 and m["low"] > 0 for m in periods.values())
+                    positive = all(m["n"] > 0 and m["mean"] > 0 for m in periods.values())
+                    verdict = "TIENT" if clear else "piste" if positive else "rien"
+                    out[f"{cost_name} | {kind} | {100 * move:.0f} % | {exit_name}"] = {
+                        **periods, "verdict": verdict, "worst": float(net.min()) if len(net) else math.nan,
+                        "below_20": float((net < -0.2).mean()) if len(net) else math.nan}
+                    line = " · ".join(
+                        f"{name} {100 * m['mean']:+.2f} % ({100 * m['low']:+.2f} à {100 * m['high']:+.2f}) n={m['n']}"
+                        if m["n"] > 1 else f"{name} : {m['n']} trade" for name, m in periods.items())
+                    print(f"  [{verdict:>5}] {kind} · après −{100 * move:.0f} % · revente {exit_name} · {line}"
+                          + (f" · pire trade {100 * net.min():+.0f} %, {100 * (net < -0.2).mean():.1f} % perdent plus de 20 %"
+                             if len(net) else ""))
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("etude", choices=sorted(STUDIES))
@@ -972,7 +1062,8 @@ def main() -> None:
 
 
 STUDIES = {"donnees": donnees, "portage": portage, "heure": heure, "grille": grille, "peur": peur, "ecarts": ecarts,
-           "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee}
+           "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee,
+           "anciennes": anciennes, "creux": creux}
 
 if __name__ == "__main__":
     main()
