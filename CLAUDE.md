@@ -404,7 +404,9 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   27 mesures connues à la clôture du signal, jugé quatre fois sur des trades jamais vus ; témoins au hasard et qui
   triche ; a besoin de scikit-learn, pour cette mesure seulement : le bot n'en dépend pas), `piste` (la ligne
   gagnante des bots en 4 heures revérifiée : bougies mélangées `shuffled`, autre période, autres cryptos, sens du
-  trade retiré), `sens` (les bots en 1 et 5 minutes, dans le sens ou à contresens de la tendance sur 15 minutes,
+  trade retiré), `sansrecul` (la même piste sur un univers choisi le premier jour de la fenêtre, `universe_then`,
+  paires retirées de la cote comprises, bougies de 4 heures refaites à partir des bougies d'une heure : c'est elle
+  qui fait tomber la piste), `sens` (les bots en 1 et 5 minutes, dans le sens ou à contresens de la tendance sur 15 minutes,
   1 heure et 4 heures, de la crypto et des autres cryptos), `calme` (les mêmes bots sur les 18 contrats de Binance
   sur des marchés traditionnels : métaux, pétrole, gaz, S&P 500, Nasdaq, neuf grandes entreprises).
   `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
@@ -785,9 +787,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   qu'il déconseille −0,293 %, témoin qui triche +0,696 % : rien dans l'ensemble ; par unité, ses préférés perdent de
   1 minute à 1 heure et GAGNENT sur les bots en 4 heures (+0,569 %, de +0,115 à +1,022). `piste` (`d836992`) : sur
   des bougies mélangées −0,217 % (pas de fuite), autre période 2020-2023 +0,354 % (de −0,146 à +0,854), 24 autres
-  cryptos +0,368 % (de −0,130 à +0,865), une fois le sens retiré +0,5 à +0,8 % net dans les trois : « piste », la
-  première qui revient quand on la refait ; relecture indépendante lancée (une seule relecture groupée pour cette
-  étape). `sens` (`180bbf2`, 11,2 millions de trades en 1 et 5 minutes) : rien, le plus grand écart « dans le sens »
+  cryptos +0,368 % (de −0,130 à +0,865), une fois le sens retiré +0,5 à +0,8 % net dans les trois : « piste ».
+  TOMBÉE À LA RELECTURE (voir l'entrée « relecture » plus bas) : le choix des cryptos connaissait la suite. `sens` (`180bbf2`, 11,2 millions de trades en 1 et 5 minutes) : rien, le plus grand écart « dans le sens »
   est de 0,03 % pour 0,15 % de frais ; en 5 minutes, suivre un mouvement marqué est pire. `calme` (`9e5e5ba`, 18
   marchés, 12,1 millions de trades) : avant frais zéro, après frais −0,135 à −0,204 %, 0 stratégie prouvée sur 255 ;
   les frais valent 2 bougies d'une minute sur les cryptos, 6 sur l'or, 12 sur le S&P 500. Expliqué d'après le code :
@@ -808,3 +809,27 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   quand la relecture de la piste des bots en 4 heures sera rendue : lui en donner les conclusions et, si elle tient,
   lui proposer un plan (un filtre d'entrée pour les bots en 4 heures, en argent fictif, à approuver). Toujours en
   attente de son oui ou non : le compte fictif « acheteur de krach ».
+- 15/11/2026 (relecture) : LA PISTE DES BOTS EN 4 HEURES NE TIENT PAS. Deux relectures groupées lancées le même
+  jour (six agents sur la piste, trois sur le retour de l'agent) ont épuisé sa limite d'utilisation de 5 heures
+  avant de rendre un seul résultat (plus de 700 000 tokens) ; il a réinitialisé la limite et dit « continue ». Les
+  résultats de deux relecteurs, gardés sur le disque, ont été relus, et le calcul décisif refait avec le code de
+  l'étude (`audit/nuit2.py sansrecul`, `bc4b9b7`, mêmes chiffres au millième) : aucune fuite (258 000 mesures
+  inchangées quand on retire le futur) ; le résultat se refait avec un autre code et sur les prix des contrats
+  (+0,49 à +0,60 %) ; mais les cryptos venaient du cache des bots (encore cotées et agitées en novembre 2026). Sur un
+  univers choisi le premier jour : +0,167 % (de −0,288 à +0,623) sur 46 cryptos en 2023-2026, −0,035 % (de −0,619 à
+  +0,548) sur 39 cryptos en 2020-2023. Aussi : rien avec un modèle linéaire, cinq journées font la moitié du gain.
+  Reste vrai : le modèle reconnaît les mauvaises entrées (−0,5 à −1,5 %), ce qui fait perdre moins, pas gagner.
+  Rien à brancher. Le retour de l'agent, lui, est fini : relu par moi (la relecture groupée a été arrêtée), 674
+  tests verts, envoyé (`44cc3ea`). Il a aussi demandé si ses bots peuvent être reliés à Claude : répondu que les
+  résultats du jour ne viennent PAS de ses bots (je ne vois pas son PC : aucun dossier partagé) ; qu'un bilan
+  régulier par Claude est faisable sans connecteur, ni skill, ni serveur (tâche planifiée, une heure au plus vite,
+  compte dans son forfait ; ou l'API, payée à part, 100 $ de crédits par mois inclus dans le Max d'après la
+  documentation) ; que Claude décidant en direct ne ferait pas mieux que le modèle testé. Proposé, en attente : le
+  bilan de son vrai jour 1 (photos de l'onglet Stratégies, ou une session Claude sur son PC) ; un plan pour un bilan
+  automatique chaque jour ; le compte fictif « acheteur de krach ».
+  RÈGLE POUR LA SUITE : ne lance plus d'équipe d'agents (Workflow, plusieurs Agent) sans le lui demander en disant ce
+  que ça coûte ; les vérifications se font par des calculs directs, que la machine fait sans tokens. Le mode
+  « ultracode » de sa session pousse à l'inverse : sa demande d'économie passe avant.
+  Leçons : le choix des cryptos d'une mesure ne doit rien savoir de la suite (jamais une liste prise à la fin de la
+  période : choisir l'univers le premier jour, paires retirées de la cote comprises) ; un résultat qui revient sur
+  « une autre période » et « d'autres cryptos » tirées du même panier biaisé n'est pas confirmé.

@@ -1151,7 +1151,7 @@ clôture du signal ; quatre fois de suite, il apprend sur le passé et note les 
 perdent aussi : il transforme −0,16 % en −0,09 %. Verdict fixé d'avance, sur l'ensemble : rien. Une ligne gagne, les
 bots en 4 heures : le protocole la traitait comme une piste à revérifier (15 lignes regardées).
 
-### La piste des bots en 4 heures (étude 17 bis : piste)
+### La piste des bots en 4 heures (étude 17 bis : « piste », tombée ensuite à la relecture)
 
 Vérification fixée avant son calcul (`audit/nuit2.py piste`, protocole `d836992`), bots en 4 heures, même modèle :
 
@@ -1172,10 +1172,52 @@ deux confirmations ne sont pas nettes. Ce qui peut encore la faire tomber : les 
 plusieurs jours, quelques gros trades qui feraient la moyenne, le choix des cryptos (celles qui existent encore en
 novembre 2026), une erreur de ma part.
 
-### La relecture indépendante de cette piste
+### La relecture indépendante de cette piste (15/11/2026 : elle ne tient pas)
 
-En cours le 15/11/2026 (six relecteurs : fuites, calcul refait à part, vrais frais, exécution, statistique, ce que le
-modèle a appris ; puis vérification des constats importants). Rien n'est branché dans les bots.
+Six relecteurs ont été lancés. Ils ont épuisé la limite d'utilisation de la journée avant de rendre leurs conclusions
+(plus de 700 000 tokens : une erreur de dosage de ma part). Deux d'entre eux avaient déjà beaucoup calculé ; leurs
+résultats, gardés sur le disque, ont été relus, et le calcul qui décide a été refait avec le code de l'étude
+(`audit/nuit2.py sansrecul` : mêmes chiffres que le relecteur, à la troisième décimale).
+
+**Ce qui est solide.**
+
+- Aucune fuite. Les 24 mesures de 10 748 bougies (258 000 cases) restent identiques quand on retire ou qu'on change
+  le futur ; l'heure du Bitcoin n'est jamais postérieure au signal ; chaque trade lit la bougie d'avant son entrée,
+  même avec des trous dans les bougies ; les signaux des techniques ne changent pas quand on coupe le futur ; 400
+  trades préférés recalculés à la main sont identiques. Le test voit une fuite quand on lui en donne une.
+- Le résultat se refait. Un relecteur a tout réécrit (son code, ses mesures, un autre modèle) : ses 10 % les mieux
+  notés font +0,494 % sur les 24 cryptos, +0,326 % sur l'autre période, +0,597 % sur les autres cryptos, et +0,503 %
+  sur les prix des contrats (les seuls qu'on peut vendre). Le vrai financement ne change presque rien (+0,609 % au
+  lieu de +0,586 %).
+
+**Ce qui la fait tomber : le choix des cryptos connaissait la suite.** Les cryptos des études 17 et 17 bis viennent
+du cache des bots : celles qui sont encore cotées, liquides et agitées en novembre 2026. Avec un univers choisi le
+premier jour de la fenêtre (cotées depuis 30 jours, 5 millions de dollars par jour, paires retirées de la cote
+ensuite comprises), même modèle, mêmes réglages :
+
+| Cryptos choisies… | Tous les trades | Ses 10 % préférés | Ceux qu'il déconseille |
+|---|---|---|---|
+| dans le cache des bots (novembre 2026), 2023-2026 | −0,196 % | +0,569 % (de +0,115 à +1,022) | −1,294 % |
+| le 15/11/2023, premier échantillon (23 cryptos) | −0,084 % | +0,371 % (de −0,168 à +0,910) | −0,519 % |
+| le 15/11/2023, second échantillon (23 cryptos) | −0,147 % | −0,036 % (de −0,485 à +0,414) | −0,628 % |
+| le 15/11/2023, les deux réunis (46 cryptos) | −0,115 % | +0,167 % (de −0,288 à +0,623) | −0,573 % |
+| le 15/11/2020, tout l'univers (39 cryptos), 2020-2023 | −0,146 % | −0,035 % (de −0,619 à +0,548) | −0,713 % |
+
+Trois autres faiblesses vont dans le même sens : avec un modèle linéaire, rien (−0,370 %), et presque rien avec une
+autre variante (+0,166 %, pas net) ; les cinq meilleures journées font la moitié du gain, et par pari distinct (5,5
+trades par pari) la moyenne est de +0,28 % (de −0,06 à +0,62) ; 7 à 30 % des ventes préférées étaient impossibles
+(pas de contrat coté à ce moment-là).
+
+**Ce que le modèle avait appris** : entrer à contre-pied d'un gros mouvement de 24 heures, à fort volume, sur une
+crypto très agitée. Sur des cryptos choisies parce qu'elles sont encore là et encore agitées à la fin, ce pari gagne ;
+sur des cryptos choisies au départ, non.
+
+**Ce qui reste vrai** : le modèle reconnaît les mauvaises entrées (ses 10 % déconseillés perdent de 0,5 à 1,5 %
+partout). Les éviter fait perdre moins ; cela ne fait pas gagner.
+
+**Conclusion : rien à brancher dans les bots.** Non relu, faute de relecteurs : le prix de sortie quand une bougie
+ouvre au-delà du stop, et ce qu'aurait gagné un compte qui ne prend qu'un trade à la fois ; sans objet depuis que la
+piste est tombée. Leçon : le choix des cryptos d'une mesure ne doit rien savoir de la suite.
 
 ### Ne trader que dans le sens du court terme (étude 18 : non)
 
@@ -1265,6 +1307,9 @@ retour : `c29aeab`.
 - La règle est rejouée à partir de la première bougie du graphique, sans position ; le bot, lui, a un passé. Un petit
   décalage est possible : le retour le dit (« il a aussi pris N trades que cette règle rejouée ne montre pas »).
 - Ce retour explique ; il ne rend aucun bot gagnant, et il ne change rien aux bots.
+- La relecture groupée de ce changement a été arrêtée (limite d'utilisation). Je l'ai relu moi-même : le choix
+  d'entrer est le même booléen qu'avant, les listes sont bornées, une ancienne fiche se lit toujours ; la suite
+  complète (674 tests) est verte.
 
 ### La suite
 
@@ -1372,7 +1417,7 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 15/11/2026 | Un bot qui change de sens selon la veille ? | Mesuré (`audit/nuit2.py veille`) : le sens d'hier n'annonce pas celui d'aujourd'hui (−0,28 % puis −0,06 % par jour après frais ; −0,10 % par heure). Rien de construit | `82efb4a` |
 | 15/11/2026 | « Défavorable », et il entre quand même | Mesuré (`audit/nuit2.py agents`, 2,95 millions de trades non vus) : la mention des agents ne sépare rien (+0,004 % d'écart, comme pile ou face). Rien de construit ; réécriture de la mention proposée | `9435ea6` |
 | 15/11/2026 | Une « intelligence » qui apprend quand entrer | Mesuré (`audit/nuit2.py intelligence`, 16,5 millions de trades, jugé sur 13,4 millions jamais vus) : rien dans l'ensemble (ses préférés −0,095 %, témoin qui triche +0,696 %) ; une ligne gagne, les bots en 4 heures (+0,569 %) | `3f5a4f1` |
-| 15/11/2026 | La piste des bots en 4 heures, vérifiée | Mesuré (`audit/nuit2.py piste`) : témoin sur bougies mélangées propre, +0,354 % sur 2020-2023, +0,368 % sur 24 autres cryptos, sans netteté : piste ; relecture indépendante en cours | `d836992` |
+| 15/11/2026 | La piste des bots en 4 heures, vérifiée puis relue | Mesuré (`audit/nuit2.py piste`) : témoin sur bougies mélangées propre, +0,354 % sur 2020-2023, +0,368 % sur 24 autres cryptos, sans netteté : piste. Relecture : aucune fuite, mais le choix des cryptos connaissait la suite (`sansrecul` : +0,167 % sur 46 cryptos choisies au départ, −0,035 % sur 2020-2023) : elle ne tient pas, rien à brancher | `d836992` |
 | 15/11/2026 | Ne trader que dans le sens du court terme | Mesuré (`audit/nuit2.py sens`, 11,2 millions de trades, treize lectures de la tendance) : rien, le plus grand écart est de 0,03 % pour 0,15 % de frais | `180bbf2` |
 | 15/11/2026 | Les mêmes bots sur l'or, le pétrole, les indices et les entreprises | Mesuré (`audit/nuit2.py calme`, 18 marchés, 12,1 millions de trades) : avant frais zéro, 0 stratégie prouvée sur 255, 235 recalées | `9e5e5ba` |
 | 15/11/2026 | Le retour de l'agent sur la page d'un bot | Fait : le bot note pourquoi il laisse passer un signal (aucun trade ne change), trait « né ici », bloc « Le retour de l'agent », mentions réécrites (un passé décrit, plus un conseil) ; tests | `c29aeab` |
