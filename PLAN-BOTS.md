@@ -1092,6 +1092,142 @@ de 8 points est presque toujours du hasard. « Défavorable » décrit ce qui es
 **Proposé (à approuver)** : réécrire cette mention sur la page pour qu'elle ne se lise plus comme un conseil
 (« dans son passé, ces conditions lui ont moins réussi ; cela n'annonce pas la suite »).
 
+## Les idées du 15/11/2026 : une « intelligence », le sens du court terme, les marchés calmes (mesurées)
+
+Le 15/11, devant tes bots (−1,80 %, des vendeurs nés pendant une baisse qui perdent pendant la hausse), tu as proposé
+quatre choses : une intelligence dans le site qui sache quand entrer ou ne pas entrer ; une surveillance qui sorte les
+bots vendeurs quand la tendance du court terme (15 minutes à 4 heures, la crypto et les autres cryptos) devient
+haussière, et l'inverse ; essayer sur des marchés plus calmes (or, pétrole, entreprises) ; et un agent qui fasse un
+retour sur chaque graphique. Les trois premières ont été mesurées hors des bots, chaque protocole enregistré dans git
+avant son calcul. La quatrième est une proposition, en attente de ton accord.
+
+### Ce que tes photos montraient (lu dans le code)
+
+- **Triangles pleins et triangles vides.** Sur le graphique d'un bot, les triangles pleins sont ses vrais trades ; les
+  vides sont ce que sa règle aurait fait sur ces bougies (`fleet.chart_view` : `rule_trades`). Des triangles vides
+  avant la naissance du bot ne sont pas des trades manqués : c'est parce que la règle venait de gagner que le labo l'a
+  choisi. Des triangles vides après sa naissance sont des trades non pris : crypto « en veille » (plus assez de
+  mouvement, ou sortie de la liste : plus d'entrée), bot endormi, ou coupure plus longue que le rattrapage.
+- **L'ordinateur en veille.** Le programme empêche la veille automatique, pas celle du capot fermé. Au réveil, le bot
+  rejoue les bougies manquées et reprend les trades (5 heures environ pour un bot en 1 minute) ; au-delà, c'est perdu.
+- **Pourquoi des vendeurs restent pendant une hausse.** Le labo teste chaque technique dans les deux sens, mais il
+  choisit ce qui a gagné sur les derniers jours (2 jours en 1 minute, 7 en 5 minutes). Un bot en place garde sa place
+  (`apply_test`, étape 0 bis) ; il ne part que liquidé, à moitié ruiné, arrêté par le gardien ou recalé après 7 jours.
+- **Pourquoi pas d'acheteur en 1 minute sur INIT.** Une crypto a 8 bots au plus et 2 au plus par unité de temps
+  (`per_timeframe`) : ses 8 places étaient prises. Le réglage « Bots au plus par crypto » (8, jusqu'à 20) en ouvre
+  d'autres. Sur INIT, tu avais pourtant 5 acheteurs sur 8, dont « Cassure 20/10 » en 5 minutes à +35,7 %.
+
+**Proposé (à approuver) : « le retour de l'agent » sur la page d'un bot.** Un trait « le bot est né ici » sur le
+graphique ; les trades de la règle que le bot n'a pas pris, avec la raison notée au moment où il renonce ; « dans quels
+cas ça a marché » (ses trades rangés par tendance). Écrit par des règles, sans IA payante. Il remplacerait la mention
+« favorable / défavorable », qui n'annonce rien (mesure du 15/11).
+
+### Une « intelligence » qui apprend quand entrer (étude 17 : non dans l'ensemble)
+
+La seule intelligence qu'on peut juger honnêtement est celle dont chaque décision se rejoue sur le passé. Une IA qui
+« regarde » le graphique en direct ne se vérifie pas sur le passé (elle le connaît déjà) et chaque décision se paie.
+Mesuré (`audit/nuit2.py intelligence`, protocole `3f5a4f1`) : 24 cryptos, toutes les combinaisons des bots, 16,5
+millions de trades simulés sans levier (au milliardième près ceux des bots, sans arrêt en route). Un modèle (des
+arbres de décision en série, réglages fixés d'avance) apprend le résultat d'un trade d'après 27 mesures connues à la
+clôture du signal ; quatre fois de suite, il apprend sur le passé et note les trades suivants, qu'il n'a jamais vus
+(13,4 millions).
+
+| Trades jamais vus | Résultat moyen par trade, frais compris |
+|---|---|
+| Tous | −0,157 % |
+| Ses 10 % préférés | −0,095 % (de −0,119 à −0,070) |
+| Ceux dont il attend un gain | −0,083 % (de −0,152 à −0,014) |
+| Les 10 % qu'il déconseille | −0,293 % (de −0,331 à −0,255) |
+| Témoin : 10 % tirés au hasard | −0,161 % |
+| Témoin qui triche (il voit la bougie d'après) | +0,696 % (de +0,591 à +0,801) |
+
+| Bots en | Tous | Ses 10 % préférés | Ceux qu'il déconseille | Témoin qui triche |
+|---|---|---|---|---|
+| 1 minute | −0,148 % | −0,111 % | −0,261 % | +0,123 % |
+| 5 minutes | −0,145 % | −0,097 % | −0,193 % | +0,424 % |
+| 15 minutes | −0,160 % | −0,169 % | −0,229 % | +0,872 % |
+| 1 heure | −0,199 % | −0,058 % (de −0,244 à +0,128) | −0,539 % | +1,978 % |
+| 4 heures | −0,196 % | **+0,569 % (de +0,115 à +1,022)** | −1,294 % | +4,478 % |
+
+**Ce que ça dit.** Le modèle reconnaît les pires entrées (elles perdent presque deux fois plus) mais ses préférées
+perdent aussi : il transforme −0,16 % en −0,09 %. Verdict fixé d'avance, sur l'ensemble : rien. Une ligne gagne, les
+bots en 4 heures : le protocole la traitait comme une piste à revérifier (15 lignes regardées).
+
+### La piste des bots en 4 heures (étude 17 bis : piste)
+
+Vérification fixée avant son calcul (`audit/nuit2.py piste`, protocole `d836992`), bots en 4 heures, même modèle :
+
+| Calcul | Tous les trades | Ses 10 % préférés | Une fois le sens retiré | Ceux qu'il déconseille |
+|---|---|---|---|---|
+| L'étude 17 refaite (24 cryptos, 15/11/2023 → 14/11/2026) | −0,196 % | +0,569 % (de +0,115 à +1,022) | +0,798 % (de +0,351 à +1,245) | −1,294 % |
+| Témoin : les mêmes bougies mélangées | −0,213 % | −0,217 % (de −0,532 à +0,098) | −0,003 % (de −0,317 à +0,311) | −0,176 % |
+| Autre période (15/11/2020 → 15/11/2023, 11 cryptos) | −0,156 % | +0,354 % (de −0,146 à +0,854) | +0,519 % (de +0,020 à +1,018) | −1,469 % |
+| Autres cryptos (les 24 suivantes, même période) | −0,128 % | +0,368 % (de −0,130 à +0,865) | +0,526 % (de +0,042 à +1,010) | −0,928 % |
+
+« Une fois le sens retiré » : ses préférés moins tous les trades du même sens dans la même tranche (de 2023 à 2026 les
+altcoins ont beaucoup baissé ; un modèle qui aurait seulement appris à vendre n'aurait rien appris). Par tranche, ses
+préférés gagnent 4 fois sur 4 (origine), 4 sur 4 (autre période), 3 sur 4 (autres cryptos) ; par crypto, 20 sur 24, 7
+sur 10 et 19 sur 24. Ses achats préférés gagnent aussi (+0,879 %, +0,019 %, +0,488 %) quand tous les achats perdent.
+
+**Verdict fixé d'avance : piste.** Pas de fuite (le témoin ne trouve rien), le résultat revient deux fois, mais les
+deux confirmations ne sont pas nettes. Ce qui peut encore la faire tomber : les vrais frais d'une position tenue
+plusieurs jours, quelques gros trades qui feraient la moyenne, le choix des cryptos (celles qui existent encore en
+novembre 2026), une erreur de ma part.
+
+### La relecture indépendante de cette piste
+
+En cours le 15/11/2026 (six relecteurs : fuites, calcul refait à part, vrais frais, exécution, statistique, ce que le
+modèle a appris ; puis vérification des constats importants). Rien n'est branché dans les bots.
+
+### Ne trader que dans le sens du court terme (étude 18 : non)
+
+Ta règle : regarder la tendance sur 15 minutes à 4 heures, sur la crypto et sur les autres cryptos ; sortir les
+vendeurs quand ça monte, mettre des acheteurs, et l'inverse. Mesuré (`audit/nuit2.py sens`, protocole `180bbf2`) :
+11,2 millions de trades des bots en 1 minute (30 jours) et 5 minutes (90 jours), 24 cryptos, tous à −0,147 % ; la
+tendance lue sur les seules bougies de 15 minutes finies ; treize lectures ; deux moitiés de période.
+
+| Lecture de la tendance | Bots en 1 minute : dans le sens, à contresens, écart | Bots en 5 minutes : dans le sens, à contresens, écart |
+|---|---|---|
+| La crypto sur 15 minutes | −0,144 %, −0,142 %, −0,002 % | −0,150 %, −0,136 %, −0,014 % |
+| Les autres cryptos sur 15 minutes | −0,152 %, −0,144 %, −0,007 % | −0,144 %, −0,148 %, +0,004 % |
+| La crypto sur 1 heure | −0,139 %, −0,150 %, +0,011 % (de +0,003 à +0,018) | −0,148 %, −0,140 %, −0,008 % |
+| Les autres cryptos sur 1 heure | −0,145 %, −0,151 %, +0,006 % | −0,146 %, −0,146 %, 0,000 % |
+| La crypto sur 4 heures | −0,145 %, −0,146 %, +0,001 % | −0,150 %, −0,139 %, −0,011 % |
+| Les autres cryptos sur 4 heures (ta version) | −0,147 %, −0,150 %, +0,003 % (+0,010 puis −0,004) | −0,136 %, −0,156 %, +0,020 % (de −0,005 à +0,045) |
+| La crypto et les autres d'accord sur 1 heure | −0,137 %, −0,150 %, +0,013 % | −0,144 %, −0,138 %, −0,006 % |
+| Les autres cryptos sur 1 heure, mouvement marqué | −0,133 %, −0,162 %, +0,028 % (de −0,021 à +0,078) | −0,133 %, −0,151 %, +0,018 % |
+| La crypto sur 1 heure, mouvement marqué | −0,136 %, −0,155 %, +0,019 % | −0,179 %, −0,116 %, −0,063 % (de −0,115 à −0,011) |
+| Témoin : pile ou face | écart −0,001 % | écart 0,000 % |
+| Témoin qui triche (la bougie d'après) | écart +0,279 % | écart +0,520 % |
+
+**Ce que ça dit.** Nulle part les trades dans le sens ne gagnent ; le plus grand écart est de 0,03 % pour 0,15 % de
+frais ; aucun écart n'est net sur les deux moitiés. Un seul l'est quand on regarde les achats seuls : en 1 minute,
+acheter après une heure de hausse perd un peu moins qu'après une heure de baisse (−0,140 % contre −0,155 %). En 5
+minutes, suivre un mouvement marqué de la crypto est pire (le prix revient en arrière). La surveillance réduirait la
+perte totale pour une mauvaise raison : deux fois moins de trades, donc deux fois moins de frais. Rien de construit.
+Le test toutes les 30 minutes au lieu de 3 heures ne changerait rien : les bots en place gardent leur place.
+
+### Les mêmes bots sur l'or, le pétrole, les indices et les entreprises (étude 19 : rien de mieux)
+
+Binance cote depuis décembre 2025 des contrats sur des marchés traditionnels ; leurs prix sont dans ses archives.
+Mesuré (`audit/nuit2.py calme`, protocole `9e5e5ba`) : 18 marchés (or, argent, platine, palladium, cuivre ; pétrole,
+gaz ; S&P 500, Nasdaq ; Apple, Amazon, Google, Meta, Microsoft, Nvidia, Tesla, Coinbase, Strategy), 6 à 11 mois,
+jusqu'au 31/10/2026, toutes les combinaisons des bots, mêmes frais : 12,1 millions de trades.
+
+| Bots en | Avant frais | Frais compris | Une bougie moyenne, et ce que valent les frais (0,14 %) |
+|---|---|---|---|
+| 1 minute | +0,001 % | −0,135 % | métaux 0,022 % (6 bougies), énergie 0,034 % (4), indices 0,011 % (12), entreprises 0,029 % (5) ; cryptos 0,073 % (2) |
+| 5 minutes | −0,001 % | −0,137 % | métaux 0,058 %, énergie 0,080 %, indices 0,025 %, entreprises 0,068 % ; cryptos 0,196 % |
+| 15 minutes | −0,004 % | −0,141 % | |
+| 1 heure | −0,004 % | −0,147 % | |
+| 4 heures | −0,030 % | −0,204 % (de −0,260 à −0,149) | |
+
+Sur 255 stratégies jugées comme sur le site : 0 prouvée, 235 recalées. Les quatre groupes de marchés donnent la même
+chose, sur les deux moitiés. **Ce que ça dit** : avant frais, zéro, comme sur les cryptos ; et un marché calme est un
+marché où les frais pèsent plus lourd dans chaque mouvement. L'historique est court (6 à 11 mois). Sur le long terme,
+la règle de tendance avait déjà été mesurée sur le Nasdaq, le Nikkei, le pétrole et cinq monnaies : une protection,
+pas un gain. Binance n'est ici qu'une source de prix : depuis la France, il faudrait un autre courtier.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
@@ -1192,3 +1328,7 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 14/11/2026 | Court terme : « acheter le creux » sur trois périodes | Mesuré (`audit/nuit2.py creux`) : positif sur les trois périodes quand tout le marché chute, net sur deux ; mais un épisode sur deux perd et quelques gros krachs font le résultat. Piste, rien de construit | `4ca30cd` |
 | 15/11/2026 | Un bot qui change de sens selon la veille ? | Mesuré (`audit/nuit2.py veille`) : le sens d'hier n'annonce pas celui d'aujourd'hui (−0,28 % puis −0,06 % par jour après frais ; −0,10 % par heure). Rien de construit | `82efb4a` |
 | 15/11/2026 | « Défavorable », et il entre quand même | Mesuré (`audit/nuit2.py agents`, 2,95 millions de trades non vus) : la mention des agents ne sépare rien (+0,004 % d'écart, comme pile ou face). Rien de construit ; réécriture de la mention proposée | `9435ea6` |
+| 15/11/2026 | Une « intelligence » qui apprend quand entrer | Mesuré (`audit/nuit2.py intelligence`, 16,5 millions de trades, jugé sur 13,4 millions jamais vus) : rien dans l'ensemble (ses préférés −0,095 %, témoin qui triche +0,696 %) ; une ligne gagne, les bots en 4 heures (+0,569 %) | `3f5a4f1` |
+| 15/11/2026 | La piste des bots en 4 heures, vérifiée | Mesuré (`audit/nuit2.py piste`) : témoin sur bougies mélangées propre, +0,354 % sur 2020-2023, +0,368 % sur 24 autres cryptos, sans netteté : piste ; relecture indépendante en cours | `d836992` |
+| 15/11/2026 | Ne trader que dans le sens du court terme | Mesuré (`audit/nuit2.py sens`, 11,2 millions de trades, treize lectures de la tendance) : rien, le plus grand écart est de 0,03 % pour 0,15 % de frais | `180bbf2` |
+| 15/11/2026 | Les mêmes bots sur l'or, le pétrole, les indices et les entreprises | Mesuré (`audit/nuit2.py calme`, 18 marchés, 12,1 millions de trades) : avant frais zéro, 0 stratégie prouvée sur 255, 235 recalées | `9e5e5ba` |

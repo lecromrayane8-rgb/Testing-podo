@@ -387,7 +387,15 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   chutes du marché et chutes d'une crypto seule séparées ; à la fin, le compte par épisode et les frais de panique),
   `veille` (suivre le sens de la veille ou des dernières heures, crypto par crypto ou pour tout le marché), `agents`
   (la mention « favorable / défavorable » des bots, `swarm.profile` et `swarm.probability`, jugée sur des trades que
-  le profil n'a pas vus : quatre apprentissages successifs, écart par journées, témoin à pile ou face).
+  le profil n'a pas vus : quatre apprentissages successifs, écart par journées, témoin à pile ou face). Études du
+  15/11/2026, mêmes règles (`every_trade` : tous les trades de toutes les combinaisons, simulés sans levier, donc
+  sans arrêt en route, au milliardième près ceux des bots) : `intelligence` (un modèle appris sur tous les trades,
+  27 mesures connues à la clôture du signal, jugé quatre fois sur des trades jamais vus ; témoins au hasard et qui
+  triche ; a besoin de scikit-learn, pour cette mesure seulement : le bot n'en dépend pas), `piste` (la ligne
+  gagnante des bots en 4 heures revérifiée : bougies mélangées `shuffled`, autre période, autres cryptos, sens du
+  trade retiré), `sens` (les bots en 1 et 5 minutes, dans le sens ou à contresens de la tendance sur 15 minutes,
+  1 heure et 4 heures, de la crypto et des autres cryptos), `calme` (les mêmes bots sur les 18 contrats de Binance
+  sur des marchés traditionnels : métaux, pétrole, gaz, S&P 500, Nasdaq, neuf grandes entreprises).
   `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
@@ -435,6 +443,11 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   peur et avidité), `www.deribit.com/api/v2/public` (indice DVOL), et par ccxt OKX, KuCoin, Gate, Coinbase, Kraken,
   Bitget, MEXC (Bybit refuse : 403) ; `data.binance.vision/data/futures/um/` donne `monthly/klines/<contrat>/1h/`,
   `monthly/fundingRate/` et `daily/aggTrades/` ; FRED `DTB3` = le bon du Trésor à 3 mois (le repère sans risque).
+  Vu le 15/11 : les mêmes archives ont des contrats sur des marchés traditionnels, de la minute au jour : XAUUSDT
+  (or, depuis le 11/12/2025), XAGUSDT, XPTUSDT, XPDUSDT, COPPERUSDT, CLUSDT (pétrole), NATGASUSDT, SPYUSDT, QQQUSDT,
+  AAPLUSDT, AMZNUSDT, GOOGLUSDT, METAUSDT, MSFTUSDT, NVDAUSDT, TSLAUSDT, COINUSDT, MSTRUSDT. scikit-learn n'est pas
+  installé d'office dans la session cloud : `pip install scikit-learn` avant `audit/nuit2.py intelligence` ou
+  `piste` (il n'entre pas dans `requirements.txt` : le bot n'en a pas besoin).
 - Branche de travail : `claude/trading-bot`.
 - Plateforme (recherche du 04/11/2026, presse de fin juin 2026, statut actuel non confirmé) : Binance n'avait pas
   l'agrément MiCA au 30/06/2026 et a arrêté le trading pour les clients français (retraits seulement). En paper, ses
@@ -750,3 +763,28 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   −0,011 à +0,018) ; conditions de la page +0,009 % ; dans le sens de la tendance de fond −0,016 % ; témoin pile ou
   face +0,002 %. La mention ne sépare rien (5 à 30 trades par case : du hasard) ; elle explique, elle n'annonce pas.
   PROPOSÉ, EN ATTENTE : réécrire la mention sur la page pour qu'elle ne se lise plus comme un conseil.
+- 15/11/2026 (suite) : l'utilisateur, photos de ses bots à l'appui (un vendeur en 1 minute qui gagnait pendant la
+  baisse et perd pendant la hausse ; INIT qui monte sans acheteur en 1 minute), demande : (1) « une intelligence à
+  moitié dans mon site » qui sache quand entrer ou ne pas entrer ; (2) une surveillance qui regarde la tendance sur
+  15 minutes à 4 heures, sur la crypto et sur les autres cryptos, sorte les vendeurs quand ça monte et mette des
+  acheteurs (et le test toutes les 30 minutes au lieu de 3 heures) ; (3) essayer sur l'or, le pétrole, les
+  entreprises ; (4) un agent qui fasse un retour sur chaque graphique (trades non pris et pourquoi, dans quels cas
+  ça a marché). RÉPONDU PAR QUATRE MESURES (`audit/nuit2.py`, protocoles enregistrés avant calcul) : `intelligence`
+  (`3f5a4f1`, 16,5 millions de trades, 13,4 millions jamais vus) : tous −0,157 %, ses 10 % préférés −0,095 %, ceux
+  qu'il déconseille −0,293 %, témoin qui triche +0,696 % : rien dans l'ensemble ; par unité, ses préférés perdent de
+  1 minute à 1 heure et GAGNENT sur les bots en 4 heures (+0,569 %, de +0,115 à +1,022). `piste` (`d836992`) : sur
+  des bougies mélangées −0,217 % (pas de fuite), autre période 2020-2023 +0,354 % (de −0,146 à +0,854), 24 autres
+  cryptos +0,368 % (de −0,130 à +0,865), une fois le sens retiré +0,5 à +0,8 % net dans les trois : « piste », la
+  première qui revient quand on la refait ; relecture indépendante lancée (une seule relecture groupée pour cette
+  étape). `sens` (`180bbf2`, 11,2 millions de trades en 1 et 5 minutes) : rien, le plus grand écart « dans le sens »
+  est de 0,03 % pour 0,15 % de frais ; en 5 minutes, suivre un mouvement marqué est pire. `calme` (`9e5e5ba`, 18
+  marchés, 12,1 millions de trades) : avant frais zéro, après frais −0,135 à −0,204 %, 0 stratégie prouvée sur 255 ;
+  les frais valent 2 bougies d'une minute sur les cryptos, 6 sur l'or, 12 sur le S&P 500. Expliqué d'après le code :
+  triangles vides = ce que la règle aurait fait, pas des trades ; un bot en place garde sa place ; 8 bots au plus
+  par crypto, 2 par unité (réglage « Bots au plus par crypto ») ; crypto en veille = plus d'entrée ; capot fermé =
+  veille de Windows, rattrapage de 5 heures en 1 minute. RIEN N'EST BRANCHÉ DANS LES BOTS. En attente de son oui :
+  « le retour de l'agent » sur la page d'un bot (trait de naissance, trades non pris avec leur raison, dans quels
+  cas ça a marché ; remplace la mention « favorable / défavorable ») ; le compte fictif « acheteur de krach ».
+  Leçons : une ligne qui gagne seule parmi quinze se revérifie (témoin mélangé, autre période, autres cryptos, sens
+  retiré) avant d'en parler comme d'un résultat ; « plus calme » veut dire des frais plus lourds dans chaque
+  mouvement, pas un marché plus facile.
