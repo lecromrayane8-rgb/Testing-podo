@@ -23,6 +23,7 @@ volatilité) n'ont que quelques jours ou quelques dizaines de mois de données :
     python audit/nuit2.py intelligence # un modèle qui apprend sur tous les trades sait-il dire « entre » ou « n'entre pas » ?
                                        # (a besoin de scikit-learn, pour cette mesure seulement : pip install scikit-learn)
     python audit/nuit2.py sens         # les bots de court terme, s'ils ne tradaient que dans le sens des dernières minutes ?
+    python audit/nuit2.py calme        # les mêmes bots sur l'or, le pétrole, les indices et de grandes entreprises
 """
 from __future__ import annotations
 
@@ -1517,7 +1518,8 @@ SENSE_FLAGS = ([f"{who} sur {span}{strong}" for span in SENSE_SPANS for strong i
 
 def every_trade(df: pd.DataFrame, symbol: str, tf: str):
     """Chaque trade de chaque combinaison des bots sur ces bougies, simulé sans levier comme dans l'étude 17 (aucune
-    combinaison ne s'arrête en route) : (numéro de la technique, vente à découvert ?, bougie d'entrée, résultat)."""
+    combinaison ne s'arrête en route) : (numéro de la technique, vente à découvert ?, bougie d'entrée, résultat,
+    résultat avant frais)."""
     from tradingbot import swarm
     from tradingbot.fleet import EXITS, SIDES, Spec, signals_for, simulate, technique, with_security
     settings = swarm.SwarmSettings()
@@ -1536,7 +1538,7 @@ def every_trade(df: pd.DataFrame, symbol: str, tf: str):
                     for t in simulate(df, spec, 1e9, signals=sig).s["trades"]:
                         i = where.get(int(t["entry_ts"]))
                         if i and t.get("reason") != "fin du test":
-                            found.append((index, side == "short", i, float(t["net"])))
+                            found.append((index, side == "short", i, float(t["net"]), float(t["gross"])))
             except Exception:  # des bougies étranges n'arrêtent pas la mesure de la crypto
                 continue
             yield from found
@@ -1682,6 +1684,164 @@ def sens(args) -> dict:
     return out
 
 
+# --- étude 19 : les mêmes bots sur des marchés plus calmes -------------------------------------------------------------
+
+CALM = {"les métaux (or, argent, platine, palladium, cuivre)": ("XAUUSDT", "XAGUSDT", "XPTUSDT", "XPDUSDT", "COPPERUSDT"),
+        "l'énergie (pétrole, gaz)": ("CLUSDT", "NATGASUSDT"),
+        "les indices (S&P 500, Nasdaq)": ("SPYUSDT", "QQQUSDT"),
+        "les entreprises (Apple, Amazon, Google, Meta, Microsoft, Nvidia, Tesla, Coinbase, Strategy)":
+            ("AAPLUSDT", "AMZNUSDT", "GOOGLUSDT", "METAUSDT", "MSFTUSDT", "NVDAUSDT", "TSLAUSDT", "COINUSDT", "MSTRUSDT")}
+CALM_END = ms("2026-11-01")  # les archives mensuelles vont jusqu'au 31/10/2026
+CALM_KLINES = "data/futures/um/monthly/klines/{c}/{tf}/"
+
+
+def _calm_candles_job(args) -> tuple[str, str, int | str]:
+    """Les bougies d'un contrat dans une unité, lues dans les archives mensuelles de Binance (les mois utiles seulement)."""
+    contract, tf, folder = args
+    path = folder / f"{contract}-{tf}.pkl"
+    if path.exists():
+        return contract, tf, len(pd.read_pickle(path))
+    try:
+        first = pd.Timestamp(CALM_END - BRAIN_WINDOWS[tf] * DAY, unit="ms").strftime("%Y-%m")
+        _, files = listing(CALM_KLINES.format(c=contract, tf=tf))
+        parts = []
+        for key in sorted(k for k in files if k.endswith(".zip") and k[-11:-4] >= first):
+            raw = session().get(ARCHIVE + key, timeout=120).content
+            with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+                body = archive.read(archive.namelist()[0])
+            parts.append(pd.read_csv(io.BytesIO(body), header=None, skiprows=0 if body[:1].isdigit() else 1,
+                                     usecols=[0, 1, 2, 3, 4, 5], names=["ts", "open", "high", "low", "close", "volume"]))
+        if not parts:
+            return contract, tf, "aucun fichier"
+        table = pd.concat(parts)
+        stamp = table["ts"].to_numpy(dtype="int64")
+        table["ts"] = np.where(stamp > 1e14, stamp // 1000, stamp).astype(np.int64)
+        table = table[~table["ts"].duplicated()].sort_values("ts").reset_index(drop=True)
+        table.to_pickle(path)
+        return contract, tf, len(table)
+    except Exception as exc:  # un contrat qui ne répond pas : dit, et ignoré
+        return contract, tf, f"{type(exc).__name__} {str(exc)[:60]}"
+
+
+def _calm_job(args) -> list[tuple]:
+    """Un marché : chaque trade de chaque combinaison des bots, dans chaque unité de temps."""
+    group, contract, folder = args
+    from tradingbot import swarm
+    from tradingbot.data import COLUMNS, ohlcv_to_frame, timeframe_to_ms
+    out = []
+    for tf, days in BRAIN_WINDOWS.items():
+        path, tf_ms = Path(folder) / f"{contract}-{tf}.pkl", timeframe_to_ms(tf)
+        if not path.exists():
+            continue
+        raw = pd.read_pickle(path)
+        raw = raw[(raw["ts"] >= CALM_END - days * DAY) & (raw["ts"] + tf_ms <= CALM_END)]
+        if len(raw) < swarm.MIN_BARS:
+            continue
+        df = ohlcv_to_frame(raw[COLUMNS].values.tolist())
+        ts = df["ts"].to_numpy(dtype="int64")
+        trades = np.array(list(every_trade(df, contract, tf)), dtype=float)
+        if not len(trades):
+            continue
+        at = trades[:, 2].astype(int)
+        body = float(np.mean(np.abs(df["close"].to_numpy(dtype=float) / df["open"].to_numpy(dtype=float) - 1)))
+        out.append((group, contract, tf, trades[:, 0].astype(np.int16), (ts[at] // DAY).astype(np.int32), trades[:, 3],
+                    trades[:, 4], ts[at] >= (ts[0] + ts[-1]) / 2, body, len(df)))
+    return out
+
+
+def calme(args) -> dict:
+    """LES MÊMES BOTS SUR DES MARCHÉS PLUS CALMES (idée de l'utilisateur du 15/11/2026 : « faire ça sur quelque chose
+    d'un peu plus stable : l'or, le pétrole, les entreprises »).
+    Binance cote depuis décembre 2025 des contrats perpétuels sur des marchés traditionnels ; leurs prix, minute par
+    minute, sont dans ses archives publiques. Protocole, fixé avant le calcul :
+    - les 18 contrats sur des marchés traditionnels (`CALM`) : cinq métaux, le pétrole et le gaz, le S&P 500 et le
+      Nasdaq, neuf grandes entreprises ; laissés de côté : les fonds à levier (TQQQ, SQQQ) et les jetons d'or
+      (doublons de l'or) ;
+    - bougies des archives mensuelles, jusqu'au 31/10/2026 : les 30 derniers jours en 1 minute, 90 en 5 minutes, 180
+      en 15 minutes, tout l'historique en 1 heure et en 4 heures (ces contrats ont 6 à 11 mois) ;
+    - tous les trades de toutes les combinaisons des bots (51 techniques × 2 sens × 3 sorties × 5 unités), avec les
+      frais et les réglages des bots, sans levier, comme dans l'étude 17 ;
+    - ce qu'on regarde : le résultat moyen par trade, frais compris et avant frais, par unité de temps et par groupe
+      de marchés, fourchette à 95 % qui compare les journées, et les deux moitiés de la période ; la taille d'une
+      bougie moyenne face aux frais d'un aller-retour ; et chaque stratégie (technique × unité, tous marchés réunis)
+      jugée comme sur le site : « prouvée » si le bas de sa fourchette, durci pour le nombre de stratégies, est
+      au-dessus de zéro, « recalée » si le haut de sa fourchette est sous zéro ;
+    - verdict : ces marchés font mieux que les cryptos seulement si une ligne (unité × groupe) gagne, frais payés,
+      fourchette toute positive (seuil durci pour les 25 lignes), ou si des stratégies sont prouvées ET gagnantes sur
+      les deux moitiés ; sinon rien. L'historique est court : une ligne gagnante serait une piste à suivre, pas une
+      preuve."""
+    from tradingbot import swarm
+    cache = Path(args.cache)
+    folder = cache / "calme"
+    folder.mkdir(parents=True, exist_ok=True)
+    jobs = [(c, tf, folder) for names in CALM.values() for c in names for tf in BRAIN_WINDOWS]
+    with ThreadPoolExecutor(args.fils) as pool:
+        for contract, tf, result in pool.map(_calm_candles_job, jobs):
+            if isinstance(result, str):
+                print(f"  {contract} {tf} : {result}", flush=True)
+    print("  bougies prêtes", flush=True)
+    with ProcessPoolExecutor(max_workers=3) as pool:
+        parts = [part for market in pool.map(_calm_job, [(g, c, str(folder)) for g, names in CALM.items() for c in names])
+                 for part in market]
+    table = pd.concat([pd.DataFrame({"group": g, "market": c, "tf": tf, "tech": tech, "day": day, "net": net, "gross": gross,
+                                     "late": late}) for g, c, tf, tech, day, net, gross, late, _, _ in parts], ignore_index=True)
+    cost = 2 * (FUTURES.fee_rate + FUTURES.slippage)
+    print(f"ÉTUDE 19 — LES MÊMES BOTS SUR DES MARCHÉS PLUS CALMES · {table['market'].nunique()} marchés · {len(table)} trades sur "
+          f"{table['day'].nunique()} journées · frais d'un aller-retour au marché : {100 * cost:.2f} %")
+    out, hard = {"lines": {}}, 0.025 / 25
+
+    def bounds(part: pd.DataFrame, alpha: float = 0.025) -> tuple[float, float, float]:
+        sums = part.groupby("day")["net"].agg(["count", "sum"])
+        return clustered_bounds(list(zip(sums["count"], sums["sum"])), alpha)
+
+    for tf in BRAIN_WINDOWS:
+        unit = table[table["tf"] == tf]
+        if unit.empty:
+            continue
+        sizes = {g: float(np.average([b for gg, _, t, *_, b, n in parts if gg == g and t == tf],
+                                      weights=[n for gg, _, t, *_, b, n in parts if gg == g and t == tf]))
+                 for g in CALM if any(gg == g and t == tf for gg, _, t, *_ in parts)}
+        print(f" bots en {tf} · bougie moyenne : " + " · ".join(f"{g.split(' (')[0]} {100 * b:.3f} % (les frais valent {cost / b:.1f} "
+                                                                 f"bougies)" for g, b in sizes.items()))
+        for title, part in [("tous ces marchés", unit)] + [(g, unit[unit["group"] == g]) for g in CALM]:
+            if len(part) < 2:
+                continue
+            mean, low, high = bounds(part)
+            _, hard_low, _ = bounds(part, hard)
+            halves = [float(part[part["late"] == late]["net"].mean()) for late in (False, True)]
+            out["lines"][f"{tf} · {title}"] = {"n": int(len(part)), "net": float(mean), "low": float(low), "high": float(high),
+                                               "gross": float(part["gross"].mean()), "halves": halves, "wins": bool(hard_low > 0)}
+            print(f"  {tf} · {title} · {len(part)} trades · frais compris {100 * mean:+.3f} % (de {100 * low:+.3f} à {100 * high:+.3f}) · "
+                  f"avant frais {100 * part['gross'].mean():+.3f} % · première moitié {100 * halves[0]:+.3f} % puis seconde "
+                  f"{100 * halves[1]:+.3f} %" + (" · GAGNE" if hard_low > 0 else ""))
+    judged, proven, failed = 0, [], 0
+    for (tech, tf), part in table.groupby(["tech", "tf"]):
+        if len(part) < 30 or part["day"].nunique() < 2:
+            continue
+        judged += 1
+        _, _, high = bounds(part)
+        failed += high < 0
+    for (tech, tf), part in table.groupby(["tech", "tf"]):
+        if len(part) < 30 or part["day"].nunique() < 2:
+            continue
+        mean, hard_low, _ = bounds(part, 0.025 / max(judged, 1))
+        if hard_low > 0:
+            halves = [float(part[part["late"] == late]["net"].mean()) for late in (False, True)]
+            proven.append({"strategy": f"{swarm.LIBRARY[int(tech)]} en {tf}", "n": int(len(part)), "net": float(mean),
+                           "halves": halves, "both": bool(min(halves) > 0)})
+    print(f" stratégies (technique × unité, tous ces marchés réunis) : {judged} jugées · {len(proven)} prouvées · {failed} recalées")
+    for row in proven:
+        print(f"  prouvée : {row['strategy']} · {row['n']} trades · {100 * row['net']:+.3f} % par trade · première moitié "
+              f"{100 * row['halves'][0]:+.3f} % puis seconde {100 * row['halves'][1]:+.3f} %")
+    wins = [k for k, v in out["lines"].items() if v["wins"]]
+    solid = [row["strategy"] for row in proven if row["both"]]
+    verdict = ("GAGNE sur : " + " ; ".join(wins + solid) + " — historique court : une piste à suivre, pas une preuve" if wins or solid
+               else "rien : aucune ligne ne gagne, frais payés, et aucune stratégie n'est prouvée sur les deux moitiés")
+    print(f"  VERDICT · {verdict}")
+    out.update({"judged": judged, "proven": proven, "failed": int(failed), "verdict": verdict})
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("etude", choices=sorted(STUDIES))
@@ -1699,7 +1859,7 @@ def main() -> None:
 STUDIES = {"donnees": donnees, "portage": portage, "heure": heure, "grille": grille, "peur": peur, "ecarts": ecarts,
            "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee,
            "anciennes": anciennes, "creux": creux, "veille": veille, "agents": agents, "intelligence": intelligence,
-           "sens": sens}
+           "sens": sens, "calme": calme}
 
 if __name__ == "__main__":
     main()
