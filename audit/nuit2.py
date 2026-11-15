@@ -19,6 +19,7 @@ volatilité) n'ont que quelques jours ou quelques dizaines de mois de données :
     python audit/nuit2.py anciennes    # bougies d'une heure de 2017 à 2019 des paires qui existaient déjà, une fois
     python audit/nuit2.py creux        # « acheter le creux » refait sur cette troisième période
     python audit/nuit2.py veille       # suivre le sens de la veille (ou des dernières heures) : est-ce que ça annonce la suite ?
+    python audit/nuit2.py agents       # la mention « favorable / défavorable » des bots dit-elle vrai sur les trades suivants ?
 """
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ import math
 import sys
 import time
 import zipfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -45,7 +46,7 @@ from tradingbot import trend  # noqa: E402
 from tradingbot.data import make_exchange  # noqa: E402
 from tradingbot.execution import FUTURES  # noqa: E402
 from tradingbot.fleet import MAINTENANCE  # noqa: E402
-from tradingbot.risk import clustered_bounds  # noqa: E402
+from tradingbot.risk import clustered_bounds, paired_bounds  # noqa: E402
 from tradingbot.scanner import by_volume  # noqa: E402
 
 HOUR, MINUTE = 3_600_000, 60_000
@@ -1160,6 +1161,129 @@ def veille(args) -> dict:
     return out
 
 
+# --- étude 16 : la mention « favorable / défavorable » des bots ---------------------------------------------------------
+
+AGENT_WINDOWS = {"1m": 6, "5m": 30, "15m": 45, "1h": 200, "4h": 365}  # jours d'historique par unité
+AGENT_COINS, AGENT_FOLDS, AGENT_GAP = 24, 5, 0.08
+
+
+def _agents_job(args) -> list[tuple]:
+    """Une crypto : chaque combinaison apprend son profil sur le passé, puis on note ce qu'il disait des trades suivants."""
+    symbol, cache = args
+    from tradingbot import swarm
+    from tradingbot.data import COLUMNS, ohlcv_to_frame, timeframe_to_ms
+    from tradingbot.fleet import EXITS, SIDES, Spec, signals_for, simulate, technique, with_security
+    settings, rows = swarm.SwarmSettings(), []
+    for tf, days in AGENT_WINDOWS.items():
+        path = Path(cache) / f"{symbol.replace('/', '-')}-{tf}.pkl"
+        if not path.exists():
+            continue
+        raw = pd.read_pickle(path)
+        df = ohlcv_to_frame(raw[raw["ts"] >= raw["ts"].iloc[-1] - days * DAY][COLUMNS].values.tolist())
+        if len(df) < swarm.MIN_BARS:
+            continue
+        feats, tf_ms = swarm.features(df), timeframe_to_ms(tf)
+        records = feats.to_dict("records")
+        where = {int(ts.value // 1_000_000): i for i, ts in enumerate(feats.index)}
+        start, end = int(df["ts"].iloc[0]), int(df["ts"].iloc[-1])
+        edges = [start + (end - start) * k / AGENT_FOLDS for k in range(AGENT_FOLDS + 1)]
+        for name in swarm.LIBRARY:
+            params = technique(name)
+            if len(df) < params.warmup_bars + swarm.MIN_BARS:
+                continue
+            for side in SIDES:
+                try:
+                    sig = signals_for(df, params, side)
+                    for target, mode in EXITS:
+                        spec = with_security(Spec(swarm.TEAMS[tf], symbol, tf, name, side, target, settings.leverage(tf), mode),
+                                             *settings.security(settings.variant == "avec"))
+                        trades = [t for t in simulate(df, spec, settings.capital, signals=sig).s["trades"]
+                                  if t.get("reason") != "fin du test"]
+                        for k in range(1, AGENT_FOLDS):
+                            known = [t for t in trades if t["exit_ts"] <= edges[k]]  # ce que le bot savait à ce moment-là
+                            later = [t for t in trades if edges[k] <= t["entry_ts"] < edges[k + 1]]
+                            if len(known) < swarm.MIN_TRADES[tf] or not later:
+                                continue
+                            past = feats[feats.index <= pd.Timestamp(edges[k], unit="ms", tz=feats.index.tz)]
+                            prof = swarm.profile(known, past, tf_ms)
+                            base = prof["overall"]["win"] or 0.0
+                            cuts = tuple(prof["cuts"]) if prof.get("cuts") else None
+                            for t in later:
+                                i = where.get(int(t["entry_ts"]))
+                                if not i:
+                                    continue
+                                now = swarm.buckets(records[i - 1], cuts)  # la bougie du signal, comme sur la page du bot
+                                chance = swarm.probability(prof, now)
+                                by_chance = 0 if chance is None else int(np.sign(round(chance["p"] - base, 9)))
+                                gaps = [st["win"] - base for group, value in now.items()
+                                        for st in [(prof.get("groups") or {}).get(group, {}).get(value)] if st and st["n"] >= 5]
+                                good, bad = any(g >= AGENT_GAP for g in gaps), any(g <= -AGENT_GAP for g in gaps)
+                                trend = now.get("trend")
+                                with_trend = 0 if trend not in ("hausse", "baisse") else 1 if (trend == "hausse") == (side == "long") else -1
+                                coin_flip = 1 if (int(t["entry_ts"]) // tf_ms + len(name)) % 2 else -1
+                                rows.append((tf, int(t["entry_ts"]) // DAY, float(t["net"]), by_chance,
+                                             1 if good and not bad else -1 if bad and not good else 0, with_trend, coin_flip))
+                except Exception:  # des bougies étranges n'arrêtent pas la mesure de la crypto
+                    continue
+    return rows
+
+
+def agents(args) -> dict:
+    """LA MENTION « FAVORABLE / DÉFAVORABLE » DES BOTS DIT-ELLE VRAI ? (question de l'utilisateur du 15/11/2026 : la page
+    d'un bot dit que les conditions sont défavorables pour sa stratégie, et il entre quand même ; ne pourrait-il pas
+    s'endormir quand c'est défavorable, et ne trader que quand c'est favorable, par exemple vendre seulement quand la
+    tendance est à la baisse ?)
+    Chaque bot a un « profil » : dans son passé, la part de trades gagnants selon la tendance de fond, la volatilité,
+    le RSI, le volume et l'heure. La page s'en sert pour dire « favorable » ou « défavorable ». Aujourd'hui, cette
+    mention explique mais ne décide rien. Elle ne vaut comme règle que si elle dit vrai sur des trades que le profil
+    n'a pas vus. Protocole, fixé avant le calcul :
+    - les 24 premières cryptos (ordre alphabétique) qui ont leurs bougies de 1 minute à 4 heures dans le cache ; toutes
+      les combinaisons des bots (51 techniques × 2 sens × 3 sorties × 5 unités), frais et réglages des bots ;
+    - pour chaque combinaison, l'historique est coupé en 5 tranches ; quatre fois de suite, le profil est appris sur
+      les trades finis AVANT une tranche (avec `swarm.profile`, le code du bot), puis on note ce qu'il disait de chaque
+      trade de la tranche suivante, à la bougie du signal ;
+    - trois mentions : (1) la probabilité de l'agent (`swarm.probability`) au-dessus ou au-dessous de la moyenne de la
+      stratégie ; (2) les conditions de la page (au moins une condition à 8 points au-dessus ou au-dessous de la
+      moyenne, sur 5 trades au moins, et aucune dans l'autre sens) ; (3) sans rien apprendre : le trade va dans le sens
+      de la tendance de fond (achat quand elle monte, vente quand elle baisse) ou contre elle ;
+    - un témoin : une mention tirée à pile ou face, qui ne doit rien séparer ;
+    - ce qu'on juge : le résultat moyen par trade (sans levier, frais compris) des trades « favorables » moins celui
+      des « défavorables », avec une fourchette à 95 % qui compare les journées (`risk.paired_bounds`), et ce que
+      ferait un bot qui sauterait les entrées défavorables."""
+    cache = Path(args.cache)
+    coins = [s for s in sorted(p.name[:-len("-1m.pkl")].replace("-", "/") for p in cache.glob("*-USDT-1m.pkl"))
+             if all((cache / f"{s.replace('/', '-')}-{tf}.pkl").exists() for tf in AGENT_WINDOWS)][:AGENT_COINS]
+    with ProcessPoolExecutor(max_workers=3) as pool:
+        rows = [row for part in pool.map(_agents_job, [(s, str(cache)) for s in coins]) for row in part]
+    table = pd.DataFrame(rows, columns=["tf", "day", "net", "chance", "conditions", "trend", "flip"])
+    print(f"ÉTUDE 16 — LA MENTION « FAVORABLE / DÉFAVORABLE » · {len(coins)} cryptos · {len(table)} trades que le profil n'avait pas "
+          f"vus, sur {table['day'].nunique()} journées · tous : {100 * table['net'].mean():+.3f} % par trade")
+    out, names = {}, {"chance": "la probabilité de l'agent", "conditions": "les conditions de la page",
+                      "trend": "le sens de la tendance de fond", "flip": "témoin : pile ou face"}
+
+    def line(title: str, part: pd.DataFrame, column: str) -> None:
+        sums = part[part[column] != 0].groupby(["day", column])["net"].agg(["count", "sum"]).unstack(fill_value=0)
+        if (1 not in sums["count"]) or (-1 not in sums["count"]):
+            return
+        groups = list(zip(sums["count"][1], sums["sum"][1], sums["count"][-1], sums["sum"][-1]))
+        diff, low, high = paired_bounds(groups)
+        good, bad = part[part[column] > 0]["net"], part[part[column] < 0]["net"]
+        kept = part[part[column] >= 0]["net"]
+        out[title] = {"favorable": float(good.mean()), "n_favorable": int(len(good)), "defavorable": float(bad.mean()),
+                      "n_defavorable": int(len(bad)), "diff": float(diff), "low": float(low), "high": float(high),
+                      "kept": float(kept.mean()), "all": float(part["net"].mean())}
+        print(f"  {title} · favorable {100 * good.mean():+.3f} % ({len(good)}) · défavorable {100 * bad.mean():+.3f} % ({len(bad)}) · "
+              f"écart {100 * diff:+.3f} % (de {100 * low:+.3f} à {100 * high:+.3f}) · sans les entrées défavorables : "
+              f"{100 * kept.mean():+.3f} % par trade au lieu de {100 * part['net'].mean():+.3f} %")
+
+    for column, name in names.items():
+        line(name, table, column)
+        if column != "flip":
+            for tf in AGENT_WINDOWS:
+                line(f"{name}, bots en {tf}", table[table["tf"] == tf], column)
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("etude", choices=sorted(STUDIES))
@@ -1176,7 +1300,7 @@ def main() -> None:
 
 STUDIES = {"donnees": donnees, "portage": portage, "heure": heure, "grille": grille, "peur": peur, "ecarts": ecarts,
            "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee,
-           "anciennes": anciennes, "creux": creux, "veille": veille}
+           "anciennes": anciennes, "creux": creux, "veille": veille, "agents": agents}
 
 if __name__ == "__main__":
     main()
