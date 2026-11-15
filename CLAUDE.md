@@ -385,7 +385,9 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   transaction de trois journées, archives `aggTrades` des contrats), `volatilite` (indice DVOL de Deribit),
   `anciennes` puis `creux` (« acheter le creux » d'une chute d'une heure sur trois périodes, 2017-2019 comprise,
   chutes du marché et chutes d'une crypto seule séparées ; à la fin, le compte par épisode et les frais de panique),
-  `veille` (suivre le sens de la veille ou des dernières heures, crypto par crypto ou pour tout le marché).
+  `veille` (suivre le sens de la veille ou des dernières heures, crypto par crypto ou pour tout le marché), `agents`
+  (la mention « favorable / défavorable » des bots, `swarm.profile` et `swarm.probability`, jugée sur des trades que
+  le profil n'a pas vus : quatre apprentissages successifs, écart par journées, témoin à pile ou face).
   `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
@@ -741,4 +743,10 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   d'après le passé récent = le labo (−0,18 % sur la période non vue) ; l'analyse en masse = l'étape 1 ter (rien ne
   sépare les bons trades des mauvais). Rien de construit. Toujours en attente de son oui ou non : le compte fictif
   « acheteur de krach ». Il attend les verdicts à 7 jours de ses bots : lui redire que quelques stratégies se
-  démarquent toujours par hasard parmi 255, et qu'une « prouvée » se revérifie sur une autre période.
+  démarquent toujours par hasard parmi 255, et qu'une « prouvée » se revérifie sur une autre période.  Il précise ensuite qu'il parlait de ses bots en direct : la page d'un bot écrit « conditions défavorables pour
+  cette stratégie » et le bot entre quand même ; ne pourrait-il pas s'endormir alors, et ne vendre que quand la
+  tendance baisse ? MESURÉ (`audit/nuit2.py agents`, `9435ea6`, 24 cryptos, 2,95 millions de trades que le profil
+  n'avait pas vus) : probabilité de l'agent, favorable −0,168 % contre défavorable −0,172 % (écart +0,004 %, de
+  −0,011 à +0,018) ; conditions de la page +0,009 % ; dans le sens de la tendance de fond −0,016 % ; témoin pile ou
+  face +0,002 %. La mention ne sépare rien (5 à 30 trades par case : du hasard) ; elle explique, elle n'annonce pas.
+  PROPOSÉ, EN ATTENTE : réécrire la mention sur la page pour qu'elle ne se lise plus comme un conseil.
