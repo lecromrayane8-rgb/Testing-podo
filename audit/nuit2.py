@@ -22,6 +22,7 @@ volatilité) n'ont que quelques jours ou quelques dizaines de mois de données :
     python audit/nuit2.py agents       # la mention « favorable / défavorable » des bots dit-elle vrai sur les trades suivants ?
     python audit/nuit2.py intelligence # un modèle qui apprend sur tous les trades sait-il dire « entre » ou « n'entre pas » ?
                                        # (a besoin de scikit-learn, pour cette mesure seulement : pip install scikit-learn)
+    python audit/nuit2.py sens         # les bots de court terme, s'ils ne tradaient que dans le sens des dernières minutes ?
 """
 from __future__ import annotations
 
@@ -1503,6 +1504,184 @@ def intelligence(args) -> dict:
     return out
 
 
+# --- étude 18 : ne trader que dans le sens du court terme --------------------------------------------------------------
+
+QUARTER = 15 * MINUTE
+SENSE_UNITS = ("1m", "5m")
+# La tendance du court terme : la variation sur 1, 4 et 16 bougies de 15 minutes ; « marquée » au-delà du seuil.
+SENSE_SPANS = {"15 minutes": (1, 0.005), "1 heure": (4, 0.01), "4 heures": (16, 0.02)}
+SENSE_FLAGS = ([f"{who} sur {span}{strong}" for span in SENSE_SPANS for strong in ("", ", mouvement marqué")
+                for who in ("la crypto", "les autres cryptos")]
+               + ["la crypto et les autres d'accord sur 1 heure", "témoin : pile ou face", "témoin qui triche (la bougie d'après)"])
+
+
+def every_trade(df: pd.DataFrame, symbol: str, tf: str):
+    """Chaque trade de chaque combinaison des bots sur ces bougies, simulé sans levier comme dans l'étude 17 (aucune
+    combinaison ne s'arrête en route) : (numéro de la technique, vente à découvert ?, bougie d'entrée, résultat)."""
+    from tradingbot import swarm
+    from tradingbot.fleet import EXITS, SIDES, Spec, signals_for, simulate, technique, with_security
+    settings = swarm.SwarmSettings()
+    where = {int(t): i for i, t in enumerate(df["ts"].to_numpy(dtype="int64"))}
+    for index, name in enumerate(swarm.LIBRARY):
+        params = technique(name)
+        if len(df) < params.warmup_bars + swarm.MIN_BARS:
+            continue
+        for side in SIDES:
+            found = []
+            try:
+                sig = signals_for(df, params, side)
+                for target, mode in EXITS:
+                    spec = with_security(Spec(swarm.TEAMS[tf], symbol, tf, name, side, target, 1.0, mode),
+                                         *settings.security(settings.variant == "avec"))
+                    for t in simulate(df, spec, 1e9, signals=sig).s["trades"]:
+                        i = where.get(int(t["entry_ts"]))
+                        if i and t.get("reason") != "fin du test":
+                            found.append((index, side == "short", i, float(t["net"])))
+            except Exception:  # des bougies étranges n'arrêtent pas la mesure de la crypto
+                continue
+            yield from found
+
+
+def _sense_job(args) -> list[tuple]:
+    """Une crypto : chaque trade des bots en 1 et 5 minutes, et s'il allait dans le sens ou à contresens de la tendance
+    du court terme connue à la clôture de son signal (+1 dans le sens, −1 à contresens, 0 quand elle ne dit rien)."""
+    symbol, folder = args
+    from tradingbot import swarm
+    from tradingbot.data import COLUMNS, ohlcv_to_frame, timeframe_to_ms
+    table, out = pd.read_pickle(Path(folder) / "sens-quarts.pkl"), []
+    grid = table.index.to_numpy(dtype="int64")
+    known = []  # pour chaque quart d'heure fini : le sens de la crypto, des autres, et les mêmes quand le mouvement est marqué
+    for steps, marked in SENSE_SPANS.values():
+        moves = table / table.shift(steps) - 1
+        for limit in (0.0, marked):
+            for move in (moves[symbol].to_numpy(), moves.drop(columns=symbol).mean(axis=1).to_numpy()):
+                move = np.nan_to_num(move)
+                known.append(np.where(np.abs(move) >= limit, np.sign(move), 0.0))
+    agree = np.where(known[4] == known[5], known[4], 0.0)  # sur 1 heure : la crypto et les autres dans le même sens
+    known = np.column_stack(known + [agree])
+    for tf in SENSE_UNITS:
+        path, tf_ms, days = Path(folder) / f"{symbol.replace('/', '-')}-{tf}.pkl", timeframe_to_ms(tf), BRAIN_WINDOWS[tf]
+        if not path.exists():
+            continue
+        raw = pd.read_pickle(path)
+        raw = raw[(raw["ts"] >= BRAIN_END - days * DAY) & (raw["ts"] + tf_ms <= BRAIN_END)]
+        if len(raw) < swarm.MIN_BARS:
+            continue
+        df = ohlcv_to_frame(raw[COLUMNS].values.tolist())
+        ts = df["ts"].to_numpy(dtype="int64")
+        o, c = df["open"].to_numpy(dtype=float), df["close"].to_numpy(dtype=float)
+        # À la clôture de chaque bougie : le dernier quart d'heure déjà fini (ouvert au plus tard 15 minutes avant).
+        last = np.searchsorted(grid, ts + tf_ms - QUARTER, side="right") - 1
+        sense = np.where((last >= 0)[:, None], known[np.maximum(last, 0)], 0.0)
+        trades = np.array(list(every_trade(df, symbol, tf)), dtype=float)
+        if not len(trades):
+            continue
+        at, way = trades[:, 2].astype(int), np.where(trades[:, 1] > 0, -1.0, 1.0)  # la bougie d'entrée ; achat +1, vente −1
+        flip = np.where((ts[at] // tf_ms + trades[:, 0].astype(np.int64)) % 2 == 1, 1.0, -1.0)
+        cheat = way * np.sign(c[at] - o[at])  # la bougie d'entrée elle-même : connue seulement après coup
+        flags = np.column_stack([way[:, None] * sense[at - 1], flip, cheat]).astype(np.int8)
+        out.append((tf, (ts[at] // DAY).astype(np.int32), trades[:, 3], trades[:, 1] > 0,
+                    ts[at] >= BRAIN_END - days * DAY // 2, flags))
+    return out
+
+
+def sens(args) -> dict:
+    """NE TRADER QUE DANS LE SENS DU COURT TERME (idée de l'utilisateur du 15/11/2026, devant ses bots vendeurs qui
+    gagnaient pendant la baisse puis perdent pendant la hausse : « regarder sur du 15 minutes, pas que sur 24 heures ;
+    exclure les bots vendeurs du court terme quand il y a une hausse, pas seulement sur ce coin mais par rapport aux
+    autres coins, mettre des bots haussiers, et voir ce que ça change si on les exclut et on les remplace »).
+    Protocole, fixé avant le calcul :
+    - les 24 cryptos et les bougies de l'étude 17 ; les trades de toutes les combinaisons des bots en 1 minute
+      (30 jours) et en 5 minutes (90 jours), frais compris, sans levier ;
+    - la tendance du court terme, connue à la clôture de la bougie du signal, lue sur les seules bougies de 15 minutes
+      déjà finies : la variation sur 15 minutes, 1 heure et 4 heures ; pour la crypto elle-même, puis pour les AUTRES
+      cryptos (la moyenne des 23 autres, à parts égales) ; les mêmes en ne gardant que les mouvements marqués
+      (au moins 0,5 % en 15 minutes, 1 % en 1 heure, 2 % en 4 heures) ; et « la crypto et les autres d'accord » sur
+      1 heure : 13 façons de lire la tendance, seuils ronds jamais retouchés ;
+    - un trade va « dans le sens » s'il achète quand ça monte ou vend quand ça baisse, « à contresens » sinon ;
+    - ce qu'on juge : le résultat moyen des trades dans le sens (c'est ce que feraient les bots si on excluait les
+      autres) et l'écart avec les trades à contresens, fourchettes à 95 % qui comparent les journées ; chaque période
+      est coupée en deux moitiés : un écart ne compte que s'il est net et du même signe sur les deux ;
+    - deux témoins : une tendance tirée à pile ou face (ne doit rien montrer) et une tendance qui triche (le sens de
+      la bougie d'entrée, connu après coup : doit séparer nettement, sinon la mesure ne vaut rien) ;
+    - verdict : la règle « gagne » seulement si les trades dans le sens gagnent, frais payés, fourchette toute
+      positive (seuil durci pour 26 lignes regardées) ; elle « sépare » si l'écart est net sur les deux moitiés ;
+      sinon rien. Une ligne qui gagne se revérifie sur une autre période avant d'y croire."""
+    cache = Path(args.cache)
+    folder = cache / "intelligence"
+    coins = sorted(p.name[:-len("-1m.pkl")].replace("-", "/") for p in folder.glob("*-USDT-1m.pkl"))
+    closes = {}
+    for symbol in coins:
+        raw = pd.read_pickle(folder / f"{symbol.replace('/', '-')}-15m.pkl")
+        raw = raw[raw["ts"] + QUARTER <= BRAIN_END]
+        closes[symbol] = pd.Series(raw["close"].to_numpy(dtype=float), index=raw["ts"].to_numpy(dtype="int64"))
+    table = pd.DataFrame(closes)
+    table = table.reindex(np.arange(int(table.index.min()), int(table.index.max()) + 1, QUARTER))  # une ligne par quart d'heure
+    table.to_pickle(folder / "sens-quarts.pkl")
+    with ProcessPoolExecutor(max_workers=3) as pool:
+        parts = [part for coin in pool.map(_sense_job, [(s, str(folder)) for s in coins]) for part in coin]
+    frames = []
+    for tf, day, net, short, late, flags in parts:
+        frame = pd.DataFrame(flags, columns=SENSE_FLAGS)
+        frame.insert(0, "late", late)
+        frame.insert(0, "short", short)
+        frame.insert(0, "net", net)
+        frame.insert(0, "day", day)
+        frame.insert(0, "tf", tf)
+        frames.append(frame)
+    table = pd.concat(frames, ignore_index=True)
+    print(f"ÉTUDE 18 — NE TRADER QUE DANS LE SENS DU COURT TERME · {len(coins)} cryptos · {len(table)} trades des bots en 1 et 5 "
+          f"minutes sur {table['day'].nunique()} journées · tous : {100 * table['net'].mean():+.3f} % par trade")
+    out, hard = {}, 0.025 / 26
+
+    def gap(part: pd.DataFrame, column: str) -> tuple[float, float, float] | None:
+        sums = part[part[column] != 0].groupby(["day", column])["net"].agg(["count", "sum"]).unstack(fill_value=0)
+        if (1 not in sums["count"]) or (-1 not in sums["count"]):
+            return None
+        return paired_bounds(list(zip(sums["count"][1], sums["sum"][1], sums["count"][-1], sums["sum"][-1])))
+
+    def line(title: str, part: pd.DataFrame, column: str) -> None:
+        whole = gap(part, column)
+        if whole is None:
+            return
+        halves = [gap(part[part["late"] == late], column) for late in (False, True)]
+        good, bad = part[part[column] > 0], part[part[column] < 0]
+        sums = good.groupby("day")["net"].agg(["count", "sum"])
+        mean, low, high = clustered_bounds(list(zip(sums["count"], sums["sum"])))
+        _, hard_low, _ = clustered_bounds(list(zip(sums["count"], sums["sum"])), hard)
+        clear = all(h is not None and (h[1] > 0 or h[2] < 0) for h in halves) and halves[0][0] * halves[1][0] > 0
+        out[title] = {"with": float(mean), "low": float(low), "high": float(high), "n_with": int(len(good)),
+                      "against": float(bad["net"].mean()), "n_against": int(len(bad)), "gap": float(whole[0]),
+                      "gap_low": float(whole[1]), "gap_high": float(whole[2]),
+                      "halves": [None if h is None else float(h[0]) for h in halves], "separates": bool(clear),
+                      "wins": bool(hard_low > 0)}
+        print(f"  {title} · dans le sens {100 * mean:+.3f} % (de {100 * low:+.3f} à {100 * high:+.3f} ; {len(good)}) · à contresens "
+              f"{100 * bad['net'].mean():+.3f} % ({len(bad)}) · écart {100 * whole[0]:+.3f} % (de {100 * whole[1]:+.3f} à "
+              f"{100 * whole[2]:+.3f}) · première moitié "
+              + " puis seconde ".join("—" if h is None else f"{100 * h[0]:+.3f} %{' (net)' if h[1] > 0 or h[2] < 0 else ''}" for h in halves)
+              + (" · SÉPARE" if clear else "") + (" · GAGNE" if hard_low > 0 else ""))
+
+    for tf in SENSE_UNITS:
+        part = table[table["tf"] == tf]
+        if part.empty:
+            continue
+        print(f" bots en {tf} · {len(part)} trades · tous {100 * part['net'].mean():+.3f} % · achats "
+              f"{100 * part[~part['short']]['net'].mean():+.3f} % · ventes à découvert {100 * part[part['short']]['net'].mean():+.3f} %")
+        for column in SENSE_FLAGS:
+            line(f"{tf} · {column}", part, column)
+        for column in ("la crypto sur 1 heure", "les autres cryptos sur 1 heure"):  # le cas de l'utilisateur, sens par sens
+            for short, name in ((True, "les ventes à découvert"), (False, "les achats")):
+                line(f"{tf} · {name} seulement · {column}", part[part["short"] == short], column)
+    real = [k for k in out if "témoin" not in k and "seulement" not in k]
+    wins, splits = [k for k in real if out[k]["wins"]], [k for k in real if out[k]["separates"]]
+    verdict = ("GAGNE sur : " + " ; ".join(wins) + " — à revérifier sur une autre période avant d'y croire" if wins
+               else "ne gagne nulle part ; sépare (écart net sur les deux moitiés) sur : " + " ; ".join(splits) if splits
+               else "rien : nulle part les trades dans le sens ne gagnent, et aucun écart n'est net sur les deux moitiés")
+    print(f"  VERDICT · {verdict}")
+    out["verdict"] = verdict
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("etude", choices=sorted(STUDIES))
@@ -1519,7 +1698,8 @@ def main() -> None:
 
 STUDIES = {"donnees": donnees, "portage": portage, "heure": heure, "grille": grille, "peur": peur, "ecarts": ecarts,
            "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee,
-           "anciennes": anciennes, "creux": creux, "veille": veille, "agents": agents, "intelligence": intelligence}
+           "anciennes": anciennes, "creux": creux, "veille": veille, "agents": agents, "intelligence": intelligence,
+           "sens": sens}
 
 if __name__ == "__main__":
     main()
