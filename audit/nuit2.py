@@ -23,6 +23,7 @@ volatilité) n'ont que quelques jours ou quelques dizaines de mois de données :
     python audit/nuit2.py intelligence # un modèle qui apprend sur tous les trades sait-il dire « entre » ou « n'entre pas » ?
                                        # (a besoin de scikit-learn, pour cette mesure seulement : pip install scikit-learn)
     python audit/nuit2.py piste        # la ligne qui gagne dans « intelligence » (bots en 4 heures), revérifiée
+    python audit/nuit2.py sansrecul    # la même piste sur des cryptos choisies sans connaître la suite (objection d'un relecteur)
     python audit/nuit2.py sens         # les bots de court terme, s'ils ne tradaient que dans le sens des dernières minutes ?
     python audit/nuit2.py calme        # les mêmes bots sur l'or, le pétrole, les indices et de grandes entreprises
 """
@@ -1650,6 +1651,121 @@ def piste(args) -> dict:
     return out
 
 
+# --- étude 17 ter : la piste des bots en 4 heures, sur des cryptos choisies sans connaître la suite ------------------
+
+STABLES = {"USDC", "BUSD", "TUSD", "FDUSD", "USDP", "DAI", "EUR", "GBP", "AEUR", "UST", "USTC", "PAX", "PAXG", "WBTC"}
+
+
+def universe_then(cache: Path, start: int) -> tuple[list[str], set[str]]:
+    """Les paires assez échangées au premier jour d'une fenêtre, choisies avec ce qu'on savait ce jour-là : cotées
+    depuis 30 jours au moins, encore cotées, 5 millions de dollars par jour au moins sur les 30 jours d'avant (le
+    seuil du bot), monnaies stables et jetons à levier écartés. Rend aussi celles qui ont quitté la cote ensuite."""
+    names, gone = [], set()
+    for path in sorted(cache.glob("*-USDT-1h.pkl")):
+        coin = path.name[:-len("-USDT-1h.pkl")]
+        if coin in STABLES or coin.endswith(("UP", "DOWN", "BULL", "BEAR")):
+            continue
+        raw = pd.read_pickle(path)
+        if not len(raw):
+            continue
+        first, last = int(raw["ts"].iloc[0]), int(raw["ts"].iloc[-1])
+        if first > start - 30 * DAY or last < start:
+            continue
+        before = raw[(raw["ts"] >= start - 30 * DAY) & (raw["ts"] < start)]
+        if float((before["close"] * before["volume"]).sum()) / 30 < 5e6:
+            continue
+        names.append(f"{coin}/USDT")
+        if last < start + BRAIN_WINDOWS["4h"] * DAY - 30 * DAY:
+            gone.add(f"{coin}/USDT")
+    return names, gone
+
+
+def four_hours(raw: pd.DataFrame) -> pd.DataFrame:
+    """Les bougies de 4 heures refaites à partir des bougies d'une heure (pour les paires que le cache n'a qu'à l'heure)."""
+    bars = raw.sort_values("ts").assign(bar=lambda d: d["ts"] // (4 * HOUR) * (4 * HOUR)).groupby("bar")
+    return pd.DataFrame({"ts": bars["bar"].first().astype("int64"), "open": bars["open"].first(), "high": bars["high"].max(),
+                         "low": bars["low"].min(), "close": bars["close"].last(), "volume": bars["volume"].sum()}).reset_index(drop=True)
+
+
+def sansrecul(args) -> dict:
+    """LA PISTE DES BOTS EN 4 HEURES, SUR DES CRYPTOS CHOISIES SANS CONNAÎTRE LA SUITE. Objection d'un relecteur
+    indépendant (15/11/2026), qui a écrit ce protocole avant son propre calcul : les cryptos des études 17 et 17 bis
+    viennent du cache des bots, donc de celles qui étaient cotées, liquides et agitées en novembre 2026 ; ce choix
+    connaît l'avenir (aucune paire retirée de la cote, et des cryptos qui bougeaient à la FIN de la période).
+    Le test : l'univers est choisi le premier jour de la fenêtre (`universe_then`), paires retirées de la cote
+    ensuite comprises ; bougies de 4 heures refaites à partir des bougies d'une heure ; même `_brain_job`, même
+    modèle, mêmes tranches (`brain_table`). Deux fenêtres : du 15/11/2023 au 14/11/2026, deux échantillons de 24
+    paires réparties sur tout l'alphabet (une paire sur k à partir de la première, puis à partir du rang k // 2) ; du
+    15/11/2020 au 15/11/2023, tout l'univers d'un coup. Lecture fixée d'avance : si les préférés gagnent encore
+    nettement, le choix des cryptos n'explique pas le résultat ; sinon, le +0,569 % dépendait de cryptos choisies en
+    connaissant la suite. Ce calcul refait celui du relecteur avec le code de l'étude, pour qu'il se refasse depuis
+    le dépôt (ses chiffres : +0,371 % et −0,036 % pour les deux échantillons, +0,167 % réunis, de −0,288 à +0,623)."""
+    if importlib.util.find_spec("sklearn") is None:
+        raise SystemExit("Cette mesure a besoin de scikit-learn (pip install scikit-learn) ; le bot, lui, n'en dépend pas.")
+    cache = Path(args.cache)
+    span, windows = BRAIN_WINDOWS["4h"] * DAY, {"4h": BRAIN_WINDOWS["4h"]}
+    folder = cache / "intelligence" / "sans-recul"
+    folder.mkdir(parents=True, exist_ok=True)
+    bitcoin = pd.read_pickle(cache / "BTC-USDT-1h.pkl")
+    bitcoin[bitcoin["ts"] < BRAIN_END].to_pickle(folder / "BTC-USDT-1h.pkl")
+    out = {}
+
+    def bounds(part: pd.DataFrame, column: str = "net") -> tuple[float, float, float]:
+        sums = part.groupby("day")[column].agg(["count", "sum"])
+        return clustered_bounds(list(zip(sums["count"], sums["sum"])))
+
+    def report(title: str, table: pd.DataFrame, gone: set) -> None:
+        table = table.assign(extra=table["net"] - table.groupby(["run", "fold", "short"])["net"].transform("mean"))
+        top, low = table[table["top"]], table[table["low"]]
+        mean, lo, hi = bounds(top)
+        extra, extra_lo, extra_hi = bounds(top, "extra")
+        left, kept = top[top["name"].isin(gone)], top[~top["name"].isin(gone)]
+        per = top.groupby("name")["net"].agg(["count", "mean"])
+        per = per[per["count"] >= 100]
+        out[title] = {"coins": int(table["name"].nunique()), "gone": int(len(set(table["name"]) & gone)), "n": int(len(table)),
+                      "all": float(table["net"].mean()), "top": float(mean), "low": float(lo), "high": float(hi),
+                      "n_top": int(len(top)), "extra": float(extra), "extra_low": float(extra_lo), "extra_high": float(extra_hi),
+                      "bottom": float(low["net"].mean())}
+        print(f" {title} · {table['name'].nunique()} cryptos (dont {len(set(table['name']) & gone)} retirées de la cote ensuite) · "
+              f"{len(table)} trades jamais vus · tous {100 * table['net'].mean():+.3f} % · ses 10 % préférés {100 * mean:+.3f} % (de "
+              f"{100 * lo:+.3f} à {100 * hi:+.3f} ; {len(top)} trades) · une fois le sens retiré {100 * extra:+.3f} % (de "
+              f"{100 * extra_lo:+.3f} à {100 * extra_hi:+.3f}) · ceux qu'elle déconseille {100 * low['net'].mean():+.3f} %")
+        print(f"   achats préférés {100 * top[~top['short']]['net'].mean():+.3f} % · ventes préférées "
+              f"{100 * top[top['short']]['net'].mean():+.3f} % · cryptos retirées ensuite "
+              + (f"{100 * left['net'].mean():+.3f} % ({len(left)})" if len(left) else "aucune")
+              + f" · restées {100 * kept['net'].mean():+.3f} % · par crypto (au moins 100 préférés) : "
+              f"{int((per['mean'] > 0).sum())} gagnantes sur {len(per)}")
+
+    def run(label: str, names: list[str], end: int) -> pd.DataFrame:
+        for symbol in names:
+            target = folder / f"{symbol.replace('/', '-')}-4h.pkl"
+            if not target.exists():
+                four_hours(pd.read_pickle(cache / f"{symbol.replace('/', '-')}-1h.pkl")).to_pickle(target)
+        table = brain_table(names, folder, end, windows)
+        return table.assign(run=label, name=[names[int(k)] for k in table["coin"]])
+
+    print("ÉTUDE 17 ter — LA PISTE DES BOTS EN 4 HEURES, SUR DES CRYPTOS CHOISIES SANS CONNAÎTRE LA SUITE")
+    names, gone = universe_then(cache, BRAIN_END - span)
+    k = max(1, len(names) // BRAIN_COINS)
+    first, second = names[0::k][:BRAIN_COINS], names[k // 2::k][:BRAIN_COINS]
+    print(f" univers du 15/11/2023 : {len(names)} paires, dont {len(gone)} retirées de la cote ensuite", flush=True)
+    tables = [run("S1", first, BRAIN_END), run("S2", second, BRAIN_END)]
+    report("du 15/11/2023 au 14/11/2026, premier échantillon", tables[0], gone)
+    report("du 15/11/2023 au 14/11/2026, second échantillon", tables[1], gone)
+    report("du 15/11/2023 au 14/11/2026, les deux réunis", pd.concat(tables, ignore_index=True), gone)
+    names, gone = universe_then(cache, BRAIN_END - 2 * span)
+    print(f" univers du 15/11/2020 : {len(names)} paires, dont {len(gone)} retirées de la cote ensuite", flush=True)
+    report("du 15/11/2020 au 15/11/2023, tout l'univers", run("P2020", names, BRAIN_END - span), gone)
+    recent, past = out["du 15/11/2023 au 14/11/2026, les deux réunis"], out["du 15/11/2020 au 15/11/2023, tout l'univers"]
+    verdict = ("la piste TIENT sans recul : ses préférés gagnent nettement sur les deux fenêtres" if recent["low"] > 0 and past["low"] > 0
+               else "piste : ses préférés gagnent en moyenne sur les deux fenêtres, sans netteté" if recent["top"] > 0 and past["top"] > 0
+               else "la piste ne tient pas sans recul : sur des cryptos choisies sans connaître la suite, ses préférés ne gagnent pas "
+               "sur les deux fenêtres")
+    print(f"  VERDICT · {verdict}")
+    out["verdict"] = verdict
+    return out
+
+
 # --- étude 18 : ne trader que dans le sens du court terme --------------------------------------------------------------
 
 QUARTER = 15 * MINUTE
@@ -2004,7 +2120,7 @@ def main() -> None:
 STUDIES = {"donnees": donnees, "portage": portage, "heure": heure, "grille": grille, "peur": peur, "ecarts": ecarts,
            "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee,
            "anciennes": anciennes, "creux": creux, "veille": veille, "agents": agents, "intelligence": intelligence,
-           "sens": sens, "calme": calme, "piste": piste}
+           "sens": sens, "calme": calme, "piste": piste, "sansrecul": sansrecul}
 
 if __name__ == "__main__":
     main()
