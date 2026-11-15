@@ -18,6 +18,7 @@ volatilité) n'ont que quelques jours ou quelques dizaines de mois de données :
     python audit/nuit2.py retombee     # la suite de l'étude « heure » : la vente après une envolée, sur le contrat
     python audit/nuit2.py anciennes    # bougies d'une heure de 2017 à 2019 des paires qui existaient déjà, une fois
     python audit/nuit2.py creux        # « acheter le creux » refait sur cette troisième période
+    python audit/nuit2.py veille       # suivre le sens de la veille (ou des dernières heures) : est-ce que ça annonce la suite ?
 """
 from __future__ import annotations
 
@@ -1083,6 +1084,82 @@ def creux(args) -> dict:
     return out
 
 
+# --- étude 15 : suivre le sens de la veille ------------------------------------------------------------------------------
+
+def veille(args) -> dict:
+    """SUIVRE LE SENS DE LA VEILLE (question de l'utilisateur du 15/11/2026 : une stratégie vendeuse gagne quand ça
+    baisse et se fait liquider quand ça monte ; un bot pourrait-il passer d'un sens à l'autre selon que le marché
+    est « vendeur ou acheteur », en apprenant du graphique de la veille ?).
+    Un tel bot ne gagne que si le sens d'hier annonce le sens d'aujourd'hui. C'est cela, et seulement cela, qu'on
+    mesure ici. Protocole, fixé avant le calcul :
+    - à la journée : les 50 cryptos les plus échangées de chaque jour (connues la veille), bougies d'un jour depuis
+      2020. « Crypto par crypto » : chaque soir, acheter pour le lendemain celles qui ont monté, vendre à découvert
+      celles qui ont baissé, à parts égales. « Le marché entier » : si la moyenne des 50 a monté, tout acheter pour le
+      lendemain, sinon tout vendre à découvert. Le « sens » est celui du dernier jour, puis des 3 et des 7 derniers ;
+    - à l'échelle des bots : les bougies d'une heure de toutes les paires qui échangent au moins 1 million de dollars
+      par jour ; le sens des 1, 4 et 24 dernières heures, suivi pendant les 1, 4 et 24 heures suivantes, crypto par
+      crypto, à parts égales ;
+    - frais : 0,07 % par ordre sur ce qui change (changer de sens, c'est deux ordres) ; à la journée, une vente à
+      découvert touche ou paie le vrai financement (pas compté à l'heure) ;
+    - on donne le résultat AVANT frais aussi : c'est lui qui dit si le sens d'hier annonce quelque chose.
+    Verdict comme partout : deux périodes, avant et après le 01/01/2024. 9 façons de faire, avant et après frais."""
+    cache = Path(args.cache)
+    frames = nuit.daily_frames(cache)
+    member, _ = nuit.longterm.universe(frames, 50)
+    index = member.index.to_numpy(dtype="int64")
+    close = pd.DataFrame({s: f.set_index("ts")["close"] for s, f in frames.items()}).sort_index().reindex(member.index)
+    ahead = close.pct_change(fill_method=None).shift(-1)  # du soir t au soir t+1
+    quoted = close.notna().astype(int)
+    paid = pd.DataFrame({s: nuit.next_funding(index, nuit.contract_of(s, cache), cache) for s in member.columns},
+                        index=member.index)
+    out = {}
+    print("ÉTUDE 15 — SUIVRE LE SENS DE LA VEILLE")
+
+    def report(name: str, weights: pd.DataFrame, moves: pd.DataFrame, stamps, funding=None) -> None:
+        gross = (weights * moves).sum(axis=1, min_count=1)
+        turned = weights.diff().abs().sum(axis=1).where(gross.notna())
+        turned.iloc[0] = weights.iloc[0].abs().sum()
+        extra = (weights.clip(upper=0).abs() * funding).sum(axis=1) if funding is not None else 0.0
+        net = gross - PERP * turned + extra
+        for label, values in (("avant frais", gross), ("après frais", net)):
+            result = judge(values.to_numpy(dtype=float), np.asarray(stamps, dtype="int64"))
+            out[f"{name} | {label}"] = result
+            print(brief(f"{name} · {label}", result, "par période"))
+
+    for look in (1, 3, 7):
+        whole = quoted.rolling(look + 1).sum() == look + 1  # cotée sans interruption sur toute la durée
+        past = (close / close.shift(look) - 1).where(member & whole)
+        side = np.sign(past)
+        report(f"à la journée, crypto par crypto, le sens des {look} dernier(s) jour(s)",
+               side.div(side.abs().sum(axis=1), axis=0).fillna(0.0), ahead, index, paid)
+        crowd = np.sign(past.mean(axis=1))
+        basket = past.notna().astype(float)
+        report(f"à la journée, le marché entier, le sens des {look} dernier(s) jour(s)",
+               basket.div(basket.sum(axis=1), axis=0).mul(crowd, axis=0).fillna(0.0), ahead, index, paid)
+    hours, money = {}, {}
+    for symbol in pairs(cache):
+        path = cache / f"{symbol.replace('/', '-')}-1h.pkl"
+        if path.exists():
+            frame = pd.read_pickle(path)
+            frame = frame[frame["ts"] >= ms(START)]
+            if len(frame) > USUAL + 2:
+                stamps = frame["ts"].to_numpy(dtype="int64")
+                hours[symbol] = pd.Series(frame["close"].to_numpy(dtype=float), index=stamps)
+                money[symbol] = pd.Series((frame["close"] * frame["volume"]).to_numpy(dtype=float), index=stamps)
+    hourly = pd.DataFrame(hours).sort_index()
+    liquid = pd.DataFrame(money).sort_index().rolling(USUAL, min_periods=USUAL).mean() >= nuit.MIN_MONEY / 24
+    del hours, money
+    for span in (1, 4, 24):
+        ends = hourly.index[(hourly.index // HOUR + 1) % span == 0]  # les bougies qui finissent sur une heure ronde du pas
+        sub = hourly.reindex(ends)
+        past = sub.pct_change(fill_method=None).where(liquid.reindex(ends))
+        past = past.where(pd.Series(ends, index=ends).diff() == span * HOUR, axis=0)  # pas de trou dans les heures
+        side = np.sign(past)
+        report(f"à l'heure, crypto par crypto, le sens des {span} dernière(s) heure(s)",
+               side.div(side.abs().sum(axis=1), axis=0).fillna(0.0), sub.pct_change(fill_method=None).shift(-1), ends)
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("etude", choices=sorted(STUDIES))
@@ -1099,7 +1176,7 @@ def main() -> None:
 
 STUDIES = {"donnees": donnees, "portage": portage, "heure": heure, "grille": grille, "peur": peur, "ecarts": ecarts,
            "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee,
-           "anciennes": anciennes, "creux": creux}
+           "anciennes": anciennes, "creux": creux, "veille": veille}
 
 if __name__ == "__main__":
     main()
