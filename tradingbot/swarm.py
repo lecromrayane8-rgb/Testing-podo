@@ -114,7 +114,8 @@ WHY = {"calme": "sa crypto ne bougeait plus assez (en veille)",
        "reveil": "il venait de se réveiller : ce signal datait de son sommeil",
        "sortie": "sa stratégie était recalée : il ne prenait plus de trade",
        "endormi": "il dormait : sa crypto avait quitté la liste depuis plus de six heures",
-       "coupure": "ces bougies ne lui sont jamais arrivées (ordinateur éteint ou en veille trop longtemps)",
+       "coupure": "ces bougies ne lui sont jamais arrivées (ordinateur éteint ou en veille trop longtemps, ou cotation "
+                  "interrompue)",
        "position": "il était déjà en position à ce moment-là",
        "inconnu": "la raison n'a pas été notée"}
 TRENDS = ("hausse", "baisse", "indécise")  # la tendance de fond, comme `features` la nomme

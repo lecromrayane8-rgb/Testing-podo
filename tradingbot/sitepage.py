@@ -1406,7 +1406,7 @@ JS = r"""
     const rows = f.cases.filter(k => k.real.n || k.rule.n);
     const names = {hausse: 'Elle montait', baisse: 'Elle baissait', 'indécise': 'Elle était indécise'};
     box.replaceChildren(el('h2', {text: 'Le retour de l\'agent'}),
-      ...(f.sentences.length ? f.sentences.map(x => el('p', {class: 'lesson-line', text: x.replace('{né}', born)}))
+      ...(f.sentences.length ? f.sentences.map(x => el('p', {class: 'lesson-line', text: x.replace('{né}', () => born)}))
         : [el('p', {class: 'muted', text: 'Rien à signaler sur ces bougies pour l\'instant.'})]),
       el('h3', {class: 'group-title', text: 'Dans quels cas ses trades ont marché'}),
       el('p', {class: 'status-line', text: 'Selon la tendance de fond au moment d\'entrer : trades gagnants sur le nombre de trades, '
