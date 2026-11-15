@@ -42,8 +42,10 @@ TES BOTS (argent fictif, en continu)
    le labo mesure toujours les deux façons, avec et sans. Le stop suiveur, lui, monte avec le prix (à
    la même distance du plus haut atteint). Un stop déplacé ne recule jamais.
 4. Les agents d'analyse : pour chaque bot, dans quelles conditions sa stratégie a gagné ou perdu
-   (tendance de fond, volatilité, RSI, volume, heure), ses chances de gain estimées maintenant, et
-   pourquoi chaque trade a gagné ou perdu. Ce sont des mesures : un bot n'entre que sur sa règle.
+   (tendance de fond, volatilité, RSI, volume, heure), et dans quelles conditions chaque trade est
+   entré. Ils décrivent son passé : cela n'annonce pas la suite, et un bot n'entre que sur sa règle.
+   Sous le graphique d'un bot, « Le retour de l'agent » dit depuis quand il existe (le trait « né
+   ici »), combien de trades sa règle aurait pris, combien il en a pris, et pourquoi pas les autres.
 5. La mesure à l'essai : à chaque test d'une crypto, les trades de TOUTES les combinaisons sont
    comptés, pas seulement ceux des bots choisis : jusqu'à 91 800 « bots à l'essai » (60 cryptos × 1530
    combinaisons), chacun mesuré sans et avec la sécurisation. Rien n'est choisi d'avance, donc la

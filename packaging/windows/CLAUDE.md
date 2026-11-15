@@ -90,8 +90,12 @@ texte, et `tradingbot\tradingbot.exe robustesse --tendance` refait son test de r
    compte et historique gardés, plus de bougies ni de prix demandés) et se réveille à son retour ; il n'est arrêté
    pour de bon qu'après 30 jours sans retour.
 4. Les agents d'analyse mesurent, sur le backtest de chaque bot, dans quelles conditions sa stratégie gagne ou perd
-   (tendance de fond, volatilité, RSI, volume, heure), une probabilité de gain dans les conditions du moment, et
-   pourquoi chaque trade réel a gagné ou perdu. Ce sont des mesures : un bot n'entre que sur le signal de sa règle.
+   (tendance de fond, volatilité, RSI, volume, heure), la part de trades gagnants de son backtest dans les conditions
+   du moment, et dans quelles conditions chaque trade réel est entré. Ce sont des descriptions de son passé : mesurées
+   sur 2,9 millions de trades, elles n'annoncent pas le trade suivant ; un bot n'entre que sur le signal de sa règle.
+   « Le retour de l'agent », sous le graphique d'un bot : sa naissance (trait « né ici »), les trades que sa règle
+   aurait pris, ceux qu'il a pris, et la raison de chaque trade laissé de côté (notée dans la fiche du bot :
+   `skipped`, `gaps`).
 5. La mesure à l'essai (`essaim-essais.json`) : à chaque test d'une crypto, les trades de toutes les combinaisons sont
    comptés (pas seulement ceux des bots choisis), une seule fois, et seulement s'ils ont été ouverts pendant que la
    crypto bougeait. Aucun choix préalable : c'est la mesure à laquelle se fier. Elle juge les stratégies (technique ×

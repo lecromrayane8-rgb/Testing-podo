@@ -105,7 +105,16 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   sans levier, mêmes lignes `stat_keys`, jours gardés `LIVE_DAYS`), `ranking` (site ; le verdict affiché vient de la
   mesure à l'essai). Agents : `features` (tendance MM200 et
   pente, ATR %, RSI 14, volume, heure UTC), `buckets`, `profile`, `insights`, `probability` (tirée vers la moyenne,
-  `SHRINK`), `trade_analysis` (après chaque trade). Fichiers : `essaim.json` (résumé du site, `summary`, `bot_brief` ;
+  `SHRINK`), `trade_analysis` (après chaque trade) ; depuis le 15/11/2026 ils décrivent le passé du bot et ne
+  conseillent plus (ni « favorable / défavorable », ni « chances estimées » : mesurés sans effet sur les trades
+  suivants). Le retour de l'agent (15/11/2026) : dans `_on_candles`, `_note_skip` note chaque signal d'entrée non
+  suivi dans `bot["skipped"]` avec sa raison (`WHY` : `calme`, `hors-liste`, `reveil`, `sortie` ; `SKIPPED_KEPT` 60)
+  et `_note_gap` les périodes dont le bot n'a jamais vu les bougies dans `bot["gaps"]` (`coupure` : plus longue que
+  le rattrapage ; `endormi` : son sommeil, noté au réveil ; `GAPS_KEPT` 20) ; AUCUNE décision de trade ne change.
+  `feedback(bot, df, view)` range les trades de la règle rejouée (`chart_view`) : avant la naissance du bot, pris,
+  ou non pris avec la raison (notée, sinon une période sans bougies, sinon `position`, sinon `inconnu`), compte ses
+  vrais trades et ceux de la règle par tendance de fond (`TRENDS`), et écrit les phrases (`{né}` = la date, mise par
+  la page). Fichiers : `essaim.json` (résumé du site, `summary`, `bot_brief` ;
   `trial`, `holdout`, `secure`, `reference`), `essaim-etat.json` (`STATE_FILE`, la mémoire, écrite si `state_dirty` ou toutes
   les 10 min ; un test perdu au redémarrage est refait), `essaim-essais.json` (`TRIAL_FILE`, la mesure à l'essai,
   écrite quand un test l'a complétée), `reference.json` (`REFERENCE_FILE` : les chiffres du site au premier lancement
@@ -115,7 +124,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   Tests : parité direct/backtest avec et sans sécurisation (`test_swarm`) et signaux de la fenêtre du direct = tout
   l'historique, pour chaque technique dans les deux sens (`test_fleet`), reprise après redémarrage identique à une
   course sans arrêt, trades à l'essai comptés une seule fois quel que soit le nombre de tests, verdicts par journées,
-  comparaison avec/sans refaite à la main, sommeil et réveil d'un bot.
+  comparaison avec/sans refaite à la main, sommeil et réveil d'un bot, signaux non suivis et périodes sans bougies
+  notés avec leur raison, le retour de l'agent sur un cas écrit à la main et sur un vrai parcours.
 - `tradingbot/fleet.py` : le moteur commun au backtest et au direct. `technique` (`lab.ALL_VARIANTS` + `EXTRA` : EMA,
   VWAP, stochastique, Keltner, ADX, Parabolic SAR, Ichimoku, écart à la moyenne, Heikin-Ashi, et les douze lectures
   du graphique : « Zone à combler (FVG) » et « Order block » avec ou sans MM200, « Prise de liquidité », « Cassure de
@@ -197,9 +207,10 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   Réglages, Journal. Onglet Stratégies : d'abord « Sécurisation des gains : avec ou sans ? » (`renderSecure`,
   `summary["secure"]`). Bots endormis : statut `endormi`, filtre « Endormis », tuile des bots sans eux. `zoomChart` :
   bougies, volume, lignes, zones, marques (entrée, stop, objectif, liquidation, seuil de sécurisation en pointillés),
-  `bands` (zone du risque jusqu'au stop, zone visée jusqu'à l'objectif), triangles des trades, rond d'une sécurisation ; molette, glisser, pincer, boutons, clavier, double-clic ; mise à jour sans perdre le zoom
+  `bands` (zone du risque jusqu'au stop, zone visée jusqu'à l'objectif), triangles des trades, rond d'une sécurisation, `vlines` (un trait vertical : la naissance du bot) ; molette, glisser, pincer, boutons, clavier, double-clic ; mise à jour sans perdre le zoom
   (`box._chart.update`). `bot_data` prend le prix, le statut, le signal et la probabilité du dernier tour dans le
-  résumé. `ACTIONS` = `flotte`, `check`, `telegram` (même commande que leur lanceur, test `test_packaging`), chacune
+  résumé. `bot_chart` joint au graphique d'un bot le retour de l'agent (`swarm.feedback`), montré sous le graphique
+  (`renderFeedback` : phrases, tableau « Dans quels cas ses trades ont marché », rappel qu'il décrit et ne décide rien). `ACTIONS` = `flotte`, `check`, `telegram` (même commande que leur lanceur, test `test_packaging`), chacune
   dans un sous-processus (`TaskManager`, `Task`) dont le journal s'affiche en direct. `Site.start_background` lance
   les bots et les relance toutes les 20 s (`keep_fleet_running`), sauf arrêtés à la main (`fleet_stopped`) ;
   `fleet_running` sait qu'un verrou encore frais vient de nos bots arrêtés (pid) ; changer un réglage `FLOTTE_*` ou
@@ -788,3 +799,12 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   Leçons : une ligne qui gagne seule parmi quinze se revérifie (témoin mélangé, autre période, autres cryptos, sens
   retiré) avant d'en parler comme d'un résultat ; « plus calme » veut dire des frais plus lourds dans chaque
   mouvement, pas un marché plus facile.
+- 15/11/2026 (fin) : il demande où en est « l'agent de vérification et de modification ». Répondu : pas commencé (sa
+  règle : il approuve, puis je code) ; la « modification » (remplacer des bots selon la tendance) a été mesurée sans
+  effet sur les bots en 1 et 5 minutes. Question posée, réponse : « Le retour de l'agent ». FAIT, point de retour
+  `c29aeab` : le bot note pourquoi il laisse passer un signal et les périodes sans bougies (aucun trade ne change),
+  `swarm.feedback`, trait « né ici » sur le graphique, bloc « Le retour de l'agent » sous le graphique, mentions
+  réécrites (un passé décrit, plus un conseil). Pas construit, dit : la modification automatique des bots. À faire
+  quand la relecture de la piste des bots en 4 heures sera rendue : lui en donner les conclusions et, si elle tient,
+  lui proposer un plan (un filtre d'entrée pour les bots en 4 heures, en argent fictif, à approuver). Toujours en
+  attente de son oui ou non : le compte fictif « acheteur de krach ».

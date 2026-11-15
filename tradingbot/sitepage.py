@@ -1402,15 +1402,17 @@ JS = r"""
     if (!box) return;
     if (!f) { box.replaceChildren(); return; }
     const born = f.started ? when(f.started) : '';
-    const cell = k => !k.n ? '—' : k.wins + ' gagnant' + (k.wins > 1 ? 's' : '') + ' sur ' + k.n + ' · ' + pct(k.mean, 2) + ' par trade';
+    const cell = k => !k.n ? '—' : k.wins + ' sur ' + k.n + ' · ' + pct(k.mean, 2);
     const rows = f.cases.filter(k => k.real.n || k.rule.n);
     const names = {hausse: 'Elle montait', baisse: 'Elle baissait', 'indécise': 'Elle était indécise'};
     box.replaceChildren(el('h2', {text: 'Le retour de l\'agent'}),
       ...(f.sentences.length ? f.sentences.map(x => el('p', {class: 'lesson-line', text: x.replace('{né}', born)}))
         : [el('p', {class: 'muted', text: 'Rien à signaler sur ces bougies pour l\'instant.'})]),
       el('h3', {class: 'group-title', text: 'Dans quels cas ses trades ont marché'}),
+      el('p', {class: 'status-line', text: 'Selon la tendance de fond au moment d\'entrer : trades gagnants sur le nombre de trades, '
+        + 'puis résultat moyen par trade, frais compris.'}),
       rows.length ? el('div', {class: 'table-wrap'}, el('table', {class: 'fit'},
-        headRow(['La tendance de fond à l\'entrée'], ['Ses vrais trades', 'n'], ['Sa règle sur ce graphique', 'n opt']),
+        headRow(['Tendance de fond'], ['Ses vrais trades', 'n'], ['Sa règle sur ce graphique', 'n opt']),
         el('tbody', {}, ...rows.map(k => el('tr', {}, el('td', {text: names[k.trend] || k.trend}), el('td', {class: 'n', text: cell(k.real)}),
           el('td', {class: 'n opt', text: cell(k.rule)}))))))
         : el('p', {class: 'muted', text: 'Pas encore de trade à ranger.'}),

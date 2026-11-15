@@ -1944,19 +1944,27 @@ def feedback(bot: dict, df: pd.DataFrame, view: dict) -> dict:
         got = len(since) - len(missed)
         text = (f"{'Depuis sa naissance' if born is not None and born > first else 'Sur ces bougies'}, sa règle rejouée "
                 f"aurait pris {len(since)} trade{'s' if len(since) > 1 else ''} ; il en a pris {got}.")
-        if missed:
+        if len(missed) == 1:
+            text += (f" L'autre (triangles vides) : {WHY[missed[0]['why']]}. "
+                     f"Il aurait {'gagné' if missed[0]['net'] > 0 else 'perdu'}.")
+        elif missed:
             counts: dict[str, int] = {}
             for m in missed:
                 counts[m["why"]] = counts.get(m["why"], 0) + 1
             won = sum(m["net"] > 0 for m in missed)
-            text += (f" Les {len(missed)} autres (triangles vides) : " if len(missed) > 1 else " L'autre (triangles vides) : ")
-            text += " ; ".join(f"{n} fois, {WHY[w]}" for w, n in sorted(counts.items(), key=lambda kv: -kv[1]))
-            text += f". {won} sur {len(missed)} aurai{'ent' if won > 1 else 't'} gagné."
+            text += (f" Les {len(missed)} autres (triangles vides) : "
+                     + " ; ".join(f"{n} fois, {WHY[w]}" for w, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+                     + f". {won} sur {len(missed)} aurai{'ent' if won > 1 else 't'} gagné.")
         sentences.append(text)
     elif born is not None:
         sentences.append("Depuis sa naissance, sa règle n'a donné aucun trade sur ces bougies.")
+    shown = {int(t["entry"]) for t in view.get("rule_trades") or []}
+    extra = sum(entry not in shown for entry in taken)
+    if extra:  # la règle est rejouée à partir de la première bougie du graphique, sans position ; le bot, lui, a un passé
+        sentences.append(f"Il a aussi pris {extra} trade{'s' if extra > 1 else ''} que cette règle rejouée ne montre pas : "
+                         "elle repart de zéro à la première bougie du graphique, lui non.")
     return {"born": started if born is not None and first < born <= last + tf_ms else None, "started": started,
-            "sentences": sentences, "missed": missed[-30:],
+            "sentences": sentences, "missed": missed[-30:], "extra": extra,
             "before": _case([float(t["net"]) for t in before]), "since": {"rule": len(since), "taken": len(since) - len(missed)},
             "cases": [{"trend": k, "real": _case(lived[k]), "rule": _case(by_trend[k])} for k in TRENDS]}
 

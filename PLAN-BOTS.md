@@ -1117,10 +1117,8 @@ avant son calcul. La quatrième est une proposition, en attente de ton accord.
   (`per_timeframe`) : ses 8 places étaient prises. Le réglage « Bots au plus par crypto » (8, jusqu'à 20) en ouvre
   d'autres. Sur INIT, tu avais pourtant 5 acheteurs sur 8, dont « Cassure 20/10 » en 5 minutes à +35,7 %.
 
-**Proposé (à approuver) : « le retour de l'agent » sur la page d'un bot.** Un trait « le bot est né ici » sur le
-graphique ; les trades de la règle que le bot n'a pas pris, avec la raison notée au moment où il renonce ; « dans quels
-cas ça a marché » (ses trades rangés par tendance). Écrit par des règles, sans IA payante. Il remplacerait la mention
-« favorable / défavorable », qui n'annonce rien (mesure du 15/11).
+**« Le retour de l'agent » sur la page d'un bot : fait le 15/11/2026** (voir plus bas). La « modification »
+automatique des bots, elle, n'est pas construite : mesurée sans effet sur les bots en 1 et 5 minutes (étude 18).
 
 ### Une « intelligence » qui apprend quand entrer (étude 17 : non dans l'ensemble)
 
@@ -1228,6 +1226,51 @@ marché où les frais pèsent plus lourd dans chaque mouvement. L'historique est
 la règle de tendance avait déjà été mesurée sur le Nasdaq, le Nikkei, le pétrole et cinq monnaies : une protection,
 pas un gain. Binance n'est ici qu'une source de prix : depuis la France, il faudrait un autre courtier.
 
+## Le retour de l'agent sur la page d'un bot (15/11/2026, fait)
+
+Ta demande : un agent, dans le site, qui fasse un retour sur le graphique d'un bot : les trades qui n'ont pas été
+pris et pourquoi, et dans quels cas ses trades ont marché. Accord donné le 15/11 (« Le retour de l'agent »). Point de
+retour : `c29aeab`.
+
+### Ce qui a changé
+
+- **Le bot note ce qu'il laisse passer.** Chaque fois que sa règle donne un signal d'entrée et qu'il ne le suit pas,
+  il écrit pourquoi, sur le moment : sa crypto ne bougeait plus assez, elle était sortie de la liste, il venait de se
+  réveiller, sa stratégie était recalée. Il note aussi les périodes dont il n'a jamais vu les bougies : une coupure
+  plus longue que le rattrapage, ou son sommeil. Aucun trade ne change : les tests qui comparent le direct au
+  backtest sont restés verts sans qu'on y touche.
+- **Sur le graphique : un trait « né ici ».** Avant, ce sont les triangles vides de sa règle (ce qu'elle aurait
+  fait : c'est sur ce passé que le labo l'a choisi) ; après, ses vrais trades.
+- **Sous le graphique : « Le retour de l'agent ».** Combien de trades sa règle rejouée aurait pris depuis sa
+  naissance, combien il en a pris, et pour les autres la raison (celle qu'il a notée ; sinon « il était déjà en
+  position » ; sinon « la raison n'a pas été notée »). Puis un tableau : ses vrais trades et ceux de sa règle, rangés
+  par tendance de fond (elle montait, elle baissait, elle était indécise), avec les gagnants et le résultat moyen.
+- **Les mentions réécrites.** « Chances de gain, maintenant » devient « Dans ces conditions, par le passé » ; sur
+  les cartes, « chances estimées 85 % » devient « dans ces conditions par le passé : 85 % » ; sous chaque trade, plus
+  de « conditions favorables / défavorables », mais « ces conditions lui avaient mieux (ou moins bien) réussi ».
+  Partout, la même idée : cela décrit son passé, cela n'annonce pas la suite (mesure du 15/11, 2,9 millions de trades).
+
+### Comment le vérifier sur le site
+
+1. Onglet Direct, clique sur un bot, va à « Son graphique » et clique plusieurs fois sur « − » pour tout voir : un
+   trait vertical en pointillés, « né ici », marque sa naissance (s'il est né pendant ces 999 bougies).
+2. Juste dessous : « Le retour de l'agent », ses phrases et son tableau.
+3. Les raisons ne sont notées qu'à partir de cette version : pour un trade laissé de côté avant la mise à jour, tu
+   liras « la raison n'a pas été notée ».
+
+### Ce qu'il faut surveiller
+
+- « La raison n'a pas été notée » pour un trade récent, d'après la mise à jour : dis-le-moi, c'est un cas que je
+  n'ai pas prévu.
+- La règle est rejouée à partir de la première bougie du graphique, sans position ; le bot, lui, a un passé. Un petit
+  décalage est possible : le retour le dit (« il a aussi pris N trades que cette règle rejouée ne montre pas »).
+- Ce retour explique ; il ne rend aucun bot gagnant, et il ne change rien aux bots.
+
+### La suite
+
+La partie « modification » (mettre de côté ou remplacer des bots d'après la tendance) n'est pas construite : mesurée
+sans effet sur les bots en 1 et 5 minutes. Pour les bots en 4 heures, tout dépend de la relecture de la piste.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
@@ -1332,3 +1375,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 15/11/2026 | La piste des bots en 4 heures, vérifiée | Mesuré (`audit/nuit2.py piste`) : témoin sur bougies mélangées propre, +0,354 % sur 2020-2023, +0,368 % sur 24 autres cryptos, sans netteté : piste ; relecture indépendante en cours | `d836992` |
 | 15/11/2026 | Ne trader que dans le sens du court terme | Mesuré (`audit/nuit2.py sens`, 11,2 millions de trades, treize lectures de la tendance) : rien, le plus grand écart est de 0,03 % pour 0,15 % de frais | `180bbf2` |
 | 15/11/2026 | Les mêmes bots sur l'or, le pétrole, les indices et les entreprises | Mesuré (`audit/nuit2.py calme`, 18 marchés, 12,1 millions de trades) : avant frais zéro, 0 stratégie prouvée sur 255, 235 recalées | `9e5e5ba` |
+| 15/11/2026 | Le retour de l'agent sur la page d'un bot | Fait : le bot note pourquoi il laisse passer un signal (aucun trade ne change), trait « né ici », bloc « Le retour de l'agent », mentions réécrites (un passé décrit, plus un conseil) ; tests | `c29aeab` |

@@ -177,9 +177,14 @@ Comment il travaille (`tradingbot/swarm.py`, moteur commun au backtest et au dir
    signal donné pendant qu'il dormait). Il n'est arrêté pour de bon qu'après 30 jours sans retour. Sans cela, presque
    aucun bot ne vivait assez longtemps pour être jugé.
 5. **Les agents d'analyse** : sur les trades du backtest de chaque bot, dans quelles conditions sa stratégie gagne ou
-   perd (tendance de fond, volatilité, RSI, volume, heure de la journée), sa probabilité de gain dans les conditions
-   du moment (tirée vers sa moyenne quand les cas sont peu nombreux), et après chaque trade réel, pourquoi il a gagné
-   ou perdu. Des mesures, jamais des ordres : un bot n'entre que sur le signal de sa règle.
+   perd (tendance de fond, volatilité, RSI, volume, heure de la journée), la part de trades gagnants de son backtest
+   dans les conditions du moment (tirée vers sa moyenne quand les cas sont peu nombreux), et après chaque trade réel,
+   dans quelles conditions il est entré. Des descriptions de son passé, jamais des conseils ni des ordres : mesurées
+   sur 2,9 millions de trades qu'elles n'avaient pas vus, elles n'annoncent pas le trade suivant, et un bot n'entre
+   que sur le signal de sa règle. **Le retour de l'agent**, sous le graphique de chaque bot : depuis quand il existe
+   (un trait « né ici » sur le graphique), combien de trades sa règle rejouée aurait pris et combien il en a pris,
+   pourquoi il a laissé passer les autres (la raison est notée au moment où il renonce : crypto en veille, réveil,
+   coupure trop longue, sommeil), et ses trades rangés par tendance de fond.
 6. **La sécurisation des gains et les stops qui bougent** : quand un trade a gagné autant qu'il risquait (+1R, R étant
    la distance entre l'entrée et le stop de départ ; `FLOTTE_SECURISATION_SEUIL`), le bot encaisse la moitié de la
    position (`FLOTTE_SECURISATION_PART`, un ordre limite) et passe le stop du reste au prix d'entrée, frais d'un
@@ -246,7 +251,8 @@ Le bot sert lui-même une page sur l'ordinateur (http://127.0.0.1:8765). Cinq on
   au chiffre près ; sa sécurisation : le seuil, puis ce qui a été encaissé et ce qui reste ouvert), son graphique
   (lignes de sa technique, la zone du risque jusqu'au stop et la zone visée jusqu'à l'objectif, le seuil de
   sécurisation en pointillés puis le nouveau stop, ses vrais trades en triangles pleins, ce que sa règle aurait fait
-  sur ces bougies en triangles vides, un rond à chaque sécurisation), les agents d'analyse, son direct face à son backtest, la courbe de son
+  sur ces bougies en triangles vides, un rond à chaque sécurisation, un trait à sa naissance), le retour de l'agent,
+  les agents d'analyse, son direct face à son backtest, la courbe de son
   capital, chaque trade expliqué (diagnostic, analyse, leçon) et la fiche de sa technique (ce qu'elle mesure, ce qu'en
   dit la recherche).
 - **Le graphique zoomable** : molette, boutons + et −, pincement sur tablette, glisser ou ◀ ▶ pour remonter le temps,

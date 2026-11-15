@@ -1333,17 +1333,20 @@ def test_the_agent_feedback_sorts_the_trades_of_the_rule_and_gives_the_reason_of
     assert real["hausse"] == {"n": 2, "wins": 2, "mean": pytest.approx(0.02)} and real["baisse"]["wins"] == 0
     assert real["indécise"] == {"n": 0, "wins": 0, "mean": None}  # un trade sans tendance notée n'est rangé nulle part
     assert sum(c["rule"]["n"] for c in back["cases"]) <= len(view["rule_trades"])
-    first, second = back["sentences"]
+    first, second, third = back["sentences"]
+    assert back["extra"] == 1 and third.startswith("Il a aussi pris 1 trade que cette règle rejouée ne montre pas")
     assert "{né}" in first and "1 gagnant sur 2" in first and "pas des trades manqués" in first
     assert "aurait pris 6 trades ; il en a pris 2" in second and all(WHY[m["why"]] in second for m in back["missed"])
     assert "3 sur 4 auraient gagné" in second
+    one = feedback(bot, df, {"rule_trades": [rule(100), rule(150)], "trades": view["trades"][:1], "position": None})
+    assert one["sentences"][1].endswith("il en a pris 1. L'autre (triangles vides) : " + WHY["calme"] + ". Il aurait gagné.")
     # Né avant le début du graphique : pas de trait, et tout le graphique compte.
     old = feedback({**bot, "started": swarm_module._iso(ts[0] - HOUR_MS)}, df, view)
     assert old["born"] is None and old["before"]["n"] == 0 and old["since"]["rule"] == 8
     assert old["sentences"][0].startswith("Ce bot existait déjà")
     # Une fiche d'avant cette version (rien de noté) : le retour reste lisible.
     bare = feedback({"spec": asdict(s), "book": {"trades": []}}, df, {"rule_trades": [], "trades": [], "position": None})
-    assert bare["born"] is None and bare["sentences"] == [] and bare["missed"] == []
+    assert bare["born"] is None and bare["sentences"] == [] and bare["missed"] == [] and bare["extra"] == 0
 
 
 def test_the_agent_feedback_matches_what_a_live_bot_really_did(random_walk):
