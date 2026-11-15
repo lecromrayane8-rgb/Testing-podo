@@ -22,12 +22,14 @@ volatilité) n'ont que quelques jours ou quelques dizaines de mois de données :
     python audit/nuit2.py agents       # la mention « favorable / défavorable » des bots dit-elle vrai sur les trades suivants ?
     python audit/nuit2.py intelligence # un modèle qui apprend sur tous les trades sait-il dire « entre » ou « n'entre pas » ?
                                        # (a besoin de scikit-learn, pour cette mesure seulement : pip install scikit-learn)
+    python audit/nuit2.py piste        # la ligne qui gagne dans « intelligence » (bots en 4 heures), revérifiée
     python audit/nuit2.py sens         # les bots de court terme, s'ils ne tradaient que dans le sens des dernières minutes ?
     python audit/nuit2.py calme        # les mêmes bots sur l'or, le pétrole, les indices et de grandes entreprises
 """
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import io
 import json
 import math
@@ -1304,21 +1306,22 @@ BRAIN_SEES = ("la technique", "le sens (achat ou vente)", "la sortie", "la tenda
 def _brain_job(args) -> list[tuple]:
     """Une crypto : chaque trade de chaque combinaison, avec ce que le graphique montrait à la bougie du signal.
     La dernière colonne est la triche du témoin (la bougie d'après, dans le sens du trade) : le vrai modèle ne la voit pas."""
-    symbol, folder = args
+    symbol, folder, *more = args
+    end, windows = more or (BRAIN_END, BRAIN_WINDOWS)  # l'étude 17 bis refait le calcul sur une autre fenêtre
     from tradingbot import swarm
     from tradingbot.data import COLUMNS, ohlcv_to_frame, timeframe_to_ms
     from tradingbot.fleet import EXITS, SIDES, Spec, signals_for, simulate, technique, with_security
     settings, out = swarm.SwarmSettings(), []
     bitcoin = pd.read_pickle(Path(folder) / "BTC-USDT-1h.pkl")
-    bitcoin = bitcoin[bitcoin["ts"] + HOUR <= BRAIN_END]
+    bitcoin = bitcoin[bitcoin["ts"] + HOUR <= end]
     b_ts, b_close = bitcoin["ts"].to_numpy(dtype="int64"), bitcoin["close"].to_numpy(dtype=float)
     b_log, b_mean = np.log(b_close), pd.Series(b_close).rolling(200).mean().to_numpy()
-    for tf, days in BRAIN_WINDOWS.items():
+    for tf, days in windows.items():
         path, tf_ms = Path(folder) / f"{symbol.replace('/', '-')}-{tf}.pkl", timeframe_to_ms(tf)
         if not path.exists():
             continue
         raw = pd.read_pickle(path)
-        raw = raw[(raw["ts"] >= BRAIN_END - days * DAY) & (raw["ts"] + tf_ms <= BRAIN_END)]
+        raw = raw[(raw["ts"] >= end - days * DAY) & (raw["ts"] + tf_ms <= end)]
         if len(raw) < swarm.MIN_BARS:
             continue
         df = ohlcv_to_frame(raw[COLUMNS].values.tolist())
@@ -1500,6 +1503,148 @@ def intelligence(args) -> dict:
                else "SES PRÉFÉRÉS GAGNENT, fourchette toute positive : à revérifier (marché au hasard, autre période) avant d'y croire"
                if best["low"] > 0 else "piste : ses préférés gagnent en moyenne, sans netteté" if best["mean"] > 0
                else "rien : ses préférés perdent aussi, frais payés")
+    print(f"  VERDICT · {verdict}")
+    out["verdict"] = verdict
+    return out
+
+
+# --- étude 17 bis : la piste des bots en 4 heures, vérifiée ------------------------------------------------------------
+
+def shuffled(frame: pd.DataFrame, rng) -> pd.DataFrame:
+    """Les mêmes bougies dans le désordre : chacune garde sa forme et sa taille, mais plus rien ne relie une bougie à la
+    suivante. Sur un tel marché personne ne peut prévoir : un modèle qui y « gagne » lit l'avenir par une fuite."""
+    o = frame["open"].to_numpy(dtype=float)
+    order = rng.permutation(len(frame))
+    up, down, body = (frame[k].to_numpy(dtype=float)[order] / o[order] for k in ("high", "low", "close"))
+    close = o[0] * np.cumprod(body)
+    start = np.concatenate([[o[0]], close[:-1]])
+    return pd.DataFrame({"ts": frame["ts"].to_numpy(dtype="int64"), "open": start, "high": start * up, "low": start * down,
+                         "close": close, "volume": frame["volume"].to_numpy(dtype=float)[order]})
+
+
+def brain_table(coins: list[str], folder: Path, end: int, windows: dict) -> pd.DataFrame:
+    """Le calcul de l'étude 17 pour ces cryptos et cette fenêtre (mêmes mesures, même modèle, mêmes réglages) : chaque
+    trade jamais vu, sa tranche, sa crypto, son sens, et si le modèle le préfère ou le déconseille."""
+    from sklearn.ensemble import HistGradientBoostingRegressor
+    with ProcessPoolExecutor(max_workers=4) as pool:
+        per_coin = list(pool.map(_brain_job, [(s, str(folder), end, windows) for s in coins]))
+    judged = []
+    for tf in windows:
+        mine = [(k, part) for k, coin in enumerate(per_coin) for part in coin if part[0] == tf]
+        if not mine:
+            continue
+        seen, entry, done, net = (np.concatenate([part[k] for _, part in mine]) for k in (1, 2, 3, 4))
+        coin = np.concatenate([np.full(len(part[4]), k) for k, part in mine])
+        honest = seen.shape[1] - 1  # la dernière colonne est la triche du témoin : jamais montrée ici
+        goal, edges = np.clip(net, -0.05, 0.05), np.linspace(entry.min(), entry.max() + 1, BRAIN_FOLDS + 1)
+        for k in range(1, BRAIN_FOLDS):
+            known, later = done <= edges[k], (entry >= edges[k]) & (entry < edges[k + 1])
+            if known.sum() < 5000 or not later.any():
+                continue
+            learnt, fresh = seen[known][:, :honest], seen[later][:, :honest]
+            model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=31, min_samples_leaf=200,
+                                                  l2_regularization=1.0, categorical_features=[0, 2, 3],
+                                                  early_stopping=False, random_state=0)
+            model.fit(learnt, goal[known])
+            worst, best = np.quantile(model.predict(learnt), [0.1, 0.9])
+            score = model.predict(fresh)
+            judged.append(pd.DataFrame({"tf": tf, "fold": k + 1, "coin": coin[later], "day": entry[later] // DAY,
+                                        "net": net[later], "short": fresh[:, 1] > 0, "top": score >= best, "low": score <= worst}))
+    return pd.concat(judged, ignore_index=True) if judged else pd.DataFrame()
+
+
+def piste(args) -> dict:
+    """LA PISTE DES BOTS EN 4 HEURES, VÉRIFIÉE. L'étude 17 a rendu « rien » sur l'ensemble, mais une ligne gagne : sur
+    les bots en 4 heures, les 10 % de trades que le modèle préfère font +0,569 % par trade, frais payés (de +0,115 à
+    +1,022), quand tous les trades font −0,196 %. Son protocole disait : une ligne qui gagne seule est une piste, à
+    revérifier sur des cryptos tirées au hasard et sur une autre période avant d'y croire. Vérification, fixée avant
+    son calcul, bots en 4 heures seulement, même modèle et mêmes réglages :
+    1. refaire le calcul (il doit redonner +0,569 %) et le regarder de près : tranche par tranche, crypto par
+       crypto, achats et ventes à part ; et surtout ce qui reste quand on retire l'effet du sens : le résultat de
+       ses préférés moins celui de TOUS les trades du même sens dans la même tranche. De 2023 à 2026 les altcoins ont
+       beaucoup baissé : un modèle qui a seulement appris « vendre » n'a rien appris sur le moment d'entrer ;
+    2. le témoin : les mêmes cryptos, bougies mélangées (`shuffled`), Bitcoin mélangé aussi : aucune avance n'y est
+       possible ; si ses préférés y gagnent nettement, la mesure a une fuite et la piste ne vaut rien ;
+    3. une autre période : les mêmes 24 cryptos, les 1095 jours d'avant (du 15/11/2020 au 15/11/2023), pour celles
+       qui existaient ;
+    4. d'autres cryptos : les 24 suivantes du cache par ordre alphabétique (actions en jetons écartées), sur la même
+       fenêtre que l'étude 17.
+    Verdict : la piste TIENT seulement si le témoin ne montre rien ET si ses préférés gagnent, fourchette toute
+    positive, sur l'autre période ET sur les autres cryptos ; « piste » s'ils gagnent en moyenne sur les deux sans
+    netteté ; sinon elle ne se confirme pas. Dans tous les cas, on dit ce qui reste une fois le sens retiré."""
+    if importlib.util.find_spec("sklearn") is None:
+        raise SystemExit("Cette mesure a besoin de scikit-learn (pip install scikit-learn) ; le bot, lui, n'en dépend pas.")
+    cache = Path(args.cache)
+    folder, windows = cache / "intelligence", {"4h": BRAIN_WINDOWS["4h"]}
+    span = BRAIN_WINDOWS["4h"] * DAY
+    markets = vrai.exchange().load_markets()
+    names = [s for s in sorted(p.name[:-len("-1m.pkl")].replace("-", "/") for p in cache.glob("*-USDT-1m.pkl"))
+             if all((cache / f"{s.replace('/', '-')}-{tf}.pkl").exists() for tf in AGENT_WINDOWS)]
+    names = [s for s in names if not tokenized_stock(markets.get(s) or {})]
+    coins, others = names[:BRAIN_COINS], names[BRAIN_COINS:2 * BRAIN_COINS]
+    _candles_job(("BTC/USDT", "1h", BRAIN_END - 2 * span - 15 * DAY, BRAIN_END, folder))
+    jobs = ([(s, "4h", BRAIN_END - 2 * span, BRAIN_END, folder) for s in coins]
+            + [(s, "4h", BRAIN_END - span, BRAIN_END, folder) for s in others])
+    with ThreadPoolExecutor(args.fils) as pool:
+        for (symbol, *_), (_, result) in zip(jobs, pool.map(_candles_job, jobs)):
+            if isinstance(result, str):
+                print(f"  {symbol} : {result}", flush=True)
+    mixed = folder / "melange"
+    mixed.mkdir(parents=True, exist_ok=True)
+    for k, symbol in enumerate(["BTC/USDT"] + coins):
+        tf = "1h" if k == 0 else "4h"
+        raw = pd.read_pickle(folder / f"{symbol.replace('/', '-')}-{tf}.pkl")
+        raw = raw[(raw["ts"] >= BRAIN_END - span - 15 * DAY) & (raw["ts"] < BRAIN_END)]
+        shuffled(raw, np.random.default_rng(17 + k)).to_pickle(mixed / f"{symbol.replace('/', '-')}-{tf}.pkl")
+    out = {}
+
+    def bounds(part: pd.DataFrame, column: str = "net") -> tuple[float, float, float]:
+        sums = part.groupby("day")[column].agg(["count", "sum"])
+        return clustered_bounds(list(zip(sums["count"], sums["sum"])))
+
+    def report(title: str, table: pd.DataFrame) -> None:
+        if table.empty or not table["top"].any():
+            print(f" {title} · aucun trade préféré")
+            return
+        base = table.groupby(["fold", "short"])["net"].transform("mean")  # tous les trades du même sens, même tranche
+        table = table.assign(extra=table["net"] - base)
+        top = table[table["top"]]
+        mean, low, high = bounds(top)
+        extra, extra_low, extra_high = bounds(top, "extra")
+        per_coin = top.groupby("coin")["net"].agg(["count", "mean"])
+        per_coin = per_coin[per_coin["count"] >= 100]
+        out[title] = {"all": float(table["net"].mean()), "top": float(mean), "low": float(low), "high": float(high),
+                      "n": int(len(top)), "extra": float(extra), "extra_low": float(extra_low), "extra_high": float(extra_high),
+                      "coins": int(table["coin"].nunique()), "days": int(table["day"].nunique())}
+        print(f" {title} · {table['coin'].nunique()} cryptos · {len(table)} trades jamais vus sur {table['day'].nunique()} journées · tous "
+              f"{100 * table['net'].mean():+.3f} % · ses 10 % préférés {100 * mean:+.3f} % (de {100 * low:+.3f} à {100 * high:+.3f} ; "
+              f"{len(top)} trades) · ceux qu'elle déconseille {100 * table[table['low']]['net'].mean():+.3f} %")
+        print(f"   une fois le sens retiré (ses préférés moins tous les trades du même sens, même tranche) : {100 * extra:+.3f} % "
+              f"(de {100 * extra_low:+.3f} à {100 * extra_high:+.3f})")
+        print(f"   achats : tous {100 * table[~table['short']]['net'].mean():+.3f} %, ses préférés "
+              f"{100 * top[~top['short']]['net'].mean():+.3f} % ({int((~top['short']).sum())}) · ventes à découvert : tous "
+              f"{100 * table[table['short']]['net'].mean():+.3f} %, ses préférés {100 * top[top['short']]['net'].mean():+.3f} % "
+              f"({int(top['short'].sum())})")
+        print("   par tranche : " + " · ".join(
+            f"n° {fold} tous {100 * part['net'].mean():+.3f} %, préférés {100 * part[part['top']]['net'].mean():+.3f} % "
+            f"({int(part['top'].sum())}, dont {100 * part[part['top']]['short'].mean():.0f} % de ventes)"
+            for fold, part in table.groupby("fold")))
+        print(f"   par crypto (au moins 100 trades préférés) : {int((per_coin['mean'] > 0).sum())} gagnantes sur {len(per_coin)} · la "
+              f"plus présente pèse {100 * per_coin['count'].max() / len(top):.0f} % de ses préférés")
+
+    print("ÉTUDE 17 bis — LA PISTE DES BOTS EN 4 HEURES, VÉRIFIÉE")
+    report("1. le calcul de l'étude 17, refait", brain_table(coins, folder, BRAIN_END, windows))
+    report("2. témoin : les mêmes bougies mélangées", brain_table(coins, mixed, BRAIN_END, windows))
+    report("3. autre période (15/11/2020 → 15/11/2023)", brain_table(coins, folder, BRAIN_END - span, windows))
+    report("4. autres cryptos (les 24 suivantes)", brain_table(others, folder, BRAIN_END, windows))
+    witness, past, rest = (out.get(k) for k in ("2. témoin : les mêmes bougies mélangées",
+                                                "3. autre période (15/11/2020 → 15/11/2023)", "4. autres cryptos (les 24 suivantes)"))
+    verdict = ("la mesure a une FUITE : ses préférés gagnent sur des bougies mélangées ; la piste ne vaut rien" if witness and witness["low"] > 0
+               else "la piste ne se confirme pas : ses préférés ne gagnent pas sur l'autre période et sur les autres cryptos"
+               if not (past and rest and past["top"] > 0 and rest["top"] > 0)
+               else "LA PISTE TIENT : ses préférés gagnent nettement sur l'autre période et sur les autres cryptos"
+               if past["low"] > 0 and rest["low"] > 0 else "piste : ses préférés gagnent en moyenne sur l'autre période et sur les autres "
+               "cryptos, sans netteté")
     print(f"  VERDICT · {verdict}")
     out["verdict"] = verdict
     return out
@@ -1859,7 +2004,7 @@ def main() -> None:
 STUDIES = {"donnees": donnees, "portage": portage, "heure": heure, "grille": grille, "peur": peur, "ecarts": ecarts,
            "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee,
            "anciennes": anciennes, "creux": creux, "veille": veille, "agents": agents, "intelligence": intelligence,
-           "sens": sens, "calme": calme}
+           "sens": sens, "calme": calme, "piste": piste}
 
 if __name__ == "__main__":
     main()
