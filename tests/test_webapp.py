@@ -492,6 +492,9 @@ def test_the_bots_are_listed_by_coin_and_each_has_its_page_and_chart(server, ran
     status, body, _ = request(base, f"/api/bot-graphique?id={short['id']}", headers=PAGE)
     chart = json.loads(body)
     assert status == 200 and len(chart["candles"]) == len(df) and chart["side"] == "short" and chart["lines"]
+    back = chart["feedback"]  # le retour de l'agent accompagne le graphique du bot
+    assert [c["trend"] for c in back["cases"]] == ["hausse", "baisse", "indécise"] and "sentences" in back
+    assert back["since"]["taken"] <= back["since"]["rule"] and back["started"] == short["started"]
     status, body, _ = request(base, "/api/crypto-graphique?c=X&unite=1h", headers=PAGE)
     chart = json.loads(body)
     assert status == 200 and len(chart["candles"]) == len(df) and chart["reading"]["sentences"]

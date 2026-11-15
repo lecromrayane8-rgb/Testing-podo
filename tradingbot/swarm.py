@@ -107,6 +107,17 @@ BAN_S = 24 * 3600
 UNFOLLOWED_S = 6 * 3600  # une crypto sortie de la liste depuis 6 h : ses bots sans position s'endorment
 ASLEEP_DAYS = 30  # un bot endormi dont la crypto n'est pas revenue dans la liste en 30 jours est arrêté pour de bon
 MAX_ASLEEP = 1000  # bots endormis gardés au plus : au-delà, ceux qui dorment depuis le plus longtemps sont arrêtés
+SKIPPED_KEPT, GAPS_KEPT = 60, 20  # signaux d'entrée non suivis et périodes sans bougies qu'un bot garde en mémoire
+# Pourquoi un bot n'a pas pris un trade que sa règle aurait pris : la raison est notée au moment où il renonce.
+WHY = {"calme": "sa crypto ne bougeait plus assez (en veille)",
+       "hors-liste": "sa crypto était sortie de la liste des plus agitées (en veille)",
+       "reveil": "il venait de se réveiller : ce signal datait de son sommeil",
+       "sortie": "sa stratégie était recalée : il ne prenait plus de trade",
+       "endormi": "il dormait : sa crypto avait quitté la liste depuis plus de six heures",
+       "coupure": "ces bougies ne lui sont jamais arrivées (ordinateur éteint ou en veille trop longtemps)",
+       "position": "il était déjà en position à ce moment-là",
+       "inconnu": "la raison n'a pas été notée"}
+TRENDS = ("hausse", "baisse", "indécise")  # la tendance de fond, comme `features` la nomme
 RETEST_TIMEOUT_S = 900  # un test dure quelques secondes : au-delà, le processus de calcul est remplacé
 CHECKPOINT_S = 600
 MOOD_EVERY_S = 3600
@@ -315,7 +326,8 @@ def insights(prof: dict | None, minimum: int = 8) -> dict:
 
 def probability(prof: dict | None, now: dict) -> dict | None:
     """L'agent « probabilité » : la part de trades gagnants dans les conditions du moment, d'après le backtest, tirée vers
-    la moyenne de la stratégie quand les cas comparables sont peu nombreux. Une estimation, pas une promesse."""
+    la moyenne de la stratégie quand les cas comparables sont peu nombreux. Elle décrit le passé du bot : mesurée sur
+    2,9 millions de trades qu'elle n'avait pas vus (`audit/nuit2.py agents`), elle n'annonce pas le trade suivant."""
     if not prof or not prof.get("overall", {}).get("n"):
         return None
     base, n0 = prof["overall"]["win"] or 0.0, prof["overall"]["n"]
@@ -328,13 +340,15 @@ def probability(prof: dict | None, now: dict) -> dict | None:
             used.append(f"{GROUPS.get(group, group)} {value}")
     p = (total + SHRINK * base * max(1, len(used))) / (weight + SHRINK * max(1, len(used)))
     return {"p": p, "base": base, "trades": n0, "conditions": used,
-            "text": f"{round(100 * p)} % de chances de gain estimées dans les conditions du moment ("
+            "text": "Dans les conditions du moment ("
                     + (", ".join(used) if used else "aucune condition assez fréquente : moyenne de la stratégie")
-                    + f"), d'après {n0} trades du backtest. Une estimation, pas une promesse."}
+                    + f"), {round(100 * p)} % de ses trades du backtest étaient gagnants ({n0} trades). Cela décrit "
+                      "son passé : cela n'annonce pas le prochain trade."}
 
 
 def trade_analysis(trade: dict, prof: dict | None) -> list[str]:
-    """L'agent « pourquoi ce trade a gagné ou perdu » : ses conditions d'entrée comparées au passé de la stratégie."""
+    """L'agent « dans quelles conditions ce trade est entré » : ses conditions d'entrée comparées au passé de la
+    stratégie. Une description, jamais un conseil : ces conditions n'annoncent pas le résultat d'un trade."""
     out = []
     context = trade.get("context") or {}
     if not prof or not context:
@@ -348,11 +362,10 @@ def trade_analysis(trade: dict, prof: dict | None) -> list[str]:
         diff = st["win"] - base
         if abs(diff) < 0.08:
             continue
-        side = "favorables" if diff > 0 else "défavorables"
-        verdict = ("comme souvent" if (diff > 0) == won else "contre la tendance de son passé")
-        out.append(f"Entré quand {GROUPS.get(group, group)} était « {value} », des conditions {side} pour cette stratégie "
-                   f"({round(100 * st['win'])} % de gagnants sur {st['n']} trades, contre {round(100 * base)} % en "
-                   f"moyenne) : il a {'gagné' if won else 'perdu'}, {verdict}.")
+        out.append(f"Entré quand {GROUPS.get(group, group)} était « {value} » : dans son backtest, ces conditions lui "
+                   f"avaient {'mieux' if diff > 0 else 'moins bien'} réussi ({round(100 * st['win'])} % de gagnants sur "
+                   f"{st['n']} trades, contre {round(100 * base)} % en moyenne). Ce trade a "
+                   f"{'gagné' if won else 'perdu'}.")
     return out[:3]
 
 
@@ -1103,6 +1116,8 @@ class Swarm:
         new = closed[closed["ts"] > last] if last is not None else closed.iloc[-1:]
         if new.empty:
             return []
+        if last is not None and int(new["ts"].iloc[0]) > last + book.tf_ms:  # coupure plus longue que le rattrapage
+            self._note_gap(bot, last + book.tf_ms, int(new["ts"].iloc[0]), "coupure")
         events = []
         active = bot["status"] == "actif"
         woke = int(bot.get("woke") or 0)  # réveillé : pas d'entrée sur un signal donné pendant son sommeil
@@ -1119,8 +1134,10 @@ class Swarm:
                                                            row_at))
             if sig is not None:
                 i = first + k
-                book.close_bar(ts, float(row.close), bool(sig.entry[i]) and active and ts + book.tf_ms > woke,
-                               bool(sig.exit[i]), float(sig.atr[i]))
+                wanted, allowed, size = bool(sig.entry[i]), active and ts + book.tf_ms > woke, float(sig.atr[i])
+                if wanted and not allowed and book.position is None and not book.s["dead"] and math.isfinite(size) and size > 0:
+                    self._note_skip(bot, ts, active)  # sa règle serait entrée ici : il dit pourquoi il ne l'a pas fait
+                book.close_bar(ts, float(row.close), wanted and allowed, bool(sig.exit[i]), size)
             else:
                 book.s["last_ts"] = ts
         last_ts = int(new["ts"].iloc[-1])
@@ -1133,6 +1150,28 @@ class Swarm:
         if reading:
             bot["reading"] = reading
         return events
+
+    def _note_skip(self, bot: dict, ts: int, active: bool) -> None:
+        """Un signal d'entrée que le bot n'a pas suivi, avec la raison du moment (`WHY`) : le retour de l'agent s'en
+        sert pour dire pourquoi un trade de sa règle n'a pas été pris. Ne décide rien."""
+        if active:
+            why = "reveil"  # actif, mais le signal date d'une bougie finie avant son réveil
+        elif bot["status"] == "sortie":
+            why = "sortie"
+        else:
+            why = "calme" if (self.state["coins"].get(bot["spec"]["symbol"]) or {}).get("followed") else "hors-liste"
+        kept = bot.setdefault("skipped", [])
+        kept.append({"ts": int(ts), "why": why})
+        del kept[:-SKIPPED_KEPT]
+        self.dirty.add(bot["key"])
+
+    def _note_gap(self, bot: dict, start: int, end: int, why: str) -> None:
+        """Une période dont le bot n'a jamais vu les bougies : une coupure plus longue que le rattrapage, ou son
+        sommeil. Les trades que sa règle y aurait pris n'existent pas pour lui."""
+        kept = bot.setdefault("gaps", [])
+        kept.append({"from": int(start), "to": int(end), "why": why})
+        del kept[:-GAPS_KEPT]
+        self.dirty.add(bot["key"])
 
     def _opened(self, bot: dict, book: Book, results: list[dict], now_b: dict) -> list[dict]:
         if book.position is not None and results and results[-1]["kind"] == "entry":
@@ -1413,6 +1452,9 @@ class Swarm:
             if info.get("followed"):
                 new = "actif" if info.get("moving") else "veille"
                 if status == "endormi":
+                    dozed = bot["book"].get("last_ts")  # sa dernière bougie avant de s'endormir
+                    if dozed is not None:
+                        self._note_gap(bot, int(dozed) + timeframe_to_ms(bot["spec"]["timeframe"]), now_ms, "endormi")
                     bot["book"]["last_ts"] = None
                     bot.update(woke=now_ms, signal=None, proba=None, last_price=None)
                     bot.pop("evicted", None)
@@ -1841,6 +1883,82 @@ def bot_detail(bot: dict) -> dict:
                trades=list(reversed(bot["book"]["trades"])), pending=bot["book"]["pending"],
                team_title=TEAM_TITLES.get(bot.get("team"), ""))
     return out
+
+
+def _case(rows: list[float]) -> dict:
+    return {"n": len(rows), "wins": sum(r > 0 for r in rows), "mean": float(np.mean(rows)) if rows else None}
+
+
+def feedback(bot: dict, df: pd.DataFrame, view: dict) -> dict:
+    """Le retour de l'agent sur le graphique d'un bot (`fleet.chart_view`) : depuis quand il existe, ce que sa règle
+    rejouée sur ces bougies aurait pris et ce qu'il en a pris, pourquoi il a laissé passer le reste (la raison notée
+    au moment où il renonçait : `skipped`, `gaps`), et dans quels cas ses trades ont marché. Il décrit ; il ne décide
+    rien et ne change aucun réglage. `{né}` dans une phrase : la date de naissance, écrite par la page."""
+    spec = spec_from(bot["spec"])
+    tf_ms = timeframe_to_ms(spec.timeframe)
+    ts = df["ts"].to_numpy(np.int64)
+    first, last = int(ts[0]), int(ts[-1])
+    started = bot.get("started")
+    born = int(datetime.fromisoformat(started).timestamp() * 1000) if started else None
+    where = {int(t): i for i, t in enumerate(ts)}
+    trend = features(df)["trend"].to_numpy()
+    real, pos = list(view.get("trades") or []), view.get("position")
+    taken = {int(t["entry"]) for t in real} | ({int(pos["entry_ts"])} if pos else set())
+    busy = [(int(t["entry"]), int(t["exit"])) for t in real] + ([(int(pos["entry_ts"]), last + tf_ms)] if pos else [])
+    skipped = {int(k["ts"]): k["why"] for k in bot.get("skipped") or []}
+    gaps = [(int(g["from"]), int(g["to"]), g["why"]) for g in bot.get("gaps") or []]
+    before, since, missed = [], [], []
+    by_trend: dict[str, list[float]] = {k: [] for k in TRENDS}
+    for t in view.get("rule_trades") or []:
+        entry = int(t["entry"])
+        signal = entry - tf_ms  # la bougie dont la clôture a donné le signal
+        at = where.get(signal)
+        if at is not None and trend[at] in by_trend:
+            by_trend[trend[at]].append(float(t["net"]))
+        if born is not None and entry + tf_ms <= born:  # sa première bougie est celle qui finit juste avant sa naissance
+            before.append(t)
+            continue
+        since.append(t)
+        if entry in taken:
+            continue
+        why = (skipped.get(signal) or next((w for a, b, w in gaps if a <= signal < b), None)
+               or ("position" if any(a < entry <= b for a, b in busy) else "inconnu"))
+        missed.append({"ts": entry, "why": why, "text": WHY.get(why, WHY["inconnu"]), "net": float(t["net"])})
+    lived: dict[str, list[float]] = {k: [] for k in TRENDS}
+    for t in bot["book"]["trades"]:
+        case = (t.get("context") or {}).get("trend")
+        if case in lived:
+            lived[case].append(float(t["net"]))
+    sentences = []
+    if born is not None and born > first:
+        text = "Ce bot est né le {né} : c'est le trait en pointillés sur le graphique."
+        if before:
+            won = sum(t["net"] > 0 for t in before)
+            text += (f" Avant ce trait, les triangles vides ne sont pas des trades manqués : ils montrent ce que sa règle "
+                     f"aurait fait sur ces bougies ({won} gagnant{'s' if won > 1 else ''} sur {len(before)}). C'est sur "
+                     "un passé comme celui-là que le labo l'a choisi ; cela ne dit rien de la suite.")
+        sentences.append(text)
+    elif born is not None:
+        sentences.append("Ce bot existait déjà au début de ce graphique (né le {né}).")
+    if since:
+        got = len(since) - len(missed)
+        text = (f"{'Depuis sa naissance' if born is not None and born > first else 'Sur ces bougies'}, sa règle rejouée "
+                f"aurait pris {len(since)} trade{'s' if len(since) > 1 else ''} ; il en a pris {got}.")
+        if missed:
+            counts: dict[str, int] = {}
+            for m in missed:
+                counts[m["why"]] = counts.get(m["why"], 0) + 1
+            won = sum(m["net"] > 0 for m in missed)
+            text += (f" Les {len(missed)} autres (triangles vides) : " if len(missed) > 1 else " L'autre (triangles vides) : ")
+            text += " ; ".join(f"{n} fois, {WHY[w]}" for w, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+            text += f". {won} sur {len(missed)} aurai{'ent' if won > 1 else 't'} gagné."
+        sentences.append(text)
+    elif born is not None:
+        sentences.append("Depuis sa naissance, sa règle n'a donné aucun trade sur ces bougies.")
+    return {"born": started if born is not None and first < born <= last + tf_ms else None, "started": started,
+            "sentences": sentences, "missed": missed[-30:],
+            "before": _case([float(t["net"]) for t in before]), "since": {"rule": len(since), "taken": len(since) - len(missed)},
+            "cases": [{"trend": k, "real": _case(lived[k]), "rule": _case(by_trend[k])} for k in TRENDS]}
 
 
 def swarm_running(folder: Path) -> bool:

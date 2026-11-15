@@ -747,10 +747,10 @@ JS = r"""
   }
   function thousands(v) { return (v || 0).toLocaleString('fr-FR'); }
   function probaText(p) {
-    if (!p) return 'Estimation disponible à la prochaine bougie.';
-    return 'D\'après ' + p.trades + ' trades de son backtest, dans les conditions du moment (' + (p.conditions && p.conditions.length
-      ? p.conditions.join(', ') : 'aucune assez fréquente : moyenne de la stratégie') + ') ; ' + Math.round(100 * p.base)
-      + ' % en moyenne. Une estimation, pas une promesse.';
+    if (!p) return 'Disponible à la prochaine bougie.';
+    return 'de ses trades du backtest étaient gagnants dans les conditions du moment (' + (p.conditions && p.conditions.length
+      ? p.conditions.join(', ') : 'aucune assez fréquente : moyenne de la stratégie') + '), sur ' + p.trades + ' trades ; '
+      + Math.round(100 * p.base) + ' % en moyenne. Cela décrit son passé : cela n\'annonce pas le prochain trade.';
   }
 
   // --- navigation ---
@@ -1142,7 +1142,8 @@ JS = r"""
       el('p', {class: 'muted', text: b.tf_label + ' · ' + sideText(b.side) + ' · levier ×' + dec(b.leverage) + exitShort(b)
         + (b.live === 'prouvee' ? ' · stratégie prouvée' : '')}),
       el('p', {class: 'big'}, usdt(b.value), el('span', {class: 'delta ' + cls(b.pnl), text: pct(b.pnl_pct, 1)})),
-      el('p', {class: 'muted', text: tradesText(b.count) + winText(b.win_rate) + (b.proba ? ' · chances estimées ' + Math.round(100 * b.proba.p) + ' %' : '')}),
+      el('p', {class: 'muted', text: tradesText(b.count) + winText(b.win_rate)
+        + (b.proba ? ' · dans ces conditions par le passé : ' + Math.round(100 * b.proba.p) + ' %' : '')}),
       p ? el('p', {class: 'pos-line'}, (p.side === 'long' ? 'Acheté ' : 'Vendu ') + precise(p.price) + ' · stop ' + precise(p.stop)
         + (p.target ? ' · objectif ' + precise(p.target) : '') + ' · ', el('span', {class: cls(p.roi), text: pct(p.roi, 1)})) : null);
   }
@@ -1228,6 +1229,7 @@ JS = r"""
       el('p', {id: 'bot-rule'}), el('p', {class: 'muted', id: 'bot-exit'}),
       el('div', {id: 'bot-position'}),
       el('section', {}, el('h2', {id: 'bot-chart-title'}), el('div', {id: 'bot-chart'}), el('div', {class: 'legend', id: 'bot-legend'})),
+      el('section', {id: 'bot-feedback'}),
       el('section', {id: 'bot-agents'}),
       el('section', {id: 'bot-compare'}),
       el('section', {id: 'bot-curve'}),
@@ -1304,17 +1306,18 @@ JS = r"""
     const ins = b.insights || {wins: [], losses: []}, proba = b.proba;
     $('#bot-agents').replaceChildren(el('h2', {text: 'Les agents d\'analyse'}),
       el('div', {class: 'compare'},
-        el('div', {class: 'tile'}, el('p', {class: 'tile-label', text: 'Chances de gain, maintenant'}),
+        el('div', {class: 'tile'}, el('p', {class: 'tile-label', text: 'Dans ces conditions, par le passé'}),
           el('p', {class: 'tile-value', text: proba ? Math.round(100 * proba.p) + ' %' : '—'}),
           el('p', {class: 'tile-sub', text: probaText(proba)})),
         el('div', {class: 'tile'}, el('p', {class: 'tile-label', text: 'Son signal à la dernière bougie'}),
           el('p', {class: 'tile-value', text: b.signal ? (b.signal.entry ? 'entrée' : b.signal.exit ? 'sortie' : 'rien') : '—'}),
-          el('p', {class: 'tile-sub', text: 'Il n\'entre que sur ce signal, jamais sur une estimation.'}))),
+          el('p', {class: 'tile-sub', text: 'Il n\'entre que sur ce signal, jamais sur un chiffre du passé.'}))),
       el('h3', {class: 'group-title', text: 'Où sa stratégie gagne'}),
       ...(ins.wins.length ? ins.wins.map(x => el('p', {class: 'lesson-line', text: x})) : [el('p', {class: 'muted', text: 'Pas d\'écart net dans son backtest.'})]),
       el('h3', {class: 'group-title', text: 'Où elle perd'}),
       ...(ins.losses.length ? ins.losses.map(x => el('p', {class: 'lesson-line', text: x})) : [el('p', {class: 'muted', text: 'Pas d\'écart net dans son backtest.'})]),
-      el('p', {class: 'note', text: 'Mesuré sur les trades de son backtest : des tendances, pas des certitudes (peu de trades par case). '
+      el('p', {class: 'note', text: 'Mesuré sur les trades de son backtest : une description de son passé (peu de trades par case), pas un '
+        + 'conseil. Vérifié sur 2,9 millions de trades : ces cases n\'annoncent pas le résultat des trades suivants. '
         + 'Le bot ne change jamais ses réglages. Il garde sa place d\'un test à l\'autre : seuls ses garde-fous (liquidation, moitié du '
         + 'capital perdue, pertes nettes après 20 trades) ou une stratégie recalée l\'arrêtent.'}));
     $('#bot-compare').replaceChildren(el('h2', {text: 'En direct et dans le backtest'}),
@@ -1339,7 +1342,9 @@ JS = r"""
         xTick: dayLabel, yTick: v => Math.round(v).toLocaleString('fr-FR'), endLabel: usdt(done[done.length - 1].equity),
         endShort: Math.round(done[done.length - 1].equity).toLocaleString('fr-FR'),
         tip: i => [when(new Date(done[i].exit_ts).toISOString()), usdt(done[i].equity)]})] : []));
-      $('#bot-trades').replaceChildren(el('h2', {text: 'Ses trades, expliqués'}), ...((b.trades || []).length ? b.trades.slice(0, 40).map(tradeItem)
+      $('#bot-trades').replaceChildren(el('h2', {text: 'Ses trades, expliqués'}),
+        el('p', {class: 'note', text: 'Sous chaque trade : les conditions dans lesquelles il est entré, comparées au passé du bot. '
+          + 'Une description, pas un conseil : elles n\'annoncent pas la suite.'}), ...((b.trades || []).length ? b.trades.slice(0, 40).map(tradeItem)
         : [el('p', {class: 'muted', text: 'Pas encore de trade terminé.'})]));
     }
     const card = b.technique_card;
@@ -1354,9 +1359,11 @@ JS = r"""
       host._chart = null;
       host.replaceChildren(el('p', {class: 'muted', text: botChart ? botChart.error + ' Nouvel essai dans quelques secondes…' : 'Chargement du graphique…'}));
       $('#bot-legend').replaceChildren();
+      $('#bot-feedback').replaceChildren();
       return;
     }
     const d = botChart, marks = [], markers = [], bands = [], pos = d.position;
+    const born = d.feedback && d.feedback.born ? Date.parse(d.feedback.born) : null;
     if (pos) {
       marks.push({price: pos.price, color: 'var(--text-secondary)', label: (pos.side === 'long' ? 'Achat ' : 'Vente ') + precise(pos.price)});
       marks.push({price: pos.stop, color: 'var(--critical)', label: (pos.moved ? 'Nouveau stop ' : 'Stop ') + precise(pos.stop)});
@@ -1384,8 +1391,32 @@ JS = r"""
       markers.push({ts: t.exit, up: t.side !== 'long', fill: t.net > 0 ? 'var(--up)' : 'var(--down)', stroke: 'var(--surface-1)'});
     }
     zoomChart(host, {key: 'bot-' + botKey, candles: d.candles, lines: d.lines, zones: d.levels, marks: marks, markers: markers, bands: bands,
-      label: 'Graphique de ' + coin(d.symbol) + ' et de son bot'});
+      vlines: born ? [{ts: born, label: 'né ici'}] : [], label: 'Graphique de ' + coin(d.symbol) + ' et de son bot'});
     $('#bot-legend').replaceChildren(...chartLegend(d, pos || false, true));
+    renderFeedback(d.feedback);
+  }
+  // Le retour de l'agent : ce que la règle aurait pris, ce que le bot a pris, pourquoi pas le reste, et dans quels cas
+  // ses trades ont marché. Il décrit ; il ne décide rien.
+  function renderFeedback(f) {
+    const box = $('#bot-feedback');
+    if (!box) return;
+    if (!f) { box.replaceChildren(); return; }
+    const born = f.started ? when(f.started) : '';
+    const cell = k => !k.n ? '—' : k.wins + ' gagnant' + (k.wins > 1 ? 's' : '') + ' sur ' + k.n + ' · ' + pct(k.mean, 2) + ' par trade';
+    const rows = f.cases.filter(k => k.real.n || k.rule.n);
+    const names = {hausse: 'Elle montait', baisse: 'Elle baissait', 'indécise': 'Elle était indécise'};
+    box.replaceChildren(el('h2', {text: 'Le retour de l\'agent'}),
+      ...(f.sentences.length ? f.sentences.map(x => el('p', {class: 'lesson-line', text: x.replace('{né}', born)}))
+        : [el('p', {class: 'muted', text: 'Rien à signaler sur ces bougies pour l\'instant.'})]),
+      el('h3', {class: 'group-title', text: 'Dans quels cas ses trades ont marché'}),
+      rows.length ? el('div', {class: 'table-wrap'}, el('table', {class: 'fit'},
+        headRow(['La tendance de fond à l\'entrée'], ['Ses vrais trades', 'n'], ['Sa règle sur ce graphique', 'n opt']),
+        el('tbody', {}, ...rows.map(k => el('tr', {}, el('td', {text: names[k.trend] || k.trend}), el('td', {class: 'n', text: cell(k.real)}),
+          el('td', {class: 'n opt', text: cell(k.rule)}))))))
+        : el('p', {class: 'muted', text: 'Pas encore de trade à ranger.'}),
+      el('p', {class: 'note', text: 'L\'agent décrit ce qui s\'est passé ; il ne change rien aux bots et ne décide d\'aucun trade. '
+        + 'Mesuré sur 2,9 millions de trades : savoir dans quels cas un bot a gagné n\'annonce pas le résultat de ses trades suivants. '
+        + 'La règle est rejouée depuis la première bougie du graphique : un petit décalage avec le bot reste possible.'}));
   }
   function chartLegend(d, pos, rule) {
     const item = (klass, color, text, dash) => el('span', {}, el('span', {class: 'swatch ' + klass + (dash ? ' dashed' : ''),
@@ -1404,6 +1435,7 @@ JS = r"""
     if ((d.levels || []).some(z => z.kind === 'resistance')) out.push(item('', 'var(--series-2)', 'zone de résistance'));
     if ((d.trades || []).length || pos) out.push(el('span', {text: '▲▼ pleins : les vrais trades (vert gagné, rouge perdu)'}));
     if (rule && (d.rule_trades || []).length) out.push(el('span', {text: '△▽ vides : ce que sa règle aurait fait sur ces bougies'}));
+    if (rule && d.feedback && d.feedback.born) out.push(item('line', 'var(--text-secondary)', 'trait vertical : la naissance du bot', true));
     if (pos) out.push(item('line', 'var(--critical)', 'stop (SL) et zone du risque'), item('line', 'var(--good)', 'objectif (TP) et zone visée'));
     if (pos && pos !== true && pos.secure && !pos.secured) out.push(item('line', 'var(--good)', 'seuil de sécurisation (pointillés)', true));
     if ((d.trades || []).some(t => t.secured) || (rule && (d.rule_trades || []).some(t => t.secured)) || (pos && pos !== true && pos.secured))
@@ -1549,6 +1581,13 @@ JS = r"""
         }
         root.append(svg('path', {d: 'M' + X(i) + ',' + (y - size * dir) + 'L' + (X(i) + size) + ',' + (y + 0.8 * size * dir) + 'L' + (X(i) - size) + ',' +
           (y + 0.8 * size * dir) + 'Z', fill: mk.fill, stroke: mk.stroke, 'stroke-width': mk.fill === 'none' ? 1.6 : 1.5}));
+      }
+      for (const vl of o.vlines || []) {  // un instant marqué d'un trait vertical (la naissance d'un bot)
+        const i = at(vl.ts);
+        if (i < a || i > b) continue;
+        const x = X(i) - slot / 2;
+        root.append(svg('line', {x1: x, x2: x, y1: MT, y2: PB, stroke: 'var(--text-secondary)', 'stroke-width': 1.5, 'stroke-dasharray': '4 4'}));
+        if (vl.label) root.append(svg('text', {x: Math.min(x + 5, W - MR - 44), y: MT + 10, class: 'tick'}, vl.label));
       }
       labels.sort((p, q) => p.y - q.y);
       let lastY = -Infinity;

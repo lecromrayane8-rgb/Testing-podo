@@ -53,7 +53,7 @@ from .knowledge import ENTRIES as KNOWLEDGE
 from .news import NewsSource, reaction
 from .prices import DEFAULT_CRYPTOS, DEFAULT_PLATFORMS, board_to_dict, connect, short_error, snapshot
 from .school import school
-from .swarm import DETAIL_DIR, MAX_BOTS_PER_COIN, MAX_COINS, SECURE_R_BOUNDS, SWARM_FILE, bot_detail
+from .swarm import DETAIL_DIR, MAX_BOTS_PER_COIN, MAX_COINS, SECURE_R_BOUNDS, SWARM_FILE, bot_detail, feedback
 
 log = logging.getLogger(__name__)
 
@@ -820,9 +820,14 @@ class Site:
         spec = bot["spec"]
         df = self.charts.candles(spec["symbol"], spec["timeframe"], 1000)
         try:
-            return chart_view(df, {"slot": bot["id"], "bot": bot}, shown=len(df))
+            view = chart_view(df, {"slot": bot["id"], "bot": bot}, shown=len(df))
         except KeyError as exc:  # une technique d'une ancienne version
             raise ValueError(f"Bot illisible : {exc}") from None
+        try:  # le retour de l'agent : ce que sa règle aurait pris, ce qu'il a pris, et pourquoi pas le reste
+            view["feedback"] = feedback(bot, df, view)
+        except (KeyError, TypeError, ValueError):  # une fiche d'une ancienne version : le graphique s'affiche sans retour
+            view["feedback"] = None
+        return view
 
     # --- l'actualité ---
     def _btc_closes(self):

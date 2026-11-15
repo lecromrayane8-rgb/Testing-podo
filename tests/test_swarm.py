@@ -14,13 +14,13 @@ import pytest
 import tradingbot.swarm as swarm_module
 from tests.conftest import HOUR_MS, frame_from_closes
 from tradingbot.data import COLUMNS
-from tradingbot.fleet import EXITS, Spec, fleet_running, judge, lookback_for, simulate, with_security
+from tradingbot.fleet import EXITS, Spec, chart_view, fleet_running, judge, lookback_for, simulate, signals_for, with_security
 from tradingbot.risk import paired_bounds
 from tradingbot.swarm import (
     ASLEEP_DAYS, BAN_S, DETAIL_DIR, ELIMINATE_AFTER, LIBRARY, REFERENCE_FILE, SAFE, STATE_FILE, SWARM_FILE, TRIAL_FILE,
-    TRIAL_MIN_DAYS, UNFOLLOWED_S, CandleStore, PlatformClock, Swarm, SwarmSettings, Retester, bot_brief, bot_detail,
-    buckets, features, insights, per_timeframe, probability, profile, run, settings_from_env, retest_coin,
-    trade_analysis,
+    SKIPPED_KEPT, TRIAL_MIN_DAYS, UNFOLLOWED_S, WHY, CandleStore, PlatformClock, Swarm, SwarmSettings, Retester, bot_brief,
+    bot_detail, buckets, features, feedback, insights, per_timeframe, probability, profile, run, settings_from_env,
+    retest_coin, trade_analysis,
 )
 
 DAY_MS = 24 * HOUR_MS
@@ -447,10 +447,23 @@ def test_a_bot_on_a_sleeping_coin_never_opens_a_trade(random_walk):
     swarm = make_swarm(market)
     bot = swarm.add_bot(chosen(s), market.now_ms())
     bot["status"] = "veille"
+    awake = swarm.add_bot(chosen(spec("Cassure 20/10", "long", 2.0)), market.now_ms())  # le même, actif
     for i in range(400, 700):
         market.i = i
         swarm.cycle(market.now_ms())
     assert bot["book"]["trades"] == [] and bot["book"]["position"] is None
+    # Il note chaque signal d'entrée qu'il laisse passer, avec la raison du moment : le retour de l'agent s'en sert.
+    sig = signals_for(random_walk, s.params, "long")
+    wanted = [int(random_walk["ts"].iloc[i]) for i in range(400, 700) if sig.entry[i] and sig.atr[i] > 0]
+    assert len(wanted) > 5 and [k["ts"] for k in bot["skipped"]] == wanted[-SKIPPED_KEPT:]
+    assert {k["why"] for k in bot["skipped"]} == {"hors-liste"}  # sa crypto n'est pas dans la liste suivie
+    assert "skipped" not in awake and awake["book"]["trades"]  # un bot actif ne note rien et trade comme avant
+    swarm.state["coins"][s.symbol] = {"followed": True, "moving": False}  # suivie, mais elle ne bouge plus assez
+    more = next(i for i in range(700, 1200) if sig.entry[i] and sig.atr[i] > 0)
+    for i in range(700, more + 1):
+        market.i = i
+        swarm.cycle(market.now_ms())
+    assert bot["skipped"][-1] == {"ts": int(random_walk["ts"].iloc[more]), "why": "calme"}
 
 
 # --- les re-tests ----------------------------------------------------------------------------------------------
@@ -974,6 +987,9 @@ def test_a_bot_that_wakes_up_never_enters_on_a_signal_given_while_it_slept(rando
     assert sleeper["status"] == "actif" and sleeper["book"]["last_ts"] == int(df["ts"].iloc[i])
     assert sleeper["book"]["position"] is None and sleeper["book"]["pending"] is None  # pas d'entrée sur ce signal
     assert sleeper["book"]["trades"] == []  # et rien n'a été rejoué sur les 300 bougies de son sommeil
+    # Il garde la trace de son sommeil et du signal qu'il n'a pas suivi : le retour de l'agent les expliquera.
+    assert sleeper["gaps"] == [{"from": int(df["ts"].iloc[i - 299]), "to": swarm.time.now_ms(), "why": "endormi"}]
+    assert sleeper["skipped"] == [{"ts": int(df["ts"].iloc[i]), "why": "reveil"}] and "skipped" not in newcomer
     assert newcomer["book"]["position"] is not None  # le bot neuf, lui, entre sur sa première bougie
     later = int(next(k for k in entries if k > i + 30 and not signals_for(df, s.params, "long").entry[k - 1]))
     for k in range(i + 1, later + 1):
@@ -1232,10 +1248,11 @@ def test_the_agents_say_where_a_strategy_wins_and_estimate_its_chances(random_wa
     good = probability(prof, {"trend": "hausse"})
     bad = probability(prof, {"trend": "baisse"})
     assert bad["p"] < prof["overall"]["win"] < good["p"] < 1.0  # tiré vers la moyenne : jamais une certitude
-    assert "pas une promesse" in good["text"]
+    assert "n'annonce pas le prochain trade" in good["text"]  # un passé décrit, jamais un conseil
     assert probability(None, {}) is None
     why = trade_analysis({"pnl": 5.0, "context": {"trend": "hausse"}}, prof)
-    assert why and "gagné, comme souvent" in why[0]
+    assert why and "lui avaient mieux réussi" in why[0] and "Ce trade a gagné." in why[0]
+    assert "favorable" not in why[0] and "chances" not in good["text"]
     assert buckets({"trend": None, "atr_pct": float("nan"), "rsi": 25.0, "vol_ratio": 2.0, "hour": 15}, None) == {
         "rsi": "survendu (sous 30)", "volume": "fort", "session": "Amérique (14-22 h UTC)"}
 
@@ -1259,6 +1276,100 @@ def test_the_site_reads_a_short_brief_and_a_full_page_for_each_bot(random_walk):
     summary = swarm.summary()
     assert summary["totals"]["bots"] == 1 and summary["max_bots"] == SwarmSettings().max_bots
     assert summary["totals"]["value"] == pytest.approx(brief["value"])
+
+
+# --- le retour de l'agent -----------------------------------------------------------------------------------------
+
+def test_candles_that_never_came_are_noted_and_a_short_break_is_not(random_walk):
+    """Après une coupure plus longue que le rattrapage, le bot note la période dont il n'a jamais vu les bougies.
+    Après une coupure courte, il rattrape tout : il n'y a rien à noter."""
+    s = spec("Cassure 20/10")
+    market = FakeMarket({s.symbol: random_walk})
+    market.i = 500
+    swarm = make_swarm(market)
+    bot = swarm.add_bot(chosen(s), market.now_ms())
+    swarm.cycle(market.now_ms())
+    market.i = 540  # quarante bougies manquées : toutes rattrapées
+    swarm.cycle(market.now_ms())
+    assert "gaps" not in bot and bot["book"]["last_ts"] == int(random_walk["ts"].iloc[540])
+    market.i = 540 + 3 * lookback_for(s.params)  # bien plus que ce que le bot redemande
+    swarm.cycle(market.now_ms())
+    gap = bot["gaps"][-1]
+    assert gap["why"] == "coupure" and gap["from"] == int(random_walk["ts"].iloc[541])
+    assert gap["from"] < gap["to"] <= int(random_walk["ts"].iloc[market.i])
+    seen = int(random_walk["ts"].iloc[market.i]) - gap["to"]
+    assert seen // HOUR_MS + 1 <= lookback_for(s.params) + 5  # il a repris au début de ce qu'il a pu redemander
+
+
+def test_the_agent_feedback_sorts_the_trades_of_the_rule_and_gives_the_reason_of_each_one_left_out(random_walk):
+    """Chaque trade que la règle aurait pris est rangé : avant la naissance du bot, pris, ou laissé de côté avec sa
+    raison (celle notée au moment où le bot renonçait, sinon une période sans bougies, sinon une position déjà
+    ouverte, sinon « pas notée »). Les vrais trades sont comptés par tendance de fond."""
+    s = spec("Cassure 20/10")
+    df = random_walk.iloc[:400]
+    ts = [int(t) for t in df["ts"]]
+    born = ts[100] + 1000  # né pendant la bougie 100 : sa première bougie est la 99, son premier trade entre à la 100
+    started = swarm_module._iso(born)
+
+    def rule(i, net=0.01):
+        return {"side": "long", "entry": ts[i], "exit": ts[i + 5], "net": net, "reason": "stop"}
+
+    view = {"rule_trades": [rule(50), rule(99, -0.01), rule(100), rule(150), rule(200, -0.02), rule(250), rule(300),
+                            rule(350)],
+            "trades": [{"side": "long", "entry": ts[100], "exit": ts[110], "net": 0.01},
+                       {"side": "long", "entry": ts[240], "exit": ts[260], "net": -0.01}],
+            "position": {"entry_ts": ts[350]}}
+    bot = {"spec": asdict(s), "started": started, "skipped": [{"ts": ts[149], "why": "calme"}],
+           "gaps": [{"from": ts[190], "to": ts[210], "why": "coupure"}],
+           "book": {"trades": [{"net": 0.01, "context": {"trend": "hausse"}}, {"net": -0.02, "context": {"trend": "baisse"}},
+                               {"net": 0.03, "context": {"trend": "hausse"}}, {"net": 0.05}]}}
+    back = feedback(bot, df, view)
+    assert back["born"] == started and back["before"] == {"n": 2, "wins": 1, "mean": pytest.approx(0.0)}
+    assert back["since"] == {"rule": 6, "taken": 2}  # pris : celui de la bougie 100 et la position ouverte à la 350
+    assert [(m["ts"], m["why"]) for m in back["missed"]] == [(ts[150], "calme"), (ts[200], "coupure"), (ts[250], "position"),
+                                                             (ts[300], "inconnu")]
+    assert all(m["text"] == WHY[m["why"]] for m in back["missed"])
+    real = {c["trend"]: c["real"] for c in back["cases"]}
+    assert real["hausse"] == {"n": 2, "wins": 2, "mean": pytest.approx(0.02)} and real["baisse"]["wins"] == 0
+    assert real["indécise"] == {"n": 0, "wins": 0, "mean": None}  # un trade sans tendance notée n'est rangé nulle part
+    assert sum(c["rule"]["n"] for c in back["cases"]) <= len(view["rule_trades"])
+    first, second = back["sentences"]
+    assert "{né}" in first and "1 gagnant sur 2" in first and "pas des trades manqués" in first
+    assert "aurait pris 6 trades ; il en a pris 2" in second and all(WHY[m["why"]] in second for m in back["missed"])
+    assert "3 sur 4 auraient gagné" in second
+    # Né avant le début du graphique : pas de trait, et tout le graphique compte.
+    old = feedback({**bot, "started": swarm_module._iso(ts[0] - HOUR_MS)}, df, view)
+    assert old["born"] is None and old["before"]["n"] == 0 and old["since"]["rule"] == 8
+    assert old["sentences"][0].startswith("Ce bot existait déjà")
+    # Une fiche d'avant cette version (rien de noté) : le retour reste lisible.
+    bare = feedback({"spec": asdict(s), "book": {"trades": []}}, df, {"rule_trades": [], "trades": [], "position": None})
+    assert bare["born"] is None and bare["sentences"] == [] and bare["missed"] == []
+
+
+def test_the_agent_feedback_matches_what_a_live_bot_really_did(random_walk):
+    """Sur un vrai parcours : né en cours de route, actif, puis en veille, puis actif. Chaque trade de la règle depuis
+    sa naissance est soit pris par le bot, soit expliqué ; ceux de la veille le sont par la veille."""
+    s = spec("Cassure 20/10", "long", 2.0)
+    market = FakeMarket({s.symbol: random_walk})
+    market.i = 600
+    swarm = make_swarm(market)
+    bot = swarm.add_bot(chosen(s), market.now_ms())
+    for i in range(600, 1000):
+        market.i = i
+        bot["status"] = "veille" if 800 <= i < 900 else "actif"
+        swarm.cycle(market.now_ms())
+    df = random_walk.iloc[:1001]
+    view = chart_view(df, {"slot": bot["id"], "bot": bot}, shown=len(df))
+    back = feedback(bot, df, view)
+    lo, hi = int(random_walk["ts"].iloc[800]), int(random_walk["ts"].iloc[899])
+    asleep = [m for m in back["missed"] if m["why"] == "hors-liste"]
+    assert asleep and all(lo <= m["ts"] - HOUR_MS <= hi for m in asleep)  # le signal est tombé pendant la veille
+    taken = {t["entry"] for t in view["trades"]} | ({view["position"]["entry_ts"]} if view["position"] else set())
+    since = [t for t in view["rule_trades"] if t["entry"] + HOUR_MS > int(random_walk["ts"].iloc[600]) + HOUR_MS + 2500]
+    assert back["since"] == {"rule": len(since), "taken": sum(t["entry"] in taken for t in since)}
+    assert {m["ts"] for m in back["missed"]} == {t["entry"] for t in since if t["entry"] not in taken}
+    assert back["born"] == bot["started"] and back["before"]["n"] == len(view["rule_trades"]) - len(since)
+    assert sum(c["real"]["n"] for c in back["cases"]) <= len(bot["book"]["trades"])
 
 
 # --- la boucle, les réglages ------------------------------------------------------------------------------------
