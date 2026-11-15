@@ -20,6 +20,8 @@ volatilité) n'ont que quelques jours ou quelques dizaines de mois de données :
     python audit/nuit2.py creux        # « acheter le creux » refait sur cette troisième période
     python audit/nuit2.py veille       # suivre le sens de la veille (ou des dernières heures) : est-ce que ça annonce la suite ?
     python audit/nuit2.py agents       # la mention « favorable / défavorable » des bots dit-elle vrai sur les trades suivants ?
+    python audit/nuit2.py intelligence # un modèle qui apprend sur tous les trades sait-il dire « entre » ou « n'entre pas » ?
+                                       # (a besoin de scikit-learn, pour cette mesure seulement : pip install scikit-learn)
 """
 from __future__ import annotations
 
@@ -47,7 +49,7 @@ from tradingbot.data import make_exchange  # noqa: E402
 from tradingbot.execution import FUTURES  # noqa: E402
 from tradingbot.fleet import MAINTENANCE  # noqa: E402
 from tradingbot.risk import clustered_bounds, paired_bounds  # noqa: E402
-from tradingbot.scanner import by_volume  # noqa: E402
+from tradingbot.scanner import by_volume, tokenized_stock  # noqa: E402
 
 HOUR, MINUTE = 3_600_000, 60_000
 GRID_COINS = ("BTC/USDT", "ETH/USDT", "BNB/USDT", "SOL/USDT", "XRP/USDT", "DOGE/USDT")
@@ -1284,6 +1286,223 @@ def agents(args) -> dict:
     return out
 
 
+# --- étude 17 : une « intelligence » qui apprend quand entrer ----------------------------------------------------------
+
+BRAIN_END = ms("2026-11-14")  # la fin de l'historique est fixée : la mesure se refait à l'identique
+BRAIN_WINDOWS = {"1m": 30, "5m": 90, "15m": 180, "1h": 540, "4h": 1095}  # jours d'historique par unité
+BRAIN_COINS, BRAIN_FOLDS = 24, 5
+BRAIN_SEES = ("la technique", "le sens (achat ou vente)", "la sortie", "la tendance de fond", "l'écart à la moyenne 200",
+              "la pente de la moyenne 200", "la volatilité", "la volatilité contre sa moyenne", "le RSI",
+              "le volume contre sa moyenne", "l'heure", "le jour de la semaine",
+              "la variation sur 1, 5, 20 et 100 bougies", "la variation et l'amplitude sur 24 heures",
+              "la place dans la fourchette des 20 dernières bougies", "le corps et les deux mèches de la bougie du signal",
+              "l'argent échangé", "le Bitcoin sur 1, 4 et 24 heures", "le Bitcoin au-dessus ou sous sa moyenne 200 heures")
+
+
+def _brain_job(args) -> list[tuple]:
+    """Une crypto : chaque trade de chaque combinaison, avec ce que le graphique montrait à la bougie du signal.
+    La dernière colonne est la triche du témoin (la bougie d'après, dans le sens du trade) : le vrai modèle ne la voit pas."""
+    symbol, folder = args
+    from tradingbot import swarm
+    from tradingbot.data import COLUMNS, ohlcv_to_frame, timeframe_to_ms
+    from tradingbot.fleet import EXITS, SIDES, Spec, signals_for, simulate, technique, with_security
+    settings, out = swarm.SwarmSettings(), []
+    bitcoin = pd.read_pickle(Path(folder) / "BTC-USDT-1h.pkl")
+    bitcoin = bitcoin[bitcoin["ts"] + HOUR <= BRAIN_END]
+    b_ts, b_close = bitcoin["ts"].to_numpy(dtype="int64"), bitcoin["close"].to_numpy(dtype=float)
+    b_log, b_mean = np.log(b_close), pd.Series(b_close).rolling(200).mean().to_numpy()
+    for tf, days in BRAIN_WINDOWS.items():
+        path, tf_ms = Path(folder) / f"{symbol.replace('/', '-')}-{tf}.pkl", timeframe_to_ms(tf)
+        if not path.exists():
+            continue
+        raw = pd.read_pickle(path)
+        raw = raw[(raw["ts"] >= BRAIN_END - days * DAY) & (raw["ts"] + tf_ms <= BRAIN_END)]
+        if len(raw) < swarm.MIN_BARS:
+            continue
+        df = ohlcv_to_frame(raw[COLUMNS].values.tolist())
+        feats, ts = swarm.features(df), df["ts"].to_numpy(dtype="int64")
+        o, h, low, c, v = (df[k].to_numpy(dtype=float) for k in ("open", "high", "low", "close", "volume"))
+        mean, logc, wide = pd.Series(c).rolling(200).mean(), np.log(c), int(DAY // tf_ms)
+        size = feats["atr_pct"].to_numpy(dtype=float) * c
+
+        def back(n: int) -> np.ndarray:
+            moved = np.full(len(c), np.nan)
+            moved[n:] = logc[n:] - logc[:-n]
+            return moved
+
+        top, bottom = pd.Series(h).rolling(20).max().to_numpy(), pd.Series(low).rolling(20).min().to_numpy()
+        last = np.searchsorted(b_ts, ts + tf_ms - HOUR, side="right") - 1  # la dernière heure du Bitcoin déjà finie
+        seen = last >= 200
+
+        def market(n: int) -> np.ndarray:
+            moved = np.full(len(ts), np.nan)
+            moved[seen] = b_log[last[seen]] - b_log[last[seen] - n]
+            return moved
+
+        stamps = pd.to_datetime(ts, unit="ms", utc=True)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            bars = np.column_stack([
+                feats["trend"].map({"hausse": 1, "baisse": 2}).fillna(0).to_numpy(dtype=float),
+                c / mean.to_numpy() - 1, (mean / mean.shift(20) - 1).to_numpy(), feats["atr_pct"].to_numpy(dtype=float),
+                (feats["atr_pct"] / feats["atr_pct"].rolling(100).mean()).to_numpy(dtype=float),
+                feats["rsi"].to_numpy(dtype=float), feats["vol_ratio"].to_numpy(dtype=float), stamps.hour, stamps.dayofweek,
+                back(1), back(5), back(20), back(100), back(wide),
+                pd.Series(h).rolling(wide).max().to_numpy() / pd.Series(low).rolling(wide).min().to_numpy() - 1,
+                (c - bottom) / (top - bottom), (c - o) / size, (h - np.maximum(o, c)) / size, (np.minimum(o, c) - low) / size,
+                np.log(pd.Series(c * v).rolling(20).mean().to_numpy()), market(1), market(4), market(24),
+                np.where(seen, b_close[np.maximum(last, 0)] > b_mean[np.maximum(last, 0)], np.nan)])
+            after = c / o - 1  # la bougie elle-même : connue seulement après coup (pour le témoin qui triche)
+        bars[~np.isfinite(bars)] = np.nan
+        where, found = {int(t): i for i, t in enumerate(ts)}, []
+        for index, name in enumerate(swarm.LIBRARY):
+            params = technique(name)
+            if len(df) < params.warmup_bars + swarm.MIN_BARS:
+                continue
+            for side in SIDES:
+                try:
+                    sig = signals_for(df, params, side)
+                    for way, (target, mode) in enumerate(EXITS):
+                        # Sans levier : le résultat d'un trade se compte sans levier, et aucune combinaison ne s'arrête
+                        # en route (ni liquidation, ni compte vidé) : chaque signal donne son trade.
+                        spec = with_security(Spec(swarm.TEAMS[tf], symbol, tf, name, side, target, 1.0, mode),
+                                             *settings.security(settings.variant == "avec"))
+                        for t in simulate(df, spec, 1e9, signals=sig).s["trades"]:
+                            i = where.get(int(t["entry_ts"]))
+                            if i and t.get("reason") != "fin du test":
+                                found.append((index, float(side == "short"), way, i, int(t["entry_ts"]), int(t["exit_ts"]),
+                                              float(t["net"])))
+                except Exception:  # des bougies étranges n'arrêtent pas la mesure de la crypto
+                    continue
+        if found:
+            rows = np.array(found, dtype=float)
+            at = rows[:, 3].astype(int)  # la bougie d'entrée ; le signal est la bougie d'avant, la seule que le modèle voit
+            cheat = np.where(rows[:, 1] > 0, -1.0, 1.0) * after[at]
+            out.append((tf, np.column_stack([rows[:, :3], bars[at - 1], cheat]).astype(np.float32),
+                        rows[:, 4].astype(np.int64), rows[:, 5].astype(np.int64), rows[:, 6]))
+    return out
+
+
+def intelligence(args) -> dict:
+    """UNE « INTELLIGENCE » QUI APPREND QUAND ENTRER (demande de l'utilisateur du 15/11/2026 : « avoir une intelligence
+    à moitié dans mon site, capable de déceler les moments où il faut entrer ou pas entrer »).
+    La seule intelligence qu'on peut juger honnêtement est celle dont chaque décision se rejoue sur le passé : un
+    modèle qui apprend, sur des millions de trades, à relier ce que le graphique montrait au résultat du trade.
+    Protocole, fixé avant le calcul :
+    - les 24 premières cryptos du cache par ordre alphabétique (celles que les bots ont suivies), actions en jetons
+      écartées comme dans le bot (`scanner.tokenized_stock`) ; bougies jusqu'au 14/11/2026 : 30 jours en 1 minute,
+      90 en 5 minutes, 180 en 15 minutes, 540 en 1 heure, 1095 en 4 heures (`BRAIN_WINDOWS`) ;
+    - tous les trades de toutes les combinaisons des bots (51 techniques × 2 sens × 3 sorties × 5 unités), frais et
+      réglages des bots, simulés sans levier pour qu'aucune combinaison ne s'arrête en route : le résultat d'un trade
+      se compte sans levier, frais compris ;
+    - ce que le modèle voit de chaque entrée, à la clôture de la bougie du signal et rien de plus tard : `BRAIN_SEES`
+      (27 mesures) ;
+    - ce qu'il apprend : le résultat du trade, borné à ±5 % ;
+    - le modèle : des arbres de décision en série (`HistGradientBoostingRegressor` de scikit-learn : 200 arbres, pas
+      de 0,05, 31 feuilles, 200 trades au moins par feuille, sans arrêt anticipé), réglages fixés ici, jamais
+      retouchés ; un modèle par unité de temps ;
+    - l'historique de chaque unité est coupé en 5 tranches ; quatre fois de suite, le modèle apprend sur les trades
+      FINIS avant une tranche et note les trades de la tranche suivante, qu'il n'a jamais vus ;
+    - ce qu'on regarde sur ces trades jamais vus : ses 10 % préférés (ceux qu'il note au-dessus de 9 trades appris
+      sur 10 : un seuil connu au moment de décider), ses 1 % préférés, ceux dont il attend un gain, les 10 % qu'il
+      déconseille le plus ; fourchette à 95 % qui compare les journées (`risk.clustered_bounds`) ;
+    - deux témoins : 10 % des trades tirés au hasard (ne doit rien montrer), et un second modèle qui TRICHE (il voit
+      en plus la bougie d'après, dans le sens du trade) : ses préférés doivent gagner nettement, sinon l'outil ne
+      sait pas voir un avantage et la mesure ne vaut rien ;
+    - verdict, sur la ligne « toutes les unités » : l'intelligence « sait quand entrer » seulement si ses 10 %
+      préférés GAGNENT, frais payés, avec une fourchette toute positive ; « piste » s'ils gagnent en moyenne sans
+      netteté ; sinon « rien » : perdre moins que les autres ne fait pas gagner d'argent. Une ligne par unité qui
+      gagne seule est une piste (15 lignes regardées : le hasard en donne), à revérifier sur une autre période ;
+    - si ses préférés gagnent : avant d'y croire, le même calcul sur des cryptos tirées au hasard (aucune avance
+      possible : s'il y « gagne » aussi, il y a une fuite dans la mesure) et sur une autre période."""
+    try:
+        from sklearn.ensemble import HistGradientBoostingRegressor
+    except ImportError as exc:
+        raise SystemExit("Cette mesure a besoin de scikit-learn (pip install scikit-learn) ; le bot, lui, n'en dépend pas.") from exc
+    cache = Path(args.cache)
+    folder = cache / "intelligence"
+    markets = vrai.exchange().load_markets()
+    names = [s for s in sorted(p.name[:-len("-1m.pkl")].replace("-", "/") for p in cache.glob("*-USDT-1m.pkl"))
+             if all((cache / f"{s.replace('/', '-')}-{tf}.pkl").exists() for tf in AGENT_WINDOWS)]
+    coins = [s for s in names if not tokenized_stock(markets.get(s) or {})][:BRAIN_COINS]
+    _candles_job(("BTC/USDT", "1h", BRAIN_END - (max(BRAIN_WINDOWS.values()) + 15) * DAY, BRAIN_END, folder))
+    jobs = [(s, tf, BRAIN_END - days * DAY, BRAIN_END, folder) for s in coins for tf, days in BRAIN_WINDOWS.items()]
+    with ThreadPoolExecutor(args.fils) as pool:
+        for (symbol, tf, *_), (_, result) in zip(jobs, pool.map(_candles_job, jobs)):
+            if isinstance(result, str):
+                print(f"  {symbol} {tf} : {result}", flush=True)
+    print(f"  bougies prêtes : {' '.join(s.split('/')[0] for s in coins)}", flush=True)
+    with ProcessPoolExecutor(max_workers=4) as pool:
+        parts = [part for coin in pool.map(_brain_job, [(s, str(folder)) for s in coins]) for part in coin]
+    print(f"  trades simulés : {sum(len(part[4]) for part in parts)}", flush=True)
+    rng, judged = np.random.default_rng(17), []
+    for tf in BRAIN_WINDOWS:
+        mine = [part for part in parts if part[0] == tf]
+        parts = [part for part in parts if part[0] != tf]
+        if not mine:
+            continue
+        seen, entry, done, net = (np.concatenate([part[k] for part in mine]) for k in (1, 2, 3, 4))
+        del mine
+        honest = seen.shape[1] - 1  # la dernière colonne est la triche du témoin
+        goal, edges = np.clip(net, -0.05, 0.05), np.linspace(entry.min(), entry.max() + 1, BRAIN_FOLDS + 1)
+        for k in range(1, BRAIN_FOLDS):
+            known, later = done <= edges[k], (entry >= edges[k]) & (entry < edges[k + 1])
+            if known.sum() < 5000 or not later.any():
+                continue
+            learnt, fresh = seen[known], seen[later]
+            sheet = {"tf": tf, "day": entry[later] // DAY, "net": net[later], "luck": rng.random(int(later.sum())) < 0.1,
+                     "way": fresh[:, 2].astype(np.int8), "short": fresh[:, 1] > 0}
+            for label, width in (("", honest), ("cheat_", honest + 1)):
+                model = HistGradientBoostingRegressor(max_iter=200, learning_rate=0.05, max_leaf_nodes=31, min_samples_leaf=200,
+                                                      l2_regularization=1.0, categorical_features=[0, 2, 3],
+                                                      early_stopping=False, random_state=0)
+                model.fit(learnt[:, :width], goal[known])
+                worst, best, finest = np.quantile(model.predict(learnt[:, :width]), [0.1, 0.9, 0.99])
+                score = model.predict(fresh[:, :width])
+                sheet[label + "top"] = score >= best
+                if not label:
+                    sheet.update({"finest": score >= finest, "gain": score > 0, "low": score <= worst})
+            judged.append(pd.DataFrame(sheet))
+            print(f"  {tf}, tranche {k + 1} : appris sur {int(known.sum())} trades, jugé sur {int(later.sum())}", flush=True)
+        del seen
+    table = pd.concat(judged, ignore_index=True)
+    print(f"ÉTUDE 17 — UNE INTELLIGENCE QUI APPREND QUAND ENTRER · {len(coins)} cryptos · {len(table)} trades jamais vus par le "
+          f"modèle, sur {table['day'].nunique()} journées · elle regarde : {' ; '.join(BRAIN_SEES)}")
+    out = {}
+
+    def group(title: str, part: pd.DataFrame, flag: str) -> str:
+        chosen = part[part[flag]]
+        if len(chosen) < 2:
+            return "aucun trade"
+        sums = chosen.groupby("day")["net"].agg(["count", "sum"])
+        mean, low, high = clustered_bounds(list(zip(sums["count"], sums["sum"])))
+        out.setdefault(title, {})[flag] = {"mean": float(mean), "low": float(low), "high": float(high), "n": int(len(chosen))}
+        return f"{100 * mean:+.3f} % (de {100 * low:+.3f} à {100 * high:+.3f} ; {len(chosen)} trades)"
+
+    for title, part in [("toutes les unités", table)] + [(f"bots en {tf}", table[table["tf"] == tf]) for tf in BRAIN_WINDOWS]:
+        if part.empty:
+            continue
+        print(f"  {title} · tous les trades {100 * part['net'].mean():+.3f} % ({len(part)}) · ses 10 % préférés "
+              f"{group(title, part, 'top')} · ses 1 % préférés {group(title, part, 'finest')} · ceux dont elle attend un gain "
+              f"{group(title, part, 'gain')} · les 10 % qu'elle déconseille {group(title, part, 'low')} · témoin, 10 % au hasard "
+              f"{group(title, part, 'luck')} · témoin qui triche, ses 10 % préférés {group(title, part, 'cheat_top')}")
+        out.setdefault(title, {})["all"] = float(part["net"].mean())
+    liked = table[table["top"]]
+    if len(liked):
+        ways = ("la règle", "l'objectif 2R", "le stop suiveur")
+        print("  ce qu'elle préfère (part de ses préférés, contre la part de tous les trades) · "
+              + " · ".join(f"sortie par {ways[w]} {100 * (liked['way'] == w).mean():.0f} % contre {100 * (table['way'] == w).mean():.0f} %"
+                           for w in range(3))
+              + f" · ventes à découvert {100 * liked['short'].mean():.0f} % contre {100 * table['short'].mean():.0f} %")
+    best = out.get("toutes les unités", {}).get("top")
+    verdict = ("rien : elle ne retient aucun trade" if not best
+               else "SES PRÉFÉRÉS GAGNENT, fourchette toute positive : à revérifier (marché au hasard, autre période) avant d'y croire"
+               if best["low"] > 0 else "piste : ses préférés gagnent en moyenne, sans netteté" if best["mean"] > 0
+               else "rien : ses préférés perdent aussi, frais payés")
+    print(f"  VERDICT · {verdict}")
+    out["verdict"] = verdict
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("etude", choices=sorted(STUDIES))
@@ -1300,7 +1519,7 @@ def main() -> None:
 
 STUDIES = {"donnees": donnees, "portage": portage, "heure": heure, "grille": grille, "peur": peur, "ecarts": ecarts,
            "passif": passif, "volatilite": volatilite, "contrats": contrats, "retombee": retombee,
-           "anciennes": anciennes, "creux": creux, "veille": veille, "agents": agents}
+           "anciennes": anciennes, "creux": creux, "veille": veille, "agents": agents, "intelligence": intelligence}
 
 if __name__ == "__main__":
     main()
