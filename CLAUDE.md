@@ -384,7 +384,8 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   `peur` (indice d'alternative.me), `ecarts` (OKX, KuCoin, Gate contre Binance, à la minute), `passif` (chaque
   transaction de trois journées, archives `aggTrades` des contrats), `volatilite` (indice DVOL de Deribit),
   `anciennes` puis `creux` (« acheter le creux » d'une chute d'une heure sur trois périodes, 2017-2019 comprise,
-  chutes du marché et chutes d'une crypto seule séparées ; à la fin, le compte par épisode et les frais de panique).
+  chutes du marché et chutes d'une crypto seule séparées ; à la fin, le compte par épisode et les frais de panique),
+  `veille` (suivre le sens de la veille ou des dernières heures, crypto par crypto ou pour tout le marché).
   `rotation.py` : le test refait toutes les 3 h pendant 48 h avec le
   vrai `Swarm.apply_test`, pour compter les bots remplacés. Les deux tournent aussi sur une copie de l'ancien code
   (`git worktree add ... bac35d5`) pour comparer avant et après.
@@ -730,3 +731,14 @@ suivante. Le but du plan : trouver un avantage réel et mesurable, pas embellir 
   krachs = 74 % des trades de 2024-2026. Donc « piste », rien de construit. PROPOSÉ, EN ATTENTE D'ACCORD : un compte
   fictif « acheteur de krach » qui note les épisodes en direct, après une relecture indépendante de cette mesure.
   Leçon : compter par épisode, pas par trade, quand beaucoup de trades viennent de la même heure.
+- 15/11/2026 : ses bots sont à −1,80 %, certains liquidés ; il voit qu'une stratégie vendeuse (stochastique sur une
+  crypto qui baissait) gagne un jour et se fait liquider le lendemain quand ça remonte, et propose un bot qui change
+  de sens selon que le marché est « vendeur ou acheteur », qui « apprend du graphique de la veille », ou l'analyse en
+  masse de tous les trades. RÉPONDU PAR UNE MESURE (`audit/nuit2.py veille`, `82efb4a`) : le sens d'hier n'annonce
+  pas celui d'aujourd'hui (à la journée, crypto par crypto : −0,22 % par jour avant frais en 2020-2023, +0,03 %
+  depuis ; à l'heure : −0,025 % puis −0,014 % avant frais, nettement négatif, soit un léger retour en arrière
+  bien plus petit que les frais ; seule la semaine annonçait quelque chose, éteint depuis 2024). Rappelé : choisir
+  d'après le passé récent = le labo (−0,18 % sur la période non vue) ; l'analyse en masse = l'étape 1 ter (rien ne
+  sépare les bons trades des mauvais). Rien de construit. Toujours en attente de son oui ou non : le compte fictif
+  « acheteur de krach ». Il attend les verdicts à 7 jours de ses bots : lui redire que quelques stratégies se
+  démarquent toujours par hasard parmi 255, et qu'une « prouvée » se revérifie sur une autre période.

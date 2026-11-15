@@ -1035,6 +1035,38 @@ bot pour l'instant.
 exactement cette règle en direct et note chaque épisode avec les prix du moment. Avant de le construire, je ferais
 relire cette mesure par un relecteur indépendant, comme pour le reste.
 
+## Un bot qui change de sens selon la veille ? (15/11/2026, mesuré : non)
+
+Ta question du 15/11 : une stratégie vendeuse (la stochastique sur une crypto qui baissait) gagne un jour, puis se
+fait liquider le lendemain quand ça remonte. Ne pourrait-on pas avoir un bot qui passe de l'achat à la vente selon
+que le marché est « vendeur ou acheteur », en apprenant du graphique de la veille ?
+
+Ton observation est juste, et c'est la plus importante : ce jour-là, ce n'est pas la stratégie qui a gagné, c'est le
+sens du marché. Un bot qui change de sens ne gagne donc que si le sens d'hier annonce celui d'aujourd'hui. Mesuré
+(`audit/nuit2.py veille`, protocole enregistré avant le calcul : `82efb4a`) :
+
+| Suivre le sens… | Avant frais, 2020-2023 | Avant frais, 2024-2026 | Après frais |
+|---|---|---|---|
+| de la veille, crypto par crypto (50 cryptos) | −0,22 % par jour (nettement négatif) | +0,03 % | −0,28 % puis −0,06 % |
+| de la veille, pour tout le marché d'un coup | −0,33 % par jour (nettement négatif) | +0,05 % | −0,40 % puis −0,04 % |
+| des 3 derniers jours | +0,08 % | 0,00 % | +0,04 % puis −0,06 % |
+| des 7 derniers jours | +0,15 % (net) | +0,05 % | +0,13 % puis +0,01 % |
+| de la dernière heure, pour l'heure suivante | −0,025 % par heure (net) | −0,014 % (net) | −0,10 % puis −0,09 % |
+| des 4 dernières heures | −0,07 % | −0,01 % | −0,15 % puis −0,09 % |
+
+**Ce que ça dit.** Le sens d'hier n'annonce pas celui d'aujourd'hui. À l'heure et à la journée, ce serait même plutôt
+l'inverse (ce qui a monté retombe un peu), mais d'un rien : 0,02 % par heure, pour 0,14 % de frais par aller-retour.
+Le seul horizon où le passé a annoncé quelque chose est la semaine, et cela s'est éteint depuis 2024.
+
+**Les deux autres idées de ta question ont déjà été mesurées en masse.** « Apprendre du passé récent pour choisir » :
+c'est ce que fait le labo, et ses choix font −0,18 % par trade sur la période qu'il n'a pas vue. « Prendre tous les
+trades et comprendre pourquoi ça ne marche pas » : c'est l'étape 1 ter (5,36 millions de trades, onze choses connues
+à l'entrée : flux, volume, tendance de l'unité au-dessus, Bitcoin, foule, carnet d'ordres) : rien ne sépare les bons
+trades des mauvais. Avant frais, un trade vaut +0,003 % : il n'y a pas de « pourquoi » trade par trade, les entrées
+ne valent pas mieux qu'un tirage au sort et ce sont les frais, puis le levier, qui font le reste.
+
+**Donc** : pas de bot « qui change de sens ». Les bots tournent jusqu'aux verdicts des 7 jours, sans rien y ajouter.
+
 ## Étape 2 — Gestion du risque
 
 - Taille de position calculée pour risquer un % fixe du capital du bot par trade (1 % par défaut), dans la limite des
@@ -1133,3 +1165,4 @@ drawdown maximal sous 15 %, résultats stables sur 4 semaines. Rien ne change de
 | 14/11/2026 | La relecture indépendante (seize relecteurs) | Faite : aucune erreur dans la logique de l'argent du bot de tendance ; quatre tests ajoutés, trois petits défauts corrigés, mes mesures corrigées et refaites. Reste à décider : le taux d'emprunt des comptes à risque | `cdec71f` |
 | 14/11/2026 | Les comptes à risque au vrai coût de l'emprunt | Fait : le moteur compte le vrai financement de chaque nuit (historique embarqué 2020-2026, puis lu chaque jour), cinq tests, onglet Tendance. Bitcoin ×31,1 au lieu de ×41,8, Ether ×9,0 au lieu de ×13,4 | `59d0ccb` |
 | 14/11/2026 | Court terme : « acheter le creux » sur trois périodes | Mesuré (`audit/nuit2.py creux`) : positif sur les trois périodes quand tout le marché chute, net sur deux ; mais un épisode sur deux perd et quelques gros krachs font le résultat. Piste, rien de construit | `4ca30cd` |
+| 15/11/2026 | Un bot qui change de sens selon la veille ? | Mesuré (`audit/nuit2.py veille`) : le sens d'hier n'annonce pas celui d'aujourd'hui (−0,28 % puis −0,06 % par jour après frais ; −0,10 % par heure). Rien de construit | `82efb4a` |
